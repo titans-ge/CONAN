@@ -4,7 +4,7 @@ COde for exoplaNet ANalysis
 ### Installation
 ```bash
 git clone https://github.com/mlendl42/CONAN.git
-cd CONAN
+cd CONAN3
 python setup.py develop
 ```
 

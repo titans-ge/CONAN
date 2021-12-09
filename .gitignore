@@ -175,5 +175,13 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+### JupyterNotebooks ###
+# gitignore template for Jupyter Notebooks
+# website: http://jupyter.org/
+
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+
 # End of https://www.toptal.com/developers/gitignore/api/fortran,python
 
