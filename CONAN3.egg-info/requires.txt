@@ -1,7 +1,0 @@
-numpy
-scipy
-mc3
-batman
-matplotlib
-emcee
-george
