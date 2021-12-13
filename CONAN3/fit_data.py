@@ -29,12 +29,16 @@ from ._classes import _raise
 
 __all__ = ["fit_data"]
 
-def fit_data(lc, rv, conf, statistic = "median", verbose=False):
+def fit_data(lc, rv, conf, statistic = "median", verbose=False, debug=False):
     """
     function to fit the data using the light-curve object lc, rv_object rv and configuration object conf.
     """
-    matplotlib.use('Agg') 
- #lc_data
+    # matplotlib.use('Agg') 
+#begining loading data from the 3 objects and calling the methods
+
+
+#============lc_data=========================
+    #from load_lightcurves()
     fpath      = lc._fpath
     names      = lc._names
     filters    = lc._filters
@@ -52,8 +56,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
     nfilt      = len(filnames)
     ngroup     = len(grnames)
     
- #----------------------------------------
- #GP
+#============GP Setup=============================
+    #from load_lightcurves.add_GP()
     GPphotlc = []
     GPphotvars = []
     GPphotkerns = []
@@ -84,7 +88,7 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
     GPchoices = ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"]
     ndimGP = len(GPchoices)
 
-    DA_gp = lc._GP_dict
+    DA_gp = lc._GP_dict         #load input gp parameters from dict
 
     for j, nm in enumerate(DA_gp["lc_list"]):
 
@@ -149,8 +153,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
             
             prev_lcname = nm
 
- #----------------------------------------
- #rv_data 
+#============rv_data========================== 
+    # from load_rvs
     if rv is not None and rv._names == []: rv = None   
     RVnames  = [] if rv is None else rv._names
     RVbases  = [] if rv is None else rv._RVbases
@@ -168,13 +172,13 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
     extinpars = []
 
  
- #----------------------------------------
- #jump parameters from setup_fit
+#============transit and RV jump parameters===============
+    #from load_lightcurves.setup_transit_rv()
 
-    config_par = conf._config_par
+    config_par = lc._config_par
     DA_conf    =   {}
-    for it in conf._items:
-        DA_conf[it] = [config_par[p].__dict__[it] for p in conf._parnames]
+    for it in lc._items:
+        DA_conf[it] = [config_par[p].__dict__[it] for p in lc._parnames]
     
     DA_in = [DA_conf["start_value"],DA_conf["step_size"],DA_conf["bounds_lo"],DA_conf["bounds_hi"],
                DA_conf["prior_mean"],DA_conf["prior_width_lo"],DA_conf["prior_width_hi"]]        
@@ -270,8 +274,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
     eos_in, eoc_in = ecc_om_par(ecc_in, omega_in)
     
     
- #------------------------------------
- #ddfs
+#============ddfs ==========================
+    #from load_lighcurves.transit_depth_variations()
     drprs_op = lc._ddfs.drprs_op
     divwhite = lc._ddfs.divwhite
     ddfYN    = lc._ddfs.ddfYN
@@ -292,8 +296,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
             dwCNMind.append(indices)        
 
    
- #----------------
- #occultation :#from load_lightcurves.setup_occultation()
+#============occultation setup=============
+    #from load_lightcurves.setup_occultation()
 
     DA_occ = lc._occ_dict
     nocc = len(DA_occ["filters_occ"])
@@ -310,8 +314,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
             njumpphot[k]=njumpphot[k]+1
     
     
-    #-----------------------------------
- #limb darkening : #from load_lightcurves.limb_darkening()
+#============limb darkening===============
+    #from load_lightcurves.limb_darkening()
     DA_ld = lc._ld_dict
 
     c1_in=np.zeros((nfilt,7))
@@ -370,8 +374,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
                 c2_in[j,5]=np.copy(lov2)
                 c2_in[j,6]=np.copy(hiv2)
 
- #--------------------------
- #contamination factors
+#============contamination factors=======================
+    #from load_lightcurves.contamination
     DA_cont = lc._contfact_dict
     cont=np.zeros((nfilt,2))
 
@@ -381,8 +385,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
         cont[j,:]= [DA_cont["cont_ratio"][i], DA_cont["err"][i]]
 
 
- #---------------------------------
- #stellar properties
+ #========= stellar properties==========================
+    #from setup_fit.stellar_parameters()
     DA_stlr = conf._stellar_dict
     
     Rs_in  = DA_stlr["R_st"][0]
@@ -395,8 +399,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
 
     howstellar = DA_stlr["par_input"]
 
- #----------------------------------
- #mcmc
+ #=============mcmc setup===============
+    #from setup_fit.mcmc()
     DA_mc =  conf._mcmc_dict
 
     nsamples    = int(DA_mc['n_steps']*DA_mc['n_chains'])   # total number of integrations
@@ -417,8 +421,11 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False):
     cf_apply    = DA_mc['apply_CFs']  # which CF to apply
     jit_apply   = DA_mc['apply_jitter'] # apply jitter
 
-    #---------------------------------
-    #computations
+
+
+#********************************************************************
+#============Start computations as in original CONANGP===============
+#********************************************************************
     useGPrv=['n']
 
     GPrvpars1=np.array([0.])

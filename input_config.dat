@@ -1,84 +1,51 @@
 #=========== MCMC input file =======================
-Path_of_input_lightcurves:
-/home/tunde/Dropbox/postdoc/work/wasp-12/WASP-12_1201-10212/pipe_lcs/
+Path_of_input_lightcurves: 
+/home/tunde/Dropbox/postdoc/work/wasp-127/PIPE/wasp-127_conanfit/
 #---------------------------------------------------
 # Input lightcurves filters baseline function
-name         	fil	 lamda	 time	 roll	 x	 y	 conta	 sky	 sin	 group	 id	 GP
-w12_lc01p.dat	CH 	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	  1	 y 
-w12_lc02p.dat	CH2	6000.0	    2	   0	 0	 0	     0	   0	   0	     0	  2	 n 
-w12_lc03p.dat	CH3	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	  3	 y 
-w12_lc04p.dat	CH 	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	  4	 n 
-w12_lc05p.dat	CH2	6000.0	    2	   0	 0	 0	     0	   0	   0	     0	  5	 y 
-w12_lc06p.dat	CH3	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	  6	 n 
-w12_lc07p.dat	CH 	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	  7	 y 
-w12_lc08p.dat	CH2	6000.0	    2	   0	 0	 0	     0	   0	   0	     0	  8	 n 
-w12_lc09p.dat	CH3	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	  9	 y 
-w12_lc10p.dat	CH 	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	 10	 n 
-w12_lc11p.dat	CH2	6000.0	    2	   0	 0	 0	     0	   0	   0	     0	 11	 y 
-w12_lc12p.dat	CH3	6000.0	    2	   0	 0	 1	     0	   0	   0	     0	 12	 n 
+name              fil  lamda  time air/roll  x  y fwhm/U1   sky/bg/u2 sin group id GP
+w127_pipe_lc4.txt CH1   6000.0 1    0        2  1  0             1    0   0     1  y
 # -------- photometry GP input properties: komplex kernel -> several lines --------------
-name          para  kernel WN scale   s_step s_pri s_pri_wid s_up  s_lo  metric  m_step m_pri  m_pri_wid m_up m_lo
-w12_lc01p.dat air   mat32  y  6.5e-07 0.0010 -14.2  0.00e+00 -10.0 -25.0 1.4e+03 0.0010  7.27  0.00e+00 20.0 -10.0
-w12_lc03p.dat air   mat32  y  6.5e-07 0.0010 -14.2  0.00e+00 -10.0 -25.0 1.4e+03 0.0010  7.27  0.00e+00 20.0 -10.0
-w12_lc05p.dat air   mat32  y  6.5e-07 0.0010 -14.2  0.00e+00 -10.0 -25.0 1.4e+03 0.0010  7.27  0.00e+00 20.0 -10.0
-w12_lc07p.dat air   mat32  y  6.5e-07 0.0010 -14.2  0.00e+00 -10.0 -25.0 1.4e+03 0.0010  7.27  0.00e+00 20.0 -10.0
-w12_lc09p.dat air   mat32  y  6.5e-07 0.0010 -14.2  0.00e+00 -10.0 -25.0 1.4e+03 0.0010  7.27  0.00e+00 20.0 -10.0
-w12_lc11p.dat air   mat32  y  6.5e-07 0.0010 -14.2  0.00e+00 -10.0 -25.0 1.4e+03 0.0010  7.27  0.00e+00 20.0 -10.0
+name              para   kernel WN  scale  s_step  s_pri   s_pri_wid s_up s_lo metric m_step m_pri m_pri_wid m_up m_lo 
+w127_pipe_lc4.txt air    mat32   y  1.8e-8  0.001  -17.83  0.        -14  -25  2208   0.001  7.7      0.       20.   0
 # --------------------------------------------------------------
 # Input RV curves, baseline function, gamma
-name            time  bis  fwhm  contrast  gamma_kms  stepsize  prior  value  sig_lo  sig_hi
+name             time  bis fwhm  contrast gamma_kms  stepsize  prior value  sig_lo sig_hi
 #=========== jump parameters (Jump0value step lower_limit upper_limit priors) ======================
-name        	fit	start_val	stepsize	low_lim	up_lim	prior	value	sig_lo	sig_hi
-RpRs        	n  	 0.12640	0.0000000	0.00	1.00	n	0.12640	0.0e+00	0.0e+00 
-Impact_para 	n  	 0.35100	0.0000000	0.00	1.00	n	0.35100	0.0e+00	0.0e+00 
-Duration    	n  	 0.12483	0.0000000	0.00	1.00	n	0.12483	0.0e+00	0.0e+00 
-T_0         	y  	6305.45538	0.0000026	0.00	10000.00	p	6305.45538	2.6e-05	2.6e-05 
-Period      	n  	 1.09142	0.0000000	0.00	10000.00	n	1.09142	0.0e+00	0.0e+00 
-Eccentricity	n  	 0.00000	0.0000000	0.00	1.00	n	0.00000	0.0e+00	0.0e+00 
-Omega       	n  	90.00000	0.0000000	0.00	360.00	n	90.00000	0.0e+00	0.0e+00 
-K           	n  	 0.00000	0.0000000	0.00	10000.00	n	0.00000	0.0e+00	0.0e+00 
+name          fit  start_val   stepsize  low_lim up_lim  prior  value       sig_lo    sig_hi
+RpRs          n     0.10104      0.000    0       1       n     0.10104     0.0002    0.0002
+Impact_para   n     0.29         0.00     0       1       n     0.29        0.009     0.012
+Duration      n     0.18137      0.000    0       1       n     0.18056667  0.000225  0.000241
+T_0           y     808.60255046   0.00001  0     10000   p    808.60255046  0.00031   0.00031
+Period        n     4.17806203   0.000000 0       100     n     4.17806203  0.000001  0.000001
+Eccentricity  n     0.0          0.0      0       1       n     0.0         0.0       0.0
+Omega         n     90.0         0.0      0       360     n     0.0         0.0       0.0
+K       n     226.4        0.0      0       50000   n     182.0       13         13
 #=========== ddF setup ==============================================================================
-Fit_ddFs  step	 low_lim   up_lim   prior   sig_lo   sig_hi   div_white
-n         0.001	 -1.0000   1.0000   n       0.00000   0.00000   n  
-group_ID   RpRs_0   err		dwfile
-     1	   0.1264   0.00e+00   dw_001.dat
-     2	   0.1264   0.00e+00   dw_002.dat
-     3	   0.1264   0.00e+00   dw_003.dat
-     4	   0.1264   0.00e+00   dw_004.dat
-     5	   0.1264   0.00e+00   dw_005.dat
-     6	   0.1264   0.00e+00   dw_006.dat
-     7	   0.1264   0.00e+00   dw_007.dat
-     8	   0.1264   0.00e+00   dw_008.dat
-     9	   0.1264   0.00e+00   dw_009.dat
-    10	   0.1264   0.00e+00   dw_0010.dat
-    11	   0.1264   0.00e+00   dw_0011.dat
-    12	   0.1264   0.00e+00   dw_0012.dat
-#=========== occultation setup =============================================================================
-filters	fit	start_val	stepsize	low_lim	up_lim	prior	value	sig_lo	sig_hi
-CH     	y  	0.00030000	0.0000100	0.000	0.001	n    	0.000	0.000	0.000 
-CH2    	y  	0.00030000	0.0000100	0.000	0.001	n    	0.000	0.000	0.000 
-CH3    	y  	0.00030000	0.0000100	0.000	0.001	n    	0.000	0.000	0.000 
+Fit_ddFs   step     low_lim up_lim  prior   sig_lo   sig_hi  div_white
+n          0.001    -1      1        n       0.0      0.0    n
+group_ID  RpRs_0       err     dwfile
+1         0.1264        0.00    lc_bin000_dw.dat
+#=========== occultation setup ==============================================================================
+# filter fit start_val stepsize low_lim up_lim prior value sig_lo sigh_hi
+CH1     y   0.000010  0.00001  0.0000    500e-6      n     0.    0.     0.
 #=========== Limb darkending setup ===================================================================
-filters priors	c_1  step1  low_lim1  up_lim1	c_2  step2 low_lim2 up_lim2        	c_3  step3 low_lim3 up_lim3	c_4  step4 low_lim4 up_lim4
-CH      n     	0.000 0.000  0.0000  0.0000	0.000 0.000  0.0000  0.0000        	0.000 0.000  0.0000  0.0000	0.000 0.000  0.0000  0.0000
-CH2     n     	0.000 0.000  0.0000  0.0000	0.000 0.000  0.0000  0.0000        	0.000 0.000  0.0000  0.0000	0.000 0.000  0.0000  0.0000
-CH3     n     	0.000 0.000  0.0000  0.0000	0.000 0.000  0.0000  0.0000        	0.000 0.000  0.0000  0.0000	0.000 0.000  0.0000  0.0000
+# filter priors c_1 step low up c_2   step low  up  c_3 step low up  c_4  step low up 
+CH         n  0.   0.  0.   0.  0. 0.    0.   0.   0.  0   0.   0.  0   0    0.   0.
 #=========== contamination setup === give contamination as flux ratio ================================
-filters	contam	err
-CH     	0.0000	0.0000
-CH2    	0.0000	0.0000
-CH3    	0.0000	0.0000
+# filter  contamination  err  
+CH  0.0 0.0
 #=========== Stellar input properties ================================================================
 # parameter    value  sig_lo  sig_hi
-Radius_[Rsun]  2.362  0.030  0.030
-Mass_[Msun]    2.030  0.066  0.066
-Stellar_para_input_method:_R+rho_(Rrho),_M+rho_(Mrho),_M+R_(MR): MR
+Radius_[Rsun]  2.362   0.03     0.03   #  from WG-TS3
+Mass_[Msun]    2.030   0.066    0.066  #  from WG-TS3
+Stellar_para_input_method:_R+rho_(Rrho),_M+rho_(Mrho),_M+R_(MR):        MR
 #=========== MCMC setup ==============================================================================
 Total_no_steps           64000
 Number_chains            64
 Number_of_processes      2
 Burnin_length            500
-Walk_(snooker/demc/mrw)  None
+Walk_(snooker/demc/mrw)  demc
 GR_test_(y/n)            y
 Make_plots_(y/n)         n
 leastsq_(y/n)            y
@@ -90,3 +57,4 @@ leastsq_for_basepar      n
 lssq_use_Lev-Marq        n
 apply_CFs                y
 apply_jitter             y
+
