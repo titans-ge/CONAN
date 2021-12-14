@@ -25,16 +25,17 @@ from george.modeling import Model
 from george import kernels
 import corner
 from .gpnew import *
-from ._classes import _raise
+from ._classes import _raise, mcmc_setup
 
 __all__ = ["fit_data"]
 
-def fit_data(lc, rv, conf, statistic = "median", verbose=False, debug=False):
+def fit_data(lc, rv=None, mcmc=None, statistic = "median",
+ verbose=False, debug=False):
     """
-    function to fit the data using the light-curve object lc, rv_object rv and configuration object conf.
+    function to fit the data using the light-curve object lc, rv_object rv and mcmc setup object mcmc.
     """
     # matplotlib.use('Agg') 
-#begining loading data from the 3 objects and calling the methods
+#begin loading data from the 3 objects and calling the methods
 
 
 #============lc_data=========================
@@ -55,7 +56,8 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False, debug=False):
     
     nfilt      = len(filnames)
     ngroup     = len(grnames)
-    
+
+
 #============GP Setup=============================
     #from load_lightcurves.add_GP()
     GPphotlc = []
@@ -152,6 +154,7 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False, debug=False):
                 GPphotlim2lo.append(d_GPphotlim2lo)
             
             prev_lcname = nm
+
 
 #============rv_data========================== 
     # from load_rvs
@@ -374,6 +377,7 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False, debug=False):
                 c2_in[j,5]=np.copy(lov2)
                 c2_in[j,6]=np.copy(hiv2)
 
+
 #============contamination factors=======================
     #from load_lightcurves.contamination
     DA_cont = lc._contfact_dict
@@ -385,9 +389,9 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False, debug=False):
         cont[j,:]= [DA_cont["cont_ratio"][i], DA_cont["err"][i]]
 
 
- #========= stellar properties==========================
+#========= stellar properties==========================
     #from setup_fit.stellar_parameters()
-    DA_stlr = conf._stellar_dict
+    DA_stlr = lc._stellar_dict
     
     Rs_in  = DA_stlr["R_st"][0]
     sRs_lo = DA_stlr["R_st"][1]
@@ -399,9 +403,11 @@ def fit_data(lc, rv, conf, statistic = "median", verbose=False, debug=False):
 
     howstellar = DA_stlr["par_input"]
 
- #=============mcmc setup===============
+
+#=============mcmc setup===============
     #from setup_fit.mcmc()
-    DA_mc =  conf._mcmc_dict
+    if mcmc is None: mcmc = mcmc_setup()
+    DA_mc =  mcmc._mcmc_dict
 
     nsamples    = int(DA_mc['n_steps']*DA_mc['n_chains'])   # total number of integrations
     nchains     = int(DA_mc['n_chains'])  #  number of chains

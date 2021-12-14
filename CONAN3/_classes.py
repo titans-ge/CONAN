@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import os
 import matplotlib
 
-__all__ = ["load_lightcurves", "load_rvs", "fit_setup"]
+__all__ = ["load_lightcurves", "load_rvs", "setup_fit"]
 
 #helper functions
 def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None):
@@ -97,7 +97,7 @@ class _param_obj():
     def _get_list(self):
         return [p for p in self.__dict__.values()]
 
-
+#========================================================================
 class load_lightcurves:
     """
         lightcurve object to hold lightcurves for analysis
@@ -127,7 +127,7 @@ class load_lightcurves:
     """
     def __init__(self, file_list, data_filepath=None, filters=None, lamdas=None, verbose=True, show_guide=False):
         self._fpath = os.getcwd() if data_filepath is None else data_filepath
-        self._names   = [file_list] if isinstance(file_list, str) else file_list
+        self._names = [file_list] if isinstance(file_list, str) else file_list
         for lc in self._names: assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
         
         assert filters is None or isinstance(filters, (list, str)), \
@@ -153,8 +153,9 @@ class load_lightcurves:
             print(f"Order of unique filters: {list(self._filnames)}")
 
         self._show_guide = show_guide
+        self.lc_baseline(verbose=False)
 
-        if show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc")
+        if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc")
 
     def lc_baseline(self, dt=None,  dx=None, dy=None, dphi=None, dconta=None, 
                  dsky=None, dsin=None, grp=None, grp_id=None, gp="n", verbose=True):
@@ -185,7 +186,7 @@ class load_lightcurves:
         dict_args = locals().copy()     #get a dictionary of the input arguments for easy manipulation
         _ = dict_args.pop("self")            #remove self from dictionary
         _ = dict_args.pop("verbose")
-        # print(dict_args)    
+
         n_lc = len(self._names)
 
         for par in dict_args.keys():
@@ -207,14 +208,18 @@ class load_lightcurves:
         self._useGPphot= dict_args["gp"]
         self._gp_lcs = np.array(self._names)[np.array(self._useGPphot) == "y"]     #lcs with gp == "y"
 
-        if verbose:
-            print("#---------------------------------------------------")
-            print("# Input lightcurves filters baseline function")
-            print(f"{'name':15s}\t{'fil':3s}\t {'lamda':5s}\t {'time':4s}\t {'roll':3s}\t x\t y\t {'conta':5s}\t sky\t sin\t group\t id\t GP")
-            txtfmt = "{0:15s}\t{1:3s}\t{2:5.1f}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
-            for i in range(n_lc):
-                out_txt = txtfmt.format(self._names[i], self._filters[i], self._lamdas[i], *self._bases[i], self._groups[i], self._useGPphot[i])
-                print(out_txt)
+        #create lc_baseline print out variable
+        self._print_lc_baseline = f"""#---------------------------- # Input lightcurves filters baseline function-------------- \n{"name":15s}\t{"fil":3s}\t {"lamda":5s}\t {"time":4s}\t {"roll":3s}\t x\t y\t {"conta":5s}\t sky\t sin\t group\t id\t GP"""
+
+        #define print out format
+        txtfmt = "\n{0:15s}\t{1:3s}\t{2:5.1f}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
+        for i in range(n_lc):
+            t = txtfmt.format(self._names[i], self._filters[i], self._lamdas[i], *self._bases[i], self._groups[i], self._useGPphot[i])
+            
+            self._print_lc_baseline += t
+
+        
+        if verbose: print(self._print_lc_baseline)
 
         if np.all(np.array(self._useGPphot) == "n"):        #if gp is "n" for all input lightcurves, run add_GP with None
             self.add_GP(None, verbose=verbose)
@@ -228,6 +233,7 @@ class load_lightcurves:
         self.setup_occultation(verbose=False)
         self.contamination_factors(verbose=False)
         self.limb_darkening(verbose=False)
+        self.stellar_parameters(verbose=False)
    
     def add_GP(self, lc_list=None, pars="time", kernels="mat32", WN="y", 
                log_scale=[(-25,-15.2,-5)], s_step=0.001,
@@ -262,8 +268,7 @@ class load_lightcurves:
                
             s_step, m_step : list of floats;
                 step sizes of the scale and metric parameter of the GP kernel.
-  
-                
+        
         """
         assert isinstance(log_scale, (tuple,list)), f"log_scale must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
         assert isinstance(log_metric, (tuple,list)), f"log_metric must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
@@ -309,21 +314,20 @@ class load_lightcurves:
             else: _raise(TypeError, f"tuple of len 2 or 3 was expected but got the value {m} in log_metric.")
 
 
-        dict_args = locals().copy()
-        _ = dict_args.pop("self")            #remove self from dictionary
-        _ = dict_args.pop("verbose")
-        _ = [dict_args.pop(item) for item in ["log_metric", "log_scale","m","s"]]
+        DA = locals().copy()
+        _ = DA.pop("self")            #remove self from dictionary
+        _ = DA.pop("verbose")
+        _ = [DA.pop(item) for item in ["log_metric", "log_scale","m","s"]]
         
-        if verbose:
-            print("# -------- photometry GP input properties: komplex kernel -> several lines --------------")
-            print(f"{'name':13s} {'para':5s} kernel WN {'scale':7s} s_step {'s_pri':5s} s_pri_wid {'s_up':5s} {'s_lo':5s} {'metric':7s} m_step {'m_pri':6s} m_pri_wid {'m_up':4s} {'m_lo':4s}")
-            txtfmt = "{0:13s} {1:5s} {2:6s} {3:2s} {4:5.1e} {5:6.4f} {6:5.1f} {7:9.2e} {8:4.1f} {9:4.1f} {10:5.1e} {11:6.4f} {12:5.2f} {13:9.2e} {14:4.1f} {15:4.1f}"
 
-        # gp_lcs = np.array(self._names)[np.array(self._useGPphot) == "y"]
+        #create gp print variable
+        self._print_gp = f"""# -------- photometry GP input properties: komplex kernel -> several lines -------------- \n{'name':13s} {'para':5s} kernel WN {'scale':7s} s_step {'s_pri':5s} s_pri_wid {'s_up':5s} {'s_lo':5s} {'metric':7s} m_step {'m_pri':6s} m_pri_wid {'m_up':4s} {'m_lo':4s}"""
+
 
         if lc_list is None: 
             self._GP_dict = {"lc_list":[]}
             if len(self._gp_lcs)>0: print(f"\nWarning: GP was expected for the following lcs {self._gp_lcs} \nMoving on ...")
+            if verbose: print(self._print_gp)
             return 
         elif isinstance(lc_list, str): lc_list = [lc_list]
 
@@ -337,38 +341,38 @@ class load_lightcurves:
         n_list = len(lc_list)
         
         #transform        
-        for key in dict_args.keys():
-            if (isinstance(dict_args[key],list) and len(dict_args[key])==1): 
-                dict_args[key]= dict_args[key]*n_list
-            if isinstance(dict_args[key], list):
-                assert len(dict_args[key]) == n_list, f"{key} must have same length as lc_list"
-            if isinstance(dict_args[key],(float,int,str)):  
-                dict_args[key] = [dict_args[key]]*n_list
+        for key in DA.keys():
+            if (isinstance(DA[key],list) and len(DA[key])==1): 
+                DA[key]= DA[key]*n_list
+            if isinstance(DA[key], list):
+                assert len(DA[key]) == n_list, f"{key} must have same length as lc_list"
+            if isinstance(DA[key],(float,int,str)):  
+                DA[key] = [DA[key]]*n_list
                 
         
-        for p in dict_args["pars"]: 
+        for p in DA["pars"]: 
             assert p in ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"], \
                 f"pars {p} cannot be the GP independent variable"             
         
         
-        assert len(dict_args["pars"]) == len(dict_args["kernels"]) == len(dict_args["WN"]) == n_list, f"pars and kernels must have same length as lc_list (={len(lc_list)})"
+        assert len(DA["pars"]) == len(DA["kernels"]) == len(DA["WN"]) == n_list, f"pars and kernels must have same length as lc_list (={len(lc_list)})"
                                             
-        self._GP_dict = dict_args
+        self._GP_dict = DA     #save dict of gp pars in lc object
 
-        if verbose:
-            ff = self._GP_dict
-        
-            for i in range(n_list):
-                out_txt = txtfmt.format(ff["lc_list"][i], ff["pars"][i], ff["kernels"][i], ff["WN"][i],
-                                        ff["scale"][i], ff["s_step"][i], ff["s_pri"][i],  ff["s_pri_wid"][i],
-                                        ff["s_up"][i],ff["s_lo"][i],ff["metric"][i],ff["m_step"][i],
-                                        ff["m_pri"][i], ff["m_pri_wid"][i],ff["m_up"][i],ff["m_lo"][i])
-                print(out_txt)
+        #define gp print out format
+        txtfmt = "\n{0:13s} {1:5s} {2:6s} {3:2s} {4:5.1e} {5:6.4f} {6:5.1f} {7:9.2e} {8:4.1f} {9:4.1f} {10:5.1e} {11:6.4f} {12:5.2f} {13:9.2e} {14:4.1f} {15:4.1f}"        
+        for i in range(n_list):
+            t = txtfmt.format(DA["lc_list"][i], DA["pars"][i],DA["kernels"][i],
+                                DA["WN"][i], DA["scale"][i], DA["s_step"][i], 
+                                DA["s_pri"][i], DA["s_pri_wid"][i], DA["s_up"][i],DA["s_lo"][i],DA["metric"][i],DA["m_step"][i], DA["m_pri"][i], DA["m_pri_wid"][i],DA["m_up"][i],DA["m_lo"][i])
+            self._print_gp += t
 
-            if self._show_guide: print("\nNext: use method `setup_transit_rv` to configure transit parameters.")
+        if verbose: print(self._print_gp)
+
+        if self._show_guide: print("\nNext: use method `setup_transit_rv` to configure transit parameters.")
 
     def setup_transit_rv(self, RpRs=0.1, Impact_para=0, Duration=0.1245, T_0=0, Period=3, 
-                 Eccentricity=0, Omega=90, K=0, verbose=True):
+                 Eccentricity=0, omega=90, K=0, verbose=True):
         """
             Define parameters an priors of model parameters.
             By default, the parameters are fixed to the given values. To fit a parameter use the `to_fit` method to change it from 'n' to 'y'.
@@ -388,7 +392,7 @@ class load_lightcurves:
 
         for par in DA.keys():
             if par in ["RpRs","Impact_para","Duration", "Eccentricity"]: up_lim = 1
-            elif par == "Omega": up_lim = 360
+            elif par == "omega": up_lim = 360
             else: up_lim = 10000
 
             #fitting parameter
@@ -413,21 +417,25 @@ class load_lightcurves:
         self._config_par = DA      #add to object
         self._items = DA["RpRs"].__dict__.keys()
         
-        
-        if verbose:
-            print("#=========== jump parameters (Jump0value step lower_limit upper_limit priors) ======================")
-            print(f"{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\tvalue\tsig_lo\tsig_hi")
-            txtfmt = "{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6}\t{7:.5f}\t{8:4.1e}\t{9:4.1e} "
-            for i,p in enumerate(self._parnames):
-                out_txt = txtfmt.format(p, DA[p].to_fit, DA[p].start_value, DA[p].step_size,
-                                        DA[p].bounds_lo, DA[p].bounds_hi, DA[p].prior, DA[p].prior_mean,
-                                        DA[p].prior_width_lo, DA[p].prior_width_hi)
-                print(out_txt)
 
-            if self._show_guide: print("\nNext: use method `transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_occultation` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
+        #create transit_rv print out variable
+        self._print_transit_rv_pars = f"""#=========== jump parameters (Jump0value step lower_limit upper_limit priors) ====================== \n{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\tvalue\tsig_lo\tsig_hi"""
+
+        #define print out format
+        txtfmt = "\n{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6}\t{7:.5f}\t{8:4.1e}\t{9:4.1e} "        
+        for i,p in enumerate(self._parnames):
+            t = txtfmt.format(  p, DA[p].to_fit, DA[p].start_value,
+                                DA[p].step_size, DA[p].bounds_lo, 
+                                DA[p].bounds_hi, DA[p].prior, DA[p].prior_mean,
+                                DA[p].prior_width_lo, DA[p].prior_width_hi)
+            self._print_transit_rv_pars += t
 
         
-    
+        if verbose: print(self._print_transit_rv_pars)
+
+
+
+        if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_occultation` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
 
     def transit_depth_variation(self, transit_depth_per_group=[(0.1,0.0001)], divwhite="n",
                         ddFs="n", step=0.001, bounds=(-1,1), prior="n", prior_width=(0,0),
@@ -464,9 +472,7 @@ class load_lightcurves:
 
             verbose: bool;
                 print output
-                
-
-            
+                  
         """
         
         self._ddfs= SimpleNamespace()
@@ -519,19 +525,28 @@ class load_lightcurves:
             print('no ddFs but groups? Not a good idea!')
             print(base)
             
-        if verbose:
-            print("#=========== ddF setup ==============================================================================")
-            print("Fit_ddFs  step\t low_lim   up_lim   prior   sig_lo   sig_hi   div_white")
-            txtfmt = "{0:8s}  {1:.3f}\t {2:.4f}   {3:.4f}   {4:5s}   {5:.5f}   {6:.5f}   {7:3s}"
-            out_txt = txtfmt.format(self._ddfs.ddfYN,*self._ddfs.drprs_op[1:4],self._ddfs.prior,
-                                    self._ddfs.prior_width_lo,self._ddfs.prior_width_hi,self._ddfs.divwhite)
-            print(out_txt)
-            print("group_ID   RpRs_0   err\t\tdwfile")
-            txtfmt = "{0:6d}\t   {1:.4f}   {2:.2e}   {3}"
-            for i in range(ngroup):
-                out_txt = txtfmt.format( grnames[i] , self._ddfs.depth_per_group[i], self._ddfs.depth_err_per_group[i],
-                                      f"dw_00{grnames[i]}.dat" )
-                print(out_txt)
+
+        #create depth_variation print out variable
+        self._print_depth_variation = f"""#=========== ddF setup ============================================================================== \nFit_ddFs  step\t low_lim   up_lim   prior   sig_lo   sig_hi   div_white"""
+
+        #define print out format
+        txtfmt = "\n{0:8s}  {1:.3f}\t {2:.4f}   {3:.4f}   {4:5s}   {5:.5f}   {6:.5f}   {7:3s}"        
+        t = txtfmt.format(self._ddfs.ddfYN,*self._ddfs.drprs_op[1:4],
+                            self._ddfs.prior, self._ddfs.prior_width_lo,
+                            self._ddfs.prior_width_hi,self._ddfs.divwhite)
+        self._print_depth_variation += t
+
+        self._print_depth_variation += "\ngroup_ID   RpRs_0   err\t\tdwfile"
+        
+        txtfmt = "\n{0:6d}\t   {1:.4f}   {2:.2e}   {3}"
+        for i in range(ngroup):
+            t2 = txtfmt.format( grnames[i] , self._ddfs.depth_per_group[i],
+                                self._ddfs.depth_err_per_group[i],f"dw_00{grnames[i]}.dat")
+            self._print_depth_variation += t2
+
+        
+        if verbose: print(self._print_depth_variation)
+
                 
     def setup_occultation(self, filters_occ=None, start_depth=[(0,500e-6,1000e-6)], step_size=0.00001,verbose=True):
         """
@@ -634,15 +649,22 @@ class load_lightcurves:
 
         self._occ_dict =  DA = DA2
 
-        if verbose:
-            print("#=========== occultation setup =============================================================================")
-            print(f"{'filters':7s}\tfit start_val\tstepsize  low_lim  up_lim  prior  {'value':9s}  {'sig_lo':7s}\t{'sig_hi':7s}")
-            txtfmt = "{0:7s}\t{1:3s} {2:.8f}\t{3:.7f}  {4:7.3f}  {5:6.3f}  {6:5s}  {7:4.3e}  {8:4.2e}\t{9:4.2e} "
-            for i in range(nfilt):
-                out_txt = txtfmt.format(DA["filters_occ"][i], DA["filt_to_fit"][i], DA["start_value"][i],DA["step_size"][i],
-                                        DA["bounds_lo"][i],DA["bounds_hi"][i], DA["prior"][i], DA["prior_mean"][i],
-                                        DA["prior_width_lo"][i], DA["prior_width_hi"][i])
-                print(out_txt)
+
+        #create occultations print out variable
+        self._print_occulations = f"""=========== occultation setup ============================================================================= \n{'filters':7s}\tfit start_val\tstepsize  low_lim  up_lim  prior  {'value':9s}  {'sig_lo':7s}\t{'sig_hi':7s}"""
+
+        #define print out format
+        txtfmt = "\n{0:7s}\t{1:3s} {2:.8f}\t{3:.7f}  {4:7.3f}  {5:6.3f}  {6:5s}  {7:4.3e}  {8:4.2e}\t{9:4.2e} "       
+        for i in range(nfilt):
+            t = txtfmt.format(  DA["filters_occ"][i], DA["filt_to_fit"][i],
+                                DA["start_value"][i], DA["step_size"][i],
+                                DA["bounds_lo"][i],DA["bounds_hi"][i], 
+                                DA["prior"][i], DA["prior_mean"][i],
+                                DA["prior_width_lo"][i], DA["prior_width_hi"][i])
+            self._print_occulations += t
+
+        
+        if verbose: print(self._print_occulations)
 
 
     def limb_darkening(self, priors="n",
@@ -697,18 +719,22 @@ class load_lightcurves:
 
 
         self._ld_dict = DA
-        if verbose:
-            print("#=========== Limb darkending setup ===================================================================")
-            print(f"{'filters':7s} priors\t{'c_1':4s} {'step1':5s}  low_lim1  up_lim1\t{'c_2':4s} {'step2':5s} low_lim2 up_lim2")
-            txtfmt = "{0:7s} {1:6s}\t{2:4.3f} {3:5.3f} {4:7.4f} {5:7.4f}\t{6:4.3f} {7:5.3f} {8:7.4f} {9:7.4f}"
-            
-            for i in range(nfilt):
-                out_txt = txtfmt.format(self._filnames[i],DA["priors"][i], 
-                                        DA["c1"][i], DA["step1"][i], DA["bound_lo1"][i], DA["bound_hi1"][i],
-                                        DA["c2"][i], DA["step2"][i], DA["bound_lo2"][i], DA["bound_hi2"][i])
-                print(out_txt)
 
-         
+
+        #create limb_darkening print out variable
+        self._print_limb_darkening = f"""#=========== Limb darkending setup ===================================================================\n{'filters':7s} priors\t{'c_1':4s} {'step1':5s}  low_lim1  up_lim1\t{'c_2':4s} {'step2':5s} low_lim2 up_lim2"""
+
+        #define print out format
+        txtfmt = "\n{0:7s} {1:6s}\t{2:4.3f} {3:5.3f} {4:7.4f} {5:7.4f}\t{6:4.3f} {7:5.3f} {8:7.4f} {9:7.4f}"       
+        for i in range(nfilt):
+            t = txtfmt.format(self._filnames[i],DA["priors"][i], 
+                            DA["c1"][i], DA["step1"][i], DA["bound_lo1"][i], 
+                            DA["bound_hi1"][i], DA["c2"][i], DA["step2"][i], 
+                            DA["bound_lo2"][i], DA["bound_hi2"][i])
+            self._print_limb_darkening += t
+        
+        if verbose: print(self._print_limb_darkening)
+
 
     def contamination_factors(self, cont_ratio=0, err = 0, verbose=True):
         """
@@ -738,19 +764,75 @@ class load_lightcurves:
 
         self._contfact_dict = DA
 
-        if verbose:
-            print("#=========== contamination setup === give contamination as flux ratio ================================")
-            print(f"{'filters':7s}\tcontam\terr")
-            txtfmt = "{0:7s}\t{1:.4f}\t{2:.4f}"
-        
-            for i in range(nfilt):
-                out_txt = txtfmt.format(self._filnames[i],DA["cont_ratio"][i], DA["err"][i])
-                print(out_txt)
+        #create contamination print out variable
+        self._print_contamination = f"""#=========== contamination setup === give contamination as flux ratio ================================\n{'filters':7s}\tcontam\terr"""
 
+        #define print out format
+        txtfmt = "\n{0:7s}\t{1:.4f}\t{2:.4f}"       
+        for i in range(nfilt):
+            t = txtfmt.format(self._filnames[i],DA["cont_ratio"][i], 
+                                DA["err"][i])
+            self._print_contamination += t
+        
+        if verbose: print(self._print_contamination)
+
+    def stellar_parameters(self,R_st=None, M_st=None, par_input = "MR", verbose=True):
+        """
+            input parameters of the star
+
+            Parameters:
+            -----------
+
+            R_st, Mst : tuple of length 2 or 3;
+                stellar radius and mass (in solar units) to use for calculating absolute dimensions.
+                First tuple element is the value and the second is the uncertainty. use a third element if asymmetric uncertainty
+            
+            par_input : str;
+                input method of stellar parameters. It can be "Rrho","Mrho" or "MR", to use the combination of 2 stellar params to get the third.
+
+        """
+
+
+        DA = _reversed_dict(locals().copy())
+        _ = DA.pop("self")            #remove self from dictionary
+        _ = DA.pop("verbose")
+        
+        for par in ["R_st", "M_st"]:
+            assert DA[par] is None or isinstance(DA[par],tuple), f"{par} must be either None or tuple of length 2 or 3 "
+            if DA[par] is None: DA[par] = (1,0.01)
+            if isinstance(DA[par],tuple):
+                assert len(DA[par])==2 or len(DA[par]) <=3, f"length of {par} tuple must be 2 or 3 "
+                if len(DA[par])== 2: DA[par]= (DA[par][0], DA[par][1], DA[par][1])
+        
+        assert DA["par_input"] in ["Rrho","Mrho", "MR"], f"par_input must be one of 'Rrho','Mrho' or 'MR'. "
+            
+        self._stellar_dict = DA
+
+        #create stellar_pars print out variable
+        self._print_stellar_pars = f"""#=========== Stellar input properties ================================================================\n{'# parameter':13s}  value  sig_lo  sig_hi \n{'Radius_[Rsun]':13s}  {DA['R_st'][0]:.3f}  {DA['R_st'][1]:.3f}  {DA['R_st'][2]:.3f} \n{'Mass_[Msun]':13s}  {DA['M_st'][0]:.3f}  {DA['M_st'][1]:.3f}  {DA['M_st'][2]:.3f}\nStellar_para_input_method:_R+rho_(Rrho),_M+rho_(Mrho),_M+R_(MR): {DA['par_input']}"""
+
+        if verbose: print(self._print_stellar_pars)           
+    
     def __repr__(self):
         data_type = str(self.__class__).split("load_")[1].split("'>")[0]
         return f'Object containing {len(self._names)} {data_type}\nFiles:{self._names}\nFilepath: {self._fpath}'
+
+    
+    def print(self):
+        """
+            Print out all input configuration for the light curve object. It is printed out in the format of the legacy config file.
         
+        """
+        print(self._print_lc_baseline)
+        print(self._print_gp)
+        print(self._print_transit_rv_pars)
+        print(self._print_depth_variation)
+        print(self._print_occulations)
+        print(self._print_limb_darkening)
+        print(self._print_contamination)
+        print(self._print_stellar_pars)
+
+
     def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, return_fig=False):
         """
             visualize data
@@ -840,15 +922,13 @@ class load_rvs:
                 specify if to fit for gamma. if float/int, it is fixed to this value. If tuple of len 2 it is fitted gaussian prior as (prior_mean, width). 
         """
 
-        if verbose:
-            print("# --------------------------------------------------------------")
-            print("# Input RV curves, baseline function, gamma")
-            print(f"{'name':13s}   time  bis  fwhm  contrast  gamma_kms  stepsize  prior  value  sig_lo  sig_hi")
-            txtfmt = "{0:13s}   {1:4d}  {2:3d}  {3:4d}  {4:8d}  {5:9.4f}  {6:8.4f}  {7:5s}  {8:6.4f}  {9:6.4f}  {10:6.4f}" 
+        #create gp print variable
+        self._print_rv_baseline = f"""# ------------------------------------------------------------\n# Input RV curves, baseline function, gamma  \n{'name':13s}   time  bis  fwhm  contrast  gamma_kms  stepsize  prior  value  sig_lo  sig_hi"""
 
         # assert self._names != [], "No rv files given"
         # assert 
         if self._names == []: 
+            if verbose: print(self._print_rv_baseline)  
             return 
         
         if isinstance(gammas_kms, list): assert len(gammas_kms) == self._nRV, f"gammas_kms must be type tuple/int or list of tuples/floats/ints of len {self._nRV}."
@@ -906,18 +986,20 @@ class load_rvs:
         self._sinPs = dict_args["sinPs"]
         
         
-        if verbose:
-            for i in range(self._nRV):
-                out_txt = txtfmt.format(self._names[i], *self._RVbases[i], self._gammas[i], self._gamsteps[i],
-                                       self._prior[i], self._gampri[i], self._siglo[i], self._sighi[i])
-                print(out_txt)
-    
+        #define gp print out format
+        txtfmt = "\n{0:13s}   {1:4d}  {2:3d}  {3:4d}  {4:8d}  {5:9.4f}  {6:8.4f}  {7:5s}  {8:6.4f}  {9:6.4f}  {10:6.4f}"         
+        for i in range(self._nRV):
+            t = txtfmt.format(self._names[i],*self._RVbases[i],self._gammas[i], 
+                            self._gamsteps[i], self._prior[i], self._gampri[i],
+                            self._siglo[i], self._sighi[i])
+            self._print_rv_baseline += t
 
+        if verbose: print(self._print_rv_baseline)
+    
     def __repr__(self):
         data_type = str(self.__class__).split("load_")[1].split("'>")[0]
         return f'Object containing {len(self._names)} {data_type}\nFiles:{self._names}\nFilepath: {self._fpath}'
         
-
     def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, return_fig=False):
         """
             visualize data
@@ -958,115 +1040,14 @@ class load_rvs:
             if return_fig: return fig
         else: print("No data to plot")
     
+    def print(self):
+        print(self._print_rv_baseline)
     
-class setup_fit:
+class mcmc_setup:
     """
         class to setup fitting
     """
-    def __init__(self):
-        """
-            Define parameters of the signals to be fitted. configure the parameters using the `configure_parameters` method.
-            By default, the parameters are fixed the given values. To fit a parameter use the `to_fit` method to change it from 'n' to 'y'.
-            parameters can be defined in following ways:
-            
-            * fixed value as float or int, e.g Period = 3.4
-            * free parameter with gaussian prior given as ufloat, e.g. T_0 = ufloat(5678, 0.1)
-            * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. RpRs = (0,0.1,0.2) with 0.1 being the initial value.
-        
-        
-            DA = _reversed_dict(locals().copy() )         #dict of arguments (DA)
-            _ = DA.pop("self")                            #remove self from dictionary
-            _ = DA.pop("verbose")
-
-            self._parnames  = [n for n in DA.keys()]
-            self._npars = 8
-
-            for par in DA.keys():
-                if par in ["RpRs","Impact_para","Duration", "Eccentricity"]: up_lim = 1
-                elif par == "Omega": up_lim = 360
-                else: up_lim = 10000
-
-                if isinstance(DA[par], tuple):
-                    if len(DA[par]) == 2:
-                        DA[par] = _param_obj(["y", DA[par][0], 0.1*DA[par][1], "p", DA[par][0],
-                                    DA[par][1], DA[par][1], 0, up_lim])
-
-                    elif len(DA[par]) == 3: 
-                        DA[par] = _param_obj(["y", DA[par][1], 0.00001, "n", DA[par][1],
-                                        0, 0, DA[par][0], DA[par][2]])
-                    
-                    else: _raise(ValueError, f"length of tuple is {len(DA[par])} but it must be 2 or 3 such that it follows (lo_limit, start_value, up_limit).")
-
-                elif isinstance(DA[par], (int, float)):
-                    DA[par] = _param_obj(["n", DA[par], 0.00, "n", DA[par],
-                                        0,  0, 0, up_lim])
-
-                else: _raise(TypeError, f"{par} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par])}")
-
-            self._config_par = DA      #add to object
-            self._items = DA["RpRs"].__dict__.keys()
-            
-            
-            if verbose:
-                print(f"{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\tvalue\tsig_lo\tsig_hi")
-                txtfmt = "{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6}\t{7:.5f}\t{8:4.1e}\t{9:4.1e} "
-                for i,p in enumerate(self._parnames):
-                    out_txt = txtfmt.format(p, DA[p].to_fit, DA[p].start_value, DA[p].step_size,
-                                            DA[p].bounds_lo, DA[p].bounds_hi, DA[p].prior, DA[p].prior_mean,
-                                            DA[p].prior_width_lo, DA[p].prior_width_hi)
-                    print(out_txt)
-            
-        """
-        self.stellar_parameters(verbose=False)
-        self.mcmc_setup(verbose=False)
-    
-        
-    # def __repr__(self):
-    #     fit_flag = np.array([self._config_par[p].to_fit for p in self._parnames]) == "y"
-    #     return f"fit configuration for model parameters: {list(np.array(self._parnames)[fit_flag])}"
-
-    def stellar_parameters(self,R_st=None, M_st=None, par_input = "MR", verbose=True):
-        """
-            input parameters of the star
-
-            Parameters:
-            -----------
-
-            R_st, Mst : tuple of length 2 or 3;
-                stellar radius and mass (in solar units) to use for calculating absolute dimensions.
-                First tuple element is the value and the second is the uncertainty. use a third element if asymmetric uncertainty
-            
-            par_input : str;
-                input method of stellar parameters. It can be "Rrho","Mrho" or "MR", to use the combination of 2 stellar params to get the third.
-
-        """
-
-
-        DA = _reversed_dict(locals().copy())
-        _ = DA.pop("self")            #remove self from dictionary
-        _ = DA.pop("verbose")
-        
-        for par in ["R_st", "M_st"]:
-            assert DA[par] is None or isinstance(DA[par],tuple), f"{par} must be either None or tuple of length 2 or 3 "
-            if DA[par] is None: DA[par] = (1,0.01)
-            if isinstance(DA[par],tuple):
-                assert len(DA[par])==2 or len(DA[par]) <=3, f"length of {par} tuple must be 2 or 3 "
-                if len(DA[par])== 2: DA[par]= (DA[par][0], DA[par][1], DA[par][1])
-        
-        assert DA["par_input"] in ["Rrho","Mrho", "MR"], f"par_input must be one of 'Rrho','Mrho' or 'MR'. "
-            
-        self._stellar_dict = DA
-
-        if verbose:
-            print("#=========== Stellar input properties ================================================================")
-            print(f"{'# parameter':13s}  value  sig_lo  sig_hi")
-            print(f"{'Radius_[Rsun]':13s}  {DA['R_st'][0]:.3f}  {DA['R_st'][1]:.3f}  {DA['R_st'][2]:.3f}")
-            print(f"{'Mass_[Msun]':13s}  {DA['M_st'][0]:.3f}  {DA['M_st'][1]:.3f}  {DA['M_st'][2]:.3f}")
-            print(f"Stellar_para_input_method:_R+rho_(Rrho),_M+rho_(Mrho),_M+R_(MR): {DA['par_input']}")
-
-        
-
-    def mcmc_setup(self, n_chains=64, n_steps=2000, n_burn=500, n_cpus=2, sampler=None,
+    def __init__(self, n_chains=64, n_steps=2000, n_burn=500, n_cpus=2, sampler=None,
                          GR_test="y", make_plots="n", leastsq="y", savefile="output_ex1.npy",
                          savemodel="n", adapt_base_stepsize="y", remove_param_for_CNM="n",
                          leastsq_for_basepar="n", lssq_use_Lev_Marq="n", apply_CFs="y",apply_jitter="y",
@@ -1098,29 +1079,23 @@ class setup_fit:
 
         self._mcmc_dict = DA
 
-        if verbose:
-            print("#=========== MCMC setup ==============================================================================")
-            print(f"{'Total_no_steps':23s}  {DA['n_steps']*DA['n_chains']}")
-            print(f"{'Number_chains':23s}  {DA['n_chains']}")
-            print(f"{'Number_of_processes':23s}  {DA['n_cpus']}")    
-            print(f"{'Burnin_length':23s}  {DA['n_burn']}")          
-            print(f"{'Walk_(snooker/demc/mrw)':23s}  {DA['sampler']}")
-            print(f"{'GR_test_(y/n)':23s}  {DA['GR_test']}")          
-            print(f"{'Make_plots_(y/n)':23s}  {DA['make_plots']}")       
-            print(f"{'leastsq_(y/n)':23s}  {DA['leastsq']}")          
-            print(f"{'Savefile':23s}  {DA['savefile']}")  
-            print(f"{'Savemodel':23s}  {DA['savemodel']}")              
-            print(f"{'Adapt_base_stepsize':23s}  {DA['adapt_base_stepsize']}")    
-            print(f"{'Remove_param_for_CNM':23s}  {DA['remove_param_for_CNM']}")  
-            print(f"{'leastsq_for_basepar':23s}  {DA['leastsq_for_basepar']}")    
-            print(f"{'lssq_use_Lev-Marq':23s}  {DA['lssq_use_Lev_Marq']}")      
-            print(f"{'apply_CFs':23s}  {DA['apply_CFs']}")              
-            print(f"{'apply_jitter':23s}  {DA['apply_jitter']}")           
+        #create stellar_pars print out variable
+        self._print_mcmc_pars = f"""#=========== MCMC setup ==============================================================================\n{'Total_no_steps':23s}  {DA['n_steps']*DA['n_chains']} \n{'Number_chains':23s}  {DA['n_chains']} \n{'Number_of_processes':23s}  {DA['n_cpus']} \n{'Burnin_length':23s}  {DA['n_burn']} \n{'Walk_(snooker/demc/mrw)':23s}  {DA['sampler']} \n{'GR_test_(y/n)':23s}  {DA['GR_test']} \n{'Make_plots_(y/n)':23s}  {DA['make_plots']} \n{'leastsq_(y/n)':23s}  {DA['leastsq']} \n{'Savefile':23s}  {DA['savefile']} \n{'Savemodel':23s}  {DA['savemodel']} \n{'Adapt_base_stepsize':23s}  {DA['adapt_base_stepsize']} \n{'Remove_param_for_CNM':23s}  {DA['remove_param_for_CNM']} \n{'leastsq_for_basepar':23s}  {DA['leastsq_for_basepar']} \n{'lssq_use_Lev-Marq':23s}  {DA['lssq_use_Lev_Marq']} \n{'apply_CFs':23s}  {DA['apply_CFs']} \n{'apply_jitter':23s}  {DA['apply_jitter']}"""
+
+        if verbose: print(self._print_mcmc_pars)              
+            
+    def __repr__(self):
+        return f"mcmc setup: steps:{self._mcmc_dict['n_steps']} \nchains: {self._mcmc_dict['n_chains']}"
+
+    def print(self):
+        print(self._print_mcmc_pars)
+
+                   
 
 
-def create_configfile(lc, rv, fitter, filename="input_config.dat"):
+def create_configfile(lc, rv, mcmc, filename="input_config.dat"): 
     """
-        create configuration file that of lc, rv, amd fitter setup.
+        create configuration file that of lc, rv, amd mcmc setup.
         
         Parameters:
         -----------
@@ -1130,153 +1105,25 @@ def create_configfile(lc, rv, fitter, filename="input_config.dat"):
         rv : object, None;
             Instance of CONAN.load_rvs() object and its attributes.
         
-        fitter : object;
+        mcmc : object;
             Instance of CONAN.setup_fit() object and its attributes.
     """
     f = open(filename,"w")
     f.write("#=========== MCMC input file =======================\n")
     f.write("Path_of_input_lightcurves:\n")
-    f.write(lc._fpath)
-    #LC
-    f.write("\n#---------------------------------------------------\n")
-    f.write("# Input lightcurves filters baseline function\n")
+    f.write(lc._fpath+"\n")
 
-    f.write(f"{'name':13s}\t{'fil':3s}\t {'lamda':5s}\t {'time':4s}\t {'roll':3s}\t x\t y\t {'conta':5s}\t sky\t sin\t group\t id\t GP\n")
-    txtfmt = "{0:13s}\t{1:3s}\t{2:5.1f}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
-    for i in range(len(lc._names)):
-        out_txt = txtfmt.format(lc._names[i], lc._filters[i], lc._lamdas[i], *lc._bases[i], lc._groups[i], lc._useGPphot[i])
-        f.write(out_txt+"\n")
-    
-    #GP
-    f.write("# -------- photometry GP input properties: komplex kernel -> several lines --------------\n")
-    f.write(f"{'name':13s} {'para':5s} kernel WN {'scale':7s} s_step {'s_pri':5s} s_pri_wid {'s_up':5s} {'s_lo':5s} {'metric':7s} m_step {'m_pri':6s} m_pri_wid {'m_up':4s} {'m_lo':4s}\n")
-    txtfmt = "{0:13s} {1:5s} {2:6s} {3:2s} {4:5.1e} {5:6.4f} {6:5.1f} {7:9.2e} {8:4.1f} {9:4.1f} {10:5.1e} {11:6.4f} {12:5.2f} {13:9.2e} {14:4.1f} {15:4.1f}"
+    print(lc._print_lc_baseline,file=f)
+    print(lc._print_gp,file=f)
+    print(rv._print_rv_baseline, file=f)
+    print(lc._print_transit_rv_pars,file=f)
+    print(lc._print_depth_variation,file=f)
+    print(lc._print_occulations,file=f)
+    print(lc._print_limb_darkening,file=f)
+    print(lc._print_contamination,file=f)
+    print(lc._print_stellar_pars,file=f)
+    print(mcmc._print_mcmc_pars, file=f)
 
-
-    gp = lc._GP_dict    
-    for i in range(len(gp["lc_list"])):
-        out_txt = txtfmt.format(gp["lc_list"][i], gp["pars"][i], gp["kernels"][i], gp["WN"][i],
-                                gp["scale"][i], gp["s_step"][i], gp["s_pri"][i],  gp["s_pri_wid"][i],
-                                gp["s_up"][i],gp["s_lo"][i],gp["metric"][i],gp["m_step"][i],
-                                gp["m_pri"][i], gp["m_pri_wid"][i],gp["m_up"][i],gp["m_lo"][i])
-        f.write(out_txt+"\n")     
-
-    #RV
-    f.write("# --------------------------------------------------------------\n")
-    f.write("# Input RV curves, baseline function, gamma\n")
-    f.write(f"{'name':13s}   time  bis  fwhm  contrast  gamma_kms  stepsize  prior  value  sig_lo  sig_hi\n")
-    txtfmt = "{0:13s}   {1:4d}  {2:3d}  {3:4d}  {4:8d}  {5:9.4f}  {6:8.4f}  {7:5s}  {8:6.4f}  {9:6.4f}  {10:6.4f}"  
-
-    for i in range(len(rv._names)):
-        out_txt = txtfmt.format(rv._names[i], *rv._RVbases[i], rv._gammas[i], rv._gamsteps[i],
-                                    rv._prior[i], rv._gampri[i], rv._siglo[i], rv._sighi[i])
-        f.write(out_txt+"\n")
-
-    #jump parameters
-    f.write("#=========== jump parameters (Jump0value step lower_limit upper_limit priors) ======================\n")
-    f.write(f"{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\tvalue\tsig_lo\tsig_hi\n")
-    txtfmt = "{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6}\t{7:.5f}\t{8:4.1e}\t{9:4.1e} "
-
-
-    jps = lc._config_par
-
-    for i,p in enumerate(lc._parnames):
-        out_txt = txtfmt.format(p, jps[p].to_fit, jps[p].start_value, jps[p].step_size,
-                                jps[p].bounds_lo, jps[p].bounds_hi, jps[p].prior, jps[p].prior_mean,
-                                jps[p].prior_width_lo, jps[p].prior_width_hi)
-        f.write(out_txt+"\n")
-
-
-
-    #ddf
-    DF= lc._ddfs
-    f.write("#=========== ddF setup ==============================================================================\n")
-    f.write("Fit_ddFs  step\t low_lim   up_lim   prior   sig_lo   sig_hi   div_white\n")
-    txtfmt = "{0:8s}  {1:.3f}\t {2:.4f}   {3:.4f}   {4:5s}   {5:.5f}   {6:.5f}   {7:3s}"
-    out_txt = txtfmt.format(DF.ddfYN,*DF.drprs_op[1:4],DF.prior,
-                            DF.prior_width_lo,DF.prior_width_lo,DF.divwhite)
-    f.write(out_txt+"\n")
-    f.write("group_ID   RpRs_0   err\t\tdwfile\n")
-    txtfmt = "{0:6d}\t   {1:.4f}   {2:.2e}   {3}"
-
-    grnames    = np.array(list(sorted(set(lc._groups))))
-    for i in range(len(grnames)):
-        out_txt = txtfmt.format( grnames[i] , DF.depth_per_group[i], DF.depth_err_per_group[i],
-                                      f"dw_00{grnames[i]}.dat" )
-        f.write(out_txt+"\n")
-
-    #occ
-    f.write("#=========== occultation setup =============================================================================\n")
-    f.write(f"{'filters':7s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\tvalue\tsig_lo\tsig_hi\n")
-    txtfmt = "{0:7s}\t{1:3s}\t{2:.8f}\t{3:.7f}\t{4:.3f}\t{5:.3f}\t{6:5s}\t{7:.3f}\t{8:.3f}\t{9:.3f} "
-
-    occ = lc._occ_dict
-    for i in range(len(occ["filters_occ"])):
-        out_txt = txtfmt.format(occ["filters_occ"][i], occ["filt_to_fit"][i], occ["start_value"][i],occ["step_size"][i],
-                                occ["bounds_lo"][i],occ["bounds_hi"][i], occ["prior"][i], occ["prior_mean"][i],
-                                occ["prior_width_lo"][i], occ["prior_width_hi"][i])
-        f.write(out_txt+"\n")
-
-    #limb darkening
-    f.write("#=========== Limb darkending setup ===================================================================\n")
-    f.write(f"{'filters':7s} priors\t{'c_1':4s} {'step1':5s}  low_lim1  up_lim1\t{'c_2':4s} {'step2':5s} low_lim2 up_lim2\
-        \t{'c_3':4s} {'step3':5s} low_lim3 up_lim3\t{'c_4':4s} {'step4':5s} low_lim4 up_lim4\n")
-    txtfmt = "{0:7s} {1:6s}\t{2:4.3f} {3:5.3f} {4:7.4f} {5:7.4f}\t{6:4.3f} {7:5.3f} {8:7.4f} {9:7.4f}\
-        \t{6:4.3f} {7:5.3f} {8:7.4f} {9:7.4f}\t{6:4.3f} {7:5.3f} {8:7.4f} {9:7.4f}"
-
-    ld = lc._ld_dict
-    for i in range(len(lc._filnames)):
-        out_txt = txtfmt.format(lc._filnames[i],ld["priors"][i], 
-                                ld["c1"][i], ld["step1"][i], ld["bound_lo1"][i], ld["bound_hi1"][i],
-                                ld["c2"][i], ld["step2"][i], ld["bound_lo2"][i], ld["bound_hi2"][i],
-                                0.,0.,0.,0.,0.,0.,0.,0.)
-        f.write(out_txt+"\n")
-
-       
-    #contamination
-    f.write("#=========== contamination setup === give contamination as flux ratio ================================\n")
-    f.write(f"{'filters':7s}\tcontam\terr\n")
-    txtfmt = "{0:7s}\t{1:.4f}\t{2:.4f}"
-
-    cnt = lc._contfact_dict
-    for i in range(len(lc._filnames)):
-        out_txt = txtfmt.format(lc._filnames[i],cnt["cont_ratio"][i], cnt["err"][i])
-        f.write(out_txt+"\n")
-
-
-
-    #stellar input
-    f.write("#=========== Stellar input properties ================================================================\n")
-    f.write(f"{'# parameter':13s}  value  sig_lo  sig_hi\n")
-
-    stlr = fitter._stellar_dict
-    f.write(f"{'Radius_[Rsun]':13s}  {stlr['R_st'][0]:.3f}  {stlr['R_st'][1]:.3f}  {stlr['R_st'][2]:.3f}\n")
-    f.write(f"{'Mass_[Msun]':13s}  {stlr['M_st'][0]:.3f}  {stlr['M_st'][1]:.3f}  {stlr['M_st'][2]:.3f}\n")
-    f.write(f"Stellar_para_input_method:_R+rho_(Rrho),_M+rho_(Mrho),_M+R_(MR): {stlr['par_input']}\n")
-
-
-
-    #mcmc
-    f.write("#=========== MCMC setup ==============================================================================\n")
-
-    mc = fitter._mcmc_dict    
-    f.write(f"{'Total_no_steps':23s}  {mc['n_steps']*mc['n_chains']}\n")
-    f.write(f"{'Number_chains':23s}  {mc['n_chains']}\n")
-    f.write(f"{'Number_of_processes':23s}  {mc['n_cpus']}\n")    
-    f.write(f"{'Burnin_length':23s}  {mc['n_burn']}\n")          
-    f.write(f"{'Walk_(snooker/demc/mrw)':23s}  {mc['sampler']}\n")
-    f.write(f"{'GR_test_(y/n)':23s}  {mc['GR_test']}\n")          
-    f.write(f"{'Make_plots_(y/n)':23s}  {mc['make_plots']}\n")       
-    f.write(f"{'leastsq_(y/n)':23s}  {mc['leastsq']}\n")          
-    f.write(f"{'Savefile':23s}  {mc['savefile']}\n")  
-    f.write(f"{'Savemodel':23s}  {mc['savemodel']}\n")              
-    f.write(f"{'Adapt_base_stepsize':23s}  {mc['adapt_base_stepsize']}\n")    
-    f.write(f"{'Remove_param_for_CNM':23s}  {mc['remove_param_for_CNM']}\n")  
-    f.write(f"{'leastsq_for_basepar':23s}  {mc['leastsq_for_basepar']}\n")    
-    f.write(f"{'lssq_use_Lev-Marq':23s}  {mc['lssq_use_Lev_Marq']}\n")      
-    f.write(f"{'apply_CFs':23s}  {mc['apply_CFs']}\n")              
-    f.write(f"{'apply_jitter':23s}  {mc['apply_jitter']}\n")  
-     
     f.close()
 
 
@@ -1292,7 +1139,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
         rv_data: object;
             rv data object generated from `conan3.load_rvs`
             
-        fitter: object;
+        mcmc: object;
             fitting objected generated from `conan3.setup_fit`
     
     """
@@ -1302,7 +1149,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
     _skip_lines(_file,2)                       #remove 2 comment lines
 
 
-# ========== Lightcurve input ====================
+ # ========== Lightcurve input ====================
     _names=[]                    # array where the LC filenames are supposed to go
     _filters=[]                  # array where the filter names are supposed to go
     _lamdas=[]
@@ -1387,7 +1234,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
     _skip_lines(_file,2)
     dump=_file.readline()
 
-# ========== RV input ====================
+ # ========== RV input ====================
 
     RVnames=[]
     RVbases=[]
@@ -1421,7 +1268,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
     rv_data.rv_baseline(*np.array(RVbases).T, gammas_kms=gamm,
                         gam_steps=gamsteps,sinPs=None,verbose=verbose)  
     
-#========== transit and rv model paramters=====================
+ #========== transit and rv model paramters=====================
     dump=_file.readline()
     dump=_file.readline()
 
@@ -1439,6 +1286,8 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
         pr_width_lo= float(adump[8])
         pr_width_hi= float(adump[9])
 
+        if par_name == "K_[m/s]":  par_name = "K"
+
         if fit == "n" or step==0: model_par[par_name] = val
         else:
             model_par[par_name] = ( (lo_lim,val,up_lim) if prior =="n"  else (val,pr_width_lo)  ) #unform if prior is n else gaussian
@@ -1447,7 +1296,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
 
     lc_data.setup_transit_rv(**model_par,verbose=verbose)
 
-#========== depth variation=====================
+ #========== depth variation=====================
     dump=_file.readline()
     dump=_file.readline()
     adump=dump.split()   
@@ -1473,7 +1322,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
                                     ddf,step,bounds,prior,pr_width,
                                     verbose)
 
-#=========== occultation setup ===========================
+ #=========== occultation setup ===========================
     dump=_file.readline()
     dump=_file.readline()
 
@@ -1495,7 +1344,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
         
     lc_data.setup_occultation(filts, depths, step,verbose)
 
-#=========== Limb darkending setup ==================
+ #=========== Limb darkending setup ==================
     dump=_file.readline()
     dump=_file.readline()
 
@@ -1512,7 +1361,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
 
     lc_data.limb_darkening(priors,c1,step1,c2,step2,verbose )
 
-#=========== contamination setup === 
+ #=========== contamination setup === 
     dump=_file.readline()
     dump=_file.readline() 
 
@@ -1525,7 +1374,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
 
     lc_data.contamination_factors(cont,err,verbose)
 
-#=========== Stellar input properties ===========================
+ #=========== Stellar input properties ===========================
     dump=_file.readline()
     dump=_file.readline() 
     
@@ -1538,10 +1387,9 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
     adump=dump.split()
     howstellar = adump[1]
 
-    fitter=setup_fit()
-    fitter.stellar_parameters(Rst,Mst,howstellar,verbose)
+    lc_data.stellar_parameters(Rst,Mst,howstellar,verbose)
 
-#=========== MCMC setup ======================================
+ #=========== MCMC setup ======================================
     dump=_file.readline()
     dump=_file.readline()
 
@@ -1565,10 +1413,10 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
     adump=dump.split()
     walk=adump[1]            # Differential Evolution?          
  
-    fitter.mcmc_setup(nchains,ppchain,burnin,nproc,walk,verbose=verbose)
+    mcmc = mcmc_setup(nchains,ppchain,burnin,nproc,walk,verbose=verbose)
 
     _file.close()   
-    return lc_data,rv_data,fitter
+    return lc_data,rv_data,mcmc
 
 
 
