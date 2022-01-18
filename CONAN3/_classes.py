@@ -6,9 +6,12 @@ from types import SimpleNamespace
 import os
 import matplotlib
 
-__all__ = ["load_lightcurves", "load_rvs", "setup_fit"]
+__all__ = ["load_lightcurves", "load_rvs", "setup_fit", "__default_backend__"]
 
 #helper functions
+__default_backend__ = matplotlib.get_backend()
+matplotlib.use(__default_backend__)
+
 def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None):
     """
     Takes a data object (containing light-curves or RVs) and plots them.
@@ -125,7 +128,8 @@ class load_lightcurves:
         lc_data : light curve object
         
     """
-    def __init__(self, file_list, data_filepath=None, filters=None, lamdas=None, verbose=True, show_guide=False):
+    def __init__(self, file_list, data_filepath=None, filters=None, lamdas=None,
+                 verbose=True, show_guide=False):
         self._fpath = os.getcwd() if data_filepath is None else data_filepath
         self._names = [file_list] if isinstance(file_list, str) else file_list
         for lc in self._names: assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
@@ -157,7 +161,7 @@ class load_lightcurves:
 
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc")
 
-    def lc_baseline(self, dt=None,  dx=None, dy=None, dphi=None, dconta=None, 
+    def lc_baseline(self, dt=None,  dphi=None, dx=None, dy=None, dconta=None, 
                  dsky=None, dsin=None, grp=None, grp_id=None, gp="n", verbose=True):
         """
             Define lightcurve baseline model parameters to fit.
@@ -209,7 +213,7 @@ class load_lightcurves:
         self._gp_lcs = np.array(self._names)[np.array(self._useGPphot) == "y"]     #lcs with gp == "y"
 
         #create lc_baseline print out variable
-        self._print_lc_baseline = f"""#---------------------------- # Input lightcurves filters baseline function-------------- \n{"name":15s}\t{"fil":3s}\t {"lamda":5s}\t {"time":4s}\t {"roll":3s}\t x\t y\t {"conta":5s}\t sky\t sin\t group\t id\t GP"""
+        self._print_lc_baseline = f"""#--------------------------------------------- \n# Input lightcurves filters baseline function-------------- \n{"name":15s}\t{"fil":3s}\t {"lamda":5s}\t {"time":4s}\t {"roll":3s}\t x\t y\t {"conta":5s}\t sky\t sin\t group\t id\t GP"""
 
         #define print out format
         txtfmt = "\n{0:15s}\t{1:3s}\t{2:5.1f}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
@@ -218,7 +222,6 @@ class load_lightcurves:
             
             self._print_lc_baseline += t
 
-        
         if verbose: print(self._print_lc_baseline)
 
         if np.all(np.array(self._useGPphot) == "n"):        #if gp is "n" for all input lightcurves, run add_GP with None
@@ -236,8 +239,8 @@ class load_lightcurves:
         self.stellar_parameters(verbose=False)
    
     def add_GP(self, lc_list=None, pars="time", kernels="mat32", WN="y", 
-               log_scale=[(-25,-15.2,-5)], s_step=0.001,
-               log_metric=[(-10,6.9,15)],  m_step=0.001,
+               log_scale=[(-25,-15.2,-5)], s_step=0.1,
+               log_metric=[(-10,6.9,15)],  m_step=0.1,
                verbose=True):
         """
             Model variations in light curve with a GP (using george GP package)
@@ -283,14 +286,14 @@ class load_lightcurves:
                 s_pri.append(s[0])
                 scale.append( np.exp(s[0]) )
                 s_pri_wid.append(s[1])
-                s_up.append(s[0]+10)    #set bounds at _+/- 10 from prior mean
-                s_lo.append(s[0]-10)
+                s_up.append( np.max(s[0]+10, s[0]+5*s[1]) )    #set bounds at +/- 10 from prior mean or 5stdev (the larger value)
+                s_lo.append( np.min(s[0]-10, s[0]-5*s[1]) )
 
             elif isinstance(s,tuple) and len(s)==3:
                 s_pri_wid.append(0)          #using uniform prior so set width = 0
                 s_lo.append(s[0])
                 scale.append(np.exp(s[1]))
-                s_pri.append(s[1])
+                s_pri.append(0.0)
                 s_up.append(s[2])
             
             else: _raise(TypeError, f"tuple of len 2 or 3 was expected but got the value {s} in log_scale.")
@@ -301,14 +304,14 @@ class load_lightcurves:
                 m_pri.append(m[0])
                 metric.append( np.exp(m[0]) )
                 m_pri_wid.append(m[1])
-                m_up.append(m[0]+10)    #set uniform bounds at _+/- 10 from prior mean
-                m_lo.append(m[0]-10)
+                m_up.append( np.max(m[0]+10,m[0]+5*m[1]) )    #set uniform bounds at _+/- 10 from prior mean
+                m_lo.append( np.min(m[0]-10, m[0]-5*m[1]) )
                 
             elif isinstance(m,tuple) and len(m)==3:
                 m_pri_wid.append(0)       
                 m_lo.append(m[0])
                 metric.append( np.exp(m[1]) )
-                m_pri.append(m[1])
+                m_pri.append(0.0)
                 m_up.append(m[2])
 
             else: _raise(TypeError, f"tuple of len 2 or 3 was expected but got the value {m} in log_metric.")
@@ -331,13 +334,13 @@ class load_lightcurves:
             return 
         elif isinstance(lc_list, str): lc_list = [lc_list]
 
-        for lc in self._gp_lcs: assert lc in lc_list,f"GP was expected for {lc} but was not given in lc_list."   
+        if 'all' not in lc_list:
+            for lc in self._gp_lcs: 
+                assert lc in lc_list,f"GP was expected for {lc} but was not given in lc_list."   
 
-        for lc in lc_list: 
-            assert lc in self._names,f"{lc} is not one of the loaded lightcurve files"
-            assert lc in self._gp_lcs, f"while defining baseline model in the `lc_baseline` method, gp = 'y' was not specified for {lc}."
-
-           
+            for lc in lc_list: 
+                assert lc in self._names,f"{lc} is not one of the loaded lightcurve files"
+                assert lc in self._gp_lcs, f"while defining baseline model in the `lc_baseline` method, gp = 'y' was not specified for {lc}."
         n_list = len(lc_list)
         
         #transform        
@@ -383,10 +386,13 @@ class load_lightcurves:
             * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. RpRs = (0,0.1,0.2) with 0.1 being the initial value.
         """
         
-        DA = _reversed_dict(locals().copy() )         #dict of arguments (DA)
+        DA = locals().copy()         #dict of arguments (DA)
         _ = DA.pop("self")                            #remove self from dictionary
         _ = DA.pop("verbose")
-
+        #sort to specific order
+        key_order = ["RpRs","Impact_para","Duration", "T_0", "Period", "Eccentricity","omega", "K"]
+        DA = {key:DA[key] for key in key_order if key in DA} 
+            
         self._parnames  = [n for n in DA.keys()]
         self._npars = 8
 
@@ -576,7 +582,7 @@ class load_lightcurves:
             
         """
         if isinstance(filters_occ, str):
-            if filters_occ is "all": filters_occ = list(self._filnames)
+            if filters_occ == "all": filters_occ = list(self._filnames)
             else: filters_occ= [filters_occ]
         if filters_occ is None: filters_occ = []
 
@@ -640,8 +646,8 @@ class load_lightcurves:
 
         indx = [ list(self._filnames).index(f) for f in filters_occ]    #index of given filters_occ in unique filter names
         for par in DA.keys():
-            if par is "prior": DA2[par] = ["n"]*nfilt
-            elif par is "filters_occ": DA2[par] = list(self._filnames)
+            if par == "prior": DA2[par] = ["n"]*nfilt
+            elif par == "filters_occ": DA2[par] = list(self._filnames)
             else: DA2[par] = [0]*nfilt
 
             for i,j in zip(indx, range(nocc)):                
@@ -649,12 +655,12 @@ class load_lightcurves:
 
         self._occ_dict =  DA = DA2
 
-
         #create occultations print out variable
-        self._print_occulations = f"""=========== occultation setup ============================================================================= \n{'filters':7s}\tfit start_val\tstepsize  low_lim  up_lim  prior  {'value':9s}  {'sig_lo':7s}\t{'sig_hi':7s}"""
+        self._print_occulations = f"""#=========== occultation setup ============================================================================= \n{'filters':7s}\tfit start_val\tstepsize  {'low_lim':8s}  {'up_lim':8s}  prior  {'value':8s}  {'sig_lo':8s}\t{'sig_hi':8s}"""
 
         #define print out format
-        txtfmt = "\n{0:7s}\t{1:3s} {2:.8f}\t{3:.7f}  {4:7.3f}  {5:6.3f}  {6:5s}  {7:4.3e}  {8:4.2e}\t{9:4.2e} "       
+        # txtfmt = "\n{0:7s}\t{1:3s} {2:.8f}\t{3:.6f}  {4:7.6f}  {5:6.6f}  {6:5s}  {7:4.3e}  {8:4.2e}\t{9:4.2e} "       
+        txtfmt = "\n{0:7s}\t{1:3s} {2:4.3e}\t{3:3.2e}  {4:3.2e}  {5:3.2e}  {6:5s}  {7:3.2e}  {8:3.2e}\t{9:3.2e} "       
         for i in range(nfilt):
             t = txtfmt.format(  DA["filters_occ"][i], DA["filt_to_fit"][i],
                                 DA["start_value"][i], DA["step_size"][i],
@@ -662,7 +668,6 @@ class load_lightcurves:
                                 DA["prior"][i], DA["prior_mean"][i],
                                 DA["prior_width_lo"][i], DA["prior_width_hi"][i])
             self._print_occulations += t
-
         
         if verbose: print(self._print_occulations)
 
@@ -680,9 +685,9 @@ class load_lightcurves:
             priors : "y" or "n":
                 specify if the ldc should be fitted/
 
-            c1,c2 : float/tuple or list of float/tuple;
+            c1,c2 : float/tuple or list of float/tuple for each filter;
                  limb darkening coefficient.
-                 *if tuple, it is given as (lo_lim, val, uplim) 
+                 *if tuple, must be of length 3 defined as (lo_lim, val, uplim) 
 
             step1,step2 : float or list of floats;
                 stepsize for fitting        
@@ -707,7 +712,11 @@ class load_lightcurves:
 
             if par in ["c1","c2","c3","c4"]:
                 for i,d in enumerate(DA[par]):
-                    DA[par][i] = (0,d,0) if isinstance(d, (int,float)) else d
+                    if isinstance(d, (int,float)):  
+                        DA[par][i] = (0,d,0)
+                        DA[f"step{par[-1]}"][i] = 0
+                    elif isinstance(d, tuple):
+                        DA[par][i] = d
 
                 temp_DA[f"bound_lo{par[-1]}"] = [b[0] for b in DA[par]]
                 temp_DA[f"bound_hi{par[-1]}"] = [b[2] for b in DA[par]]
@@ -715,7 +724,10 @@ class load_lightcurves:
 
         for k in temp_DA.keys():
             DA[k] = temp_DA[k]
-  
+
+        for i in range(nfilt):
+            DA["priors"][i] = "y" if np.any( [DA["step1"][i], DA["step2"][i],DA["step3"][i], DA["step4"][i] ]) else "n"
+        
 
 
         self._ld_dict = DA
@@ -1216,7 +1228,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
             #uniform prior
             lo_lim = float(adump[15])
             up_lim = float(adump[14])
-            metric = float(adump[4])
+            metric = float(adump[10])
             log_metric.append( (lo_lim, np.log(metric), up_lim) )
         else:
             #gaussian prior
@@ -1344,7 +1356,7 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
         
     lc_data.setup_occultation(filts, depths, step,verbose)
 
- #=========== Limb darkending setup ==================
+ #=========== Limb darkening setup ==================
     dump=_file.readline()
     dump=_file.readline()
 
@@ -1411,9 +1423,58 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
     
     dump=_file.readline()
     adump=dump.split()
-    walk=adump[1]            # Differential Evolution?          
+    walk=adump[1]            # Differential Evolution?
+
+    dump = _file.readline()
+    adump=dump.split()
+    grtest=adump[1]         #GRTest?
+
+    dump = _file.readline()
+    adump=dump.split()
+    makeplots=adump[1]         #Make plots?
+
+    dump = _file.readline()
+    adump=dump.split()
+    least_sq=adump[1]         #Least squares??
+
+    dump = _file.readline()
+    adump=dump.split()
+    save_file=adump[1]         #Output file?
+
+    dump = _file.readline()
+    adump=dump.split()
+    save_model=adump[1]         #Save the model??
+
+    dump = _file.readline()
+    adump=dump.split()
+    adaptbasestepsize=adump[1]         #Adapt the stepsize of bases?
+
+    dump = _file.readline()
+    adump=dump.split()
+    removeparamforCNM=adump[1]         #Remove paramameter for CNM?
+
+    dump = _file.readline()
+    adump=dump.split()
+    leastsqforbasepar=adump[1]         #Least-squares for base parameters?
+
+    dump = _file.readline()
+    adump=dump.split()
+    lssquseLevMarq=adump[1]         #Use Lev-Marq for least squares?
+
+    dump = _file.readline()
+    adump=dump.split()
+    applyCFs=adump[1]         #GRTest?
+
+    dump = _file.readline()
+    adump=dump.split()
+    applyjitter=adump[1]         #GRTest?
  
-    mcmc = mcmc_setup(nchains,ppchain,burnin,nproc,walk,verbose=verbose)
+    mcmc = mcmc_setup(n_chains=nchains, n_steps=ppchain, n_burn=burnin, n_cpus=nproc, sampler=walk, 
+                        GR_test=grtest, make_plots=makeplots, leastsq=least_sq, savefile=save_file,
+                         savemodel=save_model, adapt_base_stepsize=adaptbasestepsize, 
+                         remove_param_for_CNM=removeparamforCNM,leastsq_for_basepar=leastsqforbasepar, 
+                         lssq_use_Lev_Marq=lssquseLevMarq, apply_CFs=applyCFs,apply_jitter=applyjitter,
+                         verbose=verbose)
 
     _file.close()   
     return lc_data,rv_data,mcmc
@@ -1428,7 +1489,7 @@ class load_chains:
     def __repr__(self):
         return f'Object containing chains from mcmc. \
                 \nParameters in chain are:\n\t {self._par_names} \
-                \n\nuse `plot_chains` method on selected parameters to plot the chains.'
+                \n\nuse `plot_chains`, `plot_corner` or `plot_posterior` methods on selected parameters to visualize results.'
         
     def plot_chains(self, pars=None, figsize = None, thin=1, discard=0, alpha=0.05,
                     color=None, label_size=12, force_plot = False):
@@ -1440,9 +1501,9 @@ class load_chains:
             pars: list of str;
                 parameter names to plot. Plot less than 20 parameters at a time for clarity.
         """
-        assert pars is None or isinstance(pars, list) or pars is "all", \
+        assert pars is None or isinstance(pars, list) or pars == "all", \
              f'pars must be None, "all", or list of relevant parameters.'
-        if pars is None or pars is "all": pars = [p for p in self._par_names]
+        if pars is None or pars == "all": pars = [p for p in self._par_names]
         for p in pars:
             assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
         
@@ -1465,11 +1526,12 @@ class load_chains:
         for i,p in enumerate(pars):
             ax = axes[i]
             ax.plot(self._chains[p][:,discard::thin].T,c = color, alpha=alpha)
+            ax.legend([pars[i]],loc="upper left")
             ax.autoscale(enable=True, axis='x', tight=True)
-            ax.set_ylabel(pars[i], fontsize=label_size)
         plt.subplots_adjust(hspace=0.0)
         axes[-1].set_xlabel("step number", fontsize=label_size);
-        plt.show()
+        # plt.show()
+        return fig
         
     def plot_corner(self, pars=None, bins=20, thin=1, discard=0,
                     q=[0.16,0.5,0.84], show_titles=True, title_fmt =".3f",
@@ -1480,7 +1542,7 @@ class load_chains:
             Parameters:
             ----------
             pars : list of str;
-                parameter names to plot
+                parameter names to plot. Ideally less than 12 pars for clarity of plot
 
             bins : int;
                 number of bins in 1d histogram
@@ -1496,14 +1558,14 @@ class load_chains:
                 
              
         """
-        assert pars is None or isinstance(pars, list) or pars is "all", \
+        assert pars is None or isinstance(pars, list) or pars == "all", \
              f'pars must be None, "all", or list of relevant parameters.'
-        if pars is None or pars is "all": pars = [p for p in self._par_names]
+        if pars is None or pars == "all": pars = [p for p in self._par_names]
 
         ndim = len(pars)
 
-        if not force_plot: assert ndim <= 10, f'number of parameters to plot should be <=10 for clarity. \
-            Use force_plot = True to continue anyways.'
+        if not force_plot: assert ndim <= 12, \
+            f'number of parameters to plot should be <=12 for clarity. Use force_plot = True to continue anyways.'
 
         lsamp = len(self._chains[pars[0]][:,discard::thin].flatten())
         samples = np.empty((lsamp,ndim))
@@ -1524,4 +1586,42 @@ class load_chains:
                     title_fmt=title_fmt,quantiles=q,title_kwargs={"fontsize": 14},
                     label_kwargs={"fontsize":20})
         
-        plt.show()
+        # plt.show()
+        return fig
+
+
+    def plot_posterior(self, par, thin=1, discard=0, bins=20, density=True, range=None,
+                        q = [0.0015,0.16,0.5,0.85,0.9985], multiply_by=1, add_value=0):
+        """
+        Plot the posterior distribution of a single input parameter, par.
+        """
+        assert isinstance(par, str), 'par must be a single parameter of type str'
+        assert par in self._par_names, f'{par} is not one of the parameter labels in the mcmc run.'
+        assert isinstance(q, (float, list)),"q must be either a single float or list of length 1, 3 or 5"
+        if isinstance(q,float): q = [q]
+        
+        par_samples = self._chains[par][:,discard::thin].flatten() * multiply_by + add_value
+        quants = np.quantile(par_samples,q)
+
+        if len(q)==1:
+            ls = ['-']; c=["r"]
+            med = quants[0]
+        elif len(q)==3: 
+            ls = ["--","-","--"]; c = ["r"]*3 
+            med = quants[1]; sigma_1 = np.diff(quants)
+        elif len(q)==5: 
+            ls = ["--","--","-","--","--"]; c =["k",*["r"]*3,"k"] 
+            med=quants[2]; sigma_1 = np.diff(quants[1:4])
+        else: _raise(ValueError, "q must be either a single float or list of length 1, 3 or 5")
+
+        fig  = plt.figure()
+        plt.hist(par_samples, bins=bins, density=density, range=range);
+        [plt.axvline(quants[i], ls = ls[i], c=c[i], zorder=3) for i in np.arange(len(quants))]
+        if len(q)==1:
+            plt.title(f"{par}={med:.4f}")
+        else:
+            plt.title(f"{par}={med:.4f}$^{{+{sigma_1[1]:.4f}}}_{{-{sigma_1[0]:.4f}}}$")
+
+        plt.xlabel(par);
+
+        return fig

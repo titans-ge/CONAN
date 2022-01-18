@@ -2,11 +2,6 @@
 #    it returns model values for ONE transit light curve
 #      (will need to be called several times for several light curves)
 # 
-# takes as input: 
-#       photometry 
-#       starting values for all parameters
-
-# actually, we will need to input a period, and a midpoint and then recalculate the second midpoint
 
 import sys
 import numpy as np
@@ -21,9 +16,6 @@ from numpy import (array, size, argmin, abs, diag, log, median,  where, zeros, e
 import george
 from george.modeling import Model
 
-# sys.path.append("/home/lendl/software/MC3/MCcubed/") 
-# sys.path.append("/home/lendl/Work/OurCode/CONAN/")
-# sys.path.append("/home/lendl/Work/OurCode/mandagol/")
 import mc3
 from occultquad import *
 from occultnl import *
@@ -51,25 +43,24 @@ class Transit_Model(Model):
         grprs_here    =  args[i] ; i+=1
         inmcmc        =  args[i] ; i+=1
         baseLSQ       =  args[i] ; i+=1
-        bvars         =  args[i] ; i+=1
+        bases         =  args[i] ; i+=1   # MONIKA: changed this variable name from "bvar" to "bases" for consistency
         vcont         =  args[i] ; i+=1
         name          =  args[i] ; i+=1
         ee            =  args[i] ; i+=1
+        bvar          =  args[i] ; i+=1
         #pmin, pmax        =  args[i], args[i+1] ; i+=2
         #c1_in, c2_in      = args[i], args[i+1] ; i+=2 
         #c3_in, c4_in      = args[i], args[i+1] ; i+=2 
         #params, Files_path = args[i], args[i+1] ; i+=2     
 
-        #params[jumping]=np.copy(p)
-        #pmin_jump=np.copy(pmin[jumping])
-        #pmax_jump=np.copy(pmax[jumping])
-        
-            
         earrmod=np.copy(ee)
 
         # ==============================================================
         # calculate the z values for the lightcurve and put them into a z array. Then below just extract them from that array
         # --------
+
+        ph = np.modf((np.modf((tt-self.T0)/self.per)[0])+1.0)[0] #calculate phase
+
         # calculate eccentricity and omega
         ecc = self.eos**2+self.eoc**2
 
@@ -150,45 +141,61 @@ class Transit_Model(Model):
         sky=np.copy(st)
         npo=len(z)                # number of lc points
         
-        #===== decide if transit or occultation =======
-        if np.mean(y)>0:   # TRANSIT
-            # number of periods elapsed between given T0 and lightcurve start            
-            # normalize the timestamps to the center of the transit
-            delta = np.round(np.divide((tt[0]-self.T0),self.per))
-            T0_lc=self.T0+delta*self.per  
-            #ts=tt-T0_lc
-            ts=tt-tt[0]
-           
-            # adapt the RpRs value used in the LC creation to any ddfs
-            if isddf=='y':
-                RR=grprs_here+self.ddf    # the specified GROUP rprs + the respective ddf
-            else:
-                RR=np.copy(self.RpRs)
+        m0 = np.zeros(npo)
+        mm0 = np.zeros(npo)
+        mm = np.zeros(npo)
+        mod = np.zeros(npo)
+
+        # convert the LD coefficients to u1 and u2
+        u1=(self.c1 + self.c2)/3.
+        u2=(self.c1 - 2.*self.c2)/3.
+
+        #============= TRANSIT ===========================
+        # MONIKA: replaced the y coordinate as defining value for
+        #    choice of occultation or transit to be robust for eccentric orbits
+        #    old:   ph_transit = np.where((ph <= 0.25) | (ph >= 0.75))
+
+        ph_transit = np.where((y >= 0))
+        npo_transit = len(z[ph_transit])
+
+        delta = np.round(np.divide((tt[0]-self.T0),self.per))
+        T0_lc=self.T0+delta*self.per  
+        ts=tt-tt[0]
+        
+        # adapt the RpRs value used in the LC creation to any ddfs
+        if isddf=='y':
+            RR=grprs_here+self.ddf    # the specified GROUP rprs + the respective ddf
+        else:
+            RR=np.copy(self.RpRs)
+
+        mm0[ph_transit],m0[ph_transit] = occultquad(z[ph_transit],u1,u2,RR,npo_transit)   # mm is the transit model
+        mm[ph_transit] = (mm0[ph_transit]-1)/(vcont+1) + 1 # correct for the contamination
+        
+        #============= OCCULTATION ==========================
+        ph_occultation = np.where((y < 0))
+        npo_occultation = len(z[ph_occultation])
+
+        delta = np.round(np.divide((tt[0]-self.T0),self.per)) + 0.5   # offset by half a period
+        T0_lc=self.T0+delta*self.per  
+        RR=np.sqrt(self.occ)    # the occultation depth converted into a radius ratio
+        u1, u2 = 0., 0.         # no limb darkening
+
+        mm0[ph_occultation],m0[ph_occultation] = occultquad(z[ph_occultation],u1,u2,RR,npo_occultation)   # mm is the occultation model
+        mm[ph_occultation] = (mm0[ph_occultation]-1)/(vcont+1) + 1 # correct here for the contamination
+
+        # MONIKA: added least square optimisation for baselines
+        if (baseLSQ == 'y'):
+            #bvar contains the indices of the non-fixed baseline variables        
+            coeffstart = np.copy(bases[bvar])   
+            icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, am, cx, cy, fwhm, sky))
+            coeff = np.copy(bases)
+            coeff[bvar] = np.copy(icoeff)
             
-            # convert the LD coefficients to u1 and u2
-            u1=(self.c1 + self.c2)/3.
-            u2=(self.c1 - 2.*self.c2)/3.
-        
-        else:    # OCCULTATION
-            delta = np.round(np.divide((tt[0]-self.T0),self.per)) + 0.5   # offset by half a period
-            T0_lc=self.T0+delta*self.per  
-            #ts=tt-T0_lc
-            ts=tt-tt[0]
-            RR=np.sqrt(self.occ)    # the occultation depth converted into a radius ratio
-            u1, u2 = 0., 0.         # no limb darkening
-            #print(RR,self.occ,T0_lc)
-            
-        
-        # ======== THE TRANSIT (OCCULTATION) MODEL ===========
-        
-        mm0,m0 = occultquad(z,u1,u2,RR,npo)   # mm is the transit model
-        # correct here for the contamination
-        mm = (mm0-1)/(vcont+1) + 1
-        
-        # ======= THE BASELINE MODEL =====================
-        bfunc=basefunc_noCNM(bvars, ts, am, cx, cy, fwhm, sky)
+        else:        
+            coeff = np.copy(bases)  # the input coefficients 
+
+        bfunc=basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky)
         mod=mm*bfunc
-        # =================================================
         
         marr=np.copy(mod)
         
@@ -198,9 +205,16 @@ class Transit_Model(Model):
 def basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
     bfunc=coeff[0]+coeff[1]*ts+coeff[2]*np.power(ts,2)+coeff[3]*np.power(ts,3)+coeff[4]*np.power(ts,4)+coeff[5]*am+coeff[6]*np.power(am,2)+coeff[7]*cx+coeff[8]*np.power(cx,2)+coeff[9]*cy+coeff[10]*np.power(cy,2)+coeff[11]*fwhm+coeff[12]*np.power(fwhm,2)+coeff[13]*sky+coeff[14]*np.power(sky,2)+coeff[15]*np.sin(ts*coeff[16]+coeff[17])
-    
+
     return bfunc
 
+def para_minfunc(icoeff, ivars, mm, ft, ts, am, cx, cy, fwhm, sky):
+    icoeff_full = np.zeros(20)
+    icoeff_full[ivars] = np.copy(icoeff)
+    bfunc = basefunc_noCNM(icoeff_full, ts, am, cx, cy, fwhm, sky)
+    fullmod = np.multiply(bfunc, mm)
+
+    return (ft - fullmod)
         
 #class RV_Model(Model):
     
@@ -221,7 +235,7 @@ def basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky):
         #grprs_here    =  args[i] ; i+=1
         #inmcmc        =  args[i] ; i+=1
         #baseLSQ       =  args[i] ; i+=1
-        #bvars         =  args[i] ; i+=1
+        #bases         =  args[i] ; i+=1
         #vcont         =  args[i] ; i+=1
         #name          =  args[i] ; i+=1
         #ee            =  args[i] ; i+=1

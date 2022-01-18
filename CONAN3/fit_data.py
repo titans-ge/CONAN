@@ -1,10 +1,9 @@
+from telnetlib import STATUS
 import numpy as np
 from types import SimpleNamespace
 import os
 from multiprocessing import Pool
-import matplotlib
-
-
+import pickle
 import emcee
 
 from occultquad import *
@@ -20,23 +19,33 @@ from .ecc_om_par import *
 from .outputs_v6_GP import *
 from .jitter_v1 import *
 from .GRtest_v1 import *
-
 from george.modeling import Model
 from george import kernels
 import corner
 from .gpnew import *
-from ._classes import _raise, mcmc_setup
 
+from ._classes import _raise, mcmc_setup, __default_backend__, load_chains
+import matplotlib
+matplotlib.use(__default_backend__)
+
+import multiprocessing as mp 
+mp.set_start_method('fork')
 __all__ = ["fit_data"]
 
 def fit_data(lc, rv=None, mcmc=None, statistic = "median",
- verbose=False, debug=False):
+verbose=False, debug=False):
     """
     function to fit the data using the light-curve object lc, rv_object rv and mcmc setup object mcmc.
-    """
-    # matplotlib.use('Agg') 
-#begin loading data from the 3 objects and calling the methods
 
+    Returns:
+    --------
+    result: object containining labeled mcmc chains
+        Object that contains methods to plot the chains, corner, and histogram of parameters.
+        e.g result.plot_chains(), result.plot_corner, result.plot_posterior("T_0")
+    """
+    print('CONAN3 launched!!!\n') 
+    #begin loading data from the 3 objects and calling the methods
+    assert statistic in ["median", "max"], 'statistic can only be either median or max'
 
 #============lc_data=========================
     #from load_lightcurves()
@@ -58,102 +67,101 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     ngroup     = len(grnames)
 
 
-#============GP Setup=============================
+ #============GP Setup=============================
     #from load_lightcurves.add_GP()
-    GPphotlc = []
-    GPphotvars = []
-    GPphotkerns = []
-    GPphotWN = []
-    GPphotWNstartppm = 50      # start at 50 ppm 
-    GPphotWNstart = []
-    GPphotWNstep = []
-    GPphotWNprior = []
-    GPphotWNpriorwid = []
-    GPphotWNlimup = []
-    GPphotWNlimlo = []
-    GPphotpars1 = []
-    GPphotstep1 = []
-    GPphotprior1 = []
-    GPphotpriorwid1 = []
-    GPphotlim1up = []
-    GPphotlim1lo = []
-    GPphotpars2 = []
-    GPphotstep2 = []
-    GPphotprior2 = []
-    GPphotpriorwid2 = []
-    GPphotlim2up = []
-    GPphotlim2lo = []
-    GPncomponent = []           # number of components in the kernel
-    GPjumping = []
-
-    prev_lcname = 'none'
     GPchoices = ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"]
     ndimGP = len(GPchoices)
+
+    GPphotlc = np.zeros((nphot,ndimGP))
+    GPphotvars = np.zeros((nphot,ndimGP))
+    GPphotkerns = np.zeros((nphot,ndimGP),dtype=object)
+    GPphotWN = np.zeros((nphot,1),dtype=object)
+    GPphotWNstartppm = 50      # start at 50 ppm 
+    GPphotWNstart = np.zeros((nphot,1))
+    GPphotWNstep = np.zeros((nphot,1))
+    GPphotWNprior = np.zeros((nphot,1))
+    GPphotWNpriorwid = np.zeros((nphot,1))
+    GPphotWNlimup = np.zeros((nphot,1))
+    GPphotWNlimlo = np.zeros((nphot,1))
+    GPphotpars1 = np.zeros((nphot,ndimGP))
+    GPphotstep1 = np.zeros((nphot,ndimGP))
+    GPphotprior1 = np.zeros((nphot,ndimGP))
+    GPphotpriorwid1 = np.zeros((nphot,ndimGP))
+    GPphotlim1up = np.zeros((nphot,ndimGP))
+    GPphotlim1lo = np.zeros((nphot,ndimGP))
+    GPphotpars2 = np.zeros((nphot,ndimGP))
+    GPphotstep2 = np.zeros((nphot,ndimGP))
+    GPphotprior2 = np.zeros((nphot,ndimGP))
+    GPphotpriorwid2 = np.zeros((nphot,ndimGP))
+    GPphotlim2up = np.zeros((nphot,ndimGP))
+    GPphotlim2lo = np.zeros((nphot,ndimGP))
+    GPncomponent = np.zeros((nphot,ndimGP))           # number of components in the kernel
+    GPjumping = np.zeros((nphot,ndimGP),dtype=bool)
+    GPall = np.zeros((nphot,ndimGP),dtype=bool) #Joint hyperparameters
 
     DA_gp = lc._GP_dict         #load input gp parameters from dict
 
     for j, nm in enumerate(DA_gp["lc_list"]):
 
-            if (nm != prev_lcname):  # a new light curve that gets WN values, same lc gets same WN values 
-                GPphotWNstart.append(np.log((GPphotWNstartppm/1e6)**2)) # in absolute
-                GPphotWNstep.append(0.1)
-                GPphotWNprior.append(0.)
-                GPphotWNpriorwid.append(0.)
-                GPphotWNlimup.append(-5.2)
-                GPphotWNlimlo.append(-21)
-                GPphotWN.append(DA_gp["WN"][j]) 
-                
-                #for same lightcurve don't reinitialize these lists too
-                d_jumpingGP       = ['n']*ndimGP            # y/n of all of the GPs dimensions
-                d_GPkernel        = ['NaN']*ndimGP
-                d_GPphotpars1     = [0.]*ndimGP
-                d_GPphotstep1     = [0.]*ndimGP
-                d_GPphotprior1    = [0.]*ndimGP
-                d_GPphotpriorwid1 = [0.]*ndimGP
-                d_GPphotlim1up    = [0.]*ndimGP
-                d_GPphotlim1lo    = [0.]*ndimGP
-                d_GPphotpars2     = [0.]*ndimGP
-                d_GPphotstep2     = [0.]*ndimGP
-                d_GPphotprior2    = [0.]*ndimGP
-                d_GPphotpriorwid2 = [0.]*ndimGP
-                d_GPphotlim2up    = [0.]*ndimGP
-                d_GPphotlim2lo    = [0.]*ndimGP
-                
-            for i in range(ndimGP):
-                if (DA_gp["pars"][j] == GPchoices[i]): 
-                    d_jumpingGP[i]       = 'y'
-                    d_GPkernel[i]        = DA_gp["kernels"][j]
-                    d_GPphotpars1[i]     = float(DA_gp["scale"][j])
-                    d_GPphotstep1[i]     = float(DA_gp["s_step"][j])
-                    d_GPphotprior1[i]    = float(DA_gp["s_pri"][j])
-                    d_GPphotpriorwid1[i] = float(DA_gp["s_pri_wid"][j])
-                    d_GPphotlim1up[i]    = float(DA_gp["s_up"][j])
-                    d_GPphotlim1lo[i]    = float(DA_gp["s_lo"][j])
-                    d_GPphotpars2[i]     = float(DA_gp["metric"][j])
-                    d_GPphotstep2[i]     = float(DA_gp["m_step"][j])
-                    d_GPphotprior2[i]    = float(DA_gp["m_pri"][j])
-                    d_GPphotpriorwid2[i] = float(DA_gp["m_pri_wid"][j])
-                    d_GPphotlim2up[i]    = float(DA_gp["m_up"][j])
-                    d_GPphotlim2lo[i]    = float(DA_gp["m_lo"][j])
-        
-            if (nm != prev_lcname):     # a new light curve  
-                # only append for a new lc
-                GPjumping.append(d_jumpingGP)
-                GPphotkerns.append(d_GPkernel)
-                GPphotpars1.append(d_GPphotpars1)
-                GPphotstep1.append(d_GPphotstep1)
-                GPphotprior1.append(d_GPphotprior1)
-                GPphotpriorwid1.append(d_GPphotpriorwid1)
-                GPphotlim1up.append(d_GPphotlim1up)
-                GPphotlim1lo.append(d_GPphotlim1lo)
-                GPphotpars2.append(d_GPphotpars2)
-                GPphotstep2.append(d_GPphotstep2)
-                GPphotprior2.append(d_GPphotprior2)
-                GPphotpriorwid2.append(d_GPphotpriorwid2)
-                GPphotlim2up.append(d_GPphotlim2up)
-                GPphotlim2lo.append(d_GPphotlim2lo)
-            
-            prev_lcname = nm
+        k = np.where(np.array(GPchoices) == DA_gp["pars"][j])
+
+        if nm == 'all':
+            GPjumping[0,k]=True
+            GPphotkerns[0,k]=DA_gp["kernels"][j]
+            GPphotpars1[0,k]=float(DA_gp["scale"][j])
+            GPphotstep1[0,k]=float(DA_gp["s_step"][j])
+            GPphotprior1[0,k]=float(DA_gp["s_pri"][j])
+            GPphotpriorwid1[0,k]=float(DA_gp["s_pri_wid"][j])
+            GPphotlim1up[0,k]=float(DA_gp["s_up"][j])
+            GPphotlim1lo[0,k]=float(DA_gp["s_lo"][j])
+            GPphotpars2[0,k]=float(DA_gp["metric"][j])
+            GPphotstep2[0,k]=float(DA_gp["m_step"][j])
+            GPphotprior2[0,k]=float(DA_gp["m_pri"][j])
+            GPphotpriorwid2[0,k]=float(DA_gp["m_pri_wid"][j])
+            GPphotlim2up[0,k]=float(DA_gp["m_up"][j])
+            GPphotlim2lo[0,k]=float(DA_gp["m_lo"][j])
+            GPall[0,k]=True
+
+            if DA_gp["WN"][j] == 'y':
+                GPphotWNstart[:] = np.log((GPphotWNstartppm/1e6)**2) # in absolute
+                GPphotWNstep[0] = 0.1
+                GPphotWNprior[0] = 0.0
+                GPphotWNpriorwid[0] = 0.
+                GPphotWNlimup[0] = -5.2
+                GPphotWNlimlo[0] = -21.0
+                GPphotWN[0] = 'all'
+
+
+        else: 
+            i = np.where(np.array(names) == nm)
+            GPjumping[i,k]=True
+            GPphotkerns[i,k]=DA_gp["kernels"][j]
+            GPphotpars1[i,k]=float(DA_gp["scale"][j])
+            GPphotstep1[i,k]=float(DA_gp["s_step"][j])
+            GPphotprior1[i,k]=float(DA_gp["s_pri"][j])
+            GPphotpriorwid1[i,k]=float(DA_gp["s_pri_wid"][j])
+            GPphotlim1up[i,k]=float(DA_gp["s_up"][j])
+            GPphotlim1lo[i,k]=float(DA_gp["s_lo"][j])
+            GPphotpars2[i,k]=float(DA_gp["metric"][j])
+            GPphotstep2[i,k]=float(DA_gp["m_step"][j])
+            GPphotprior2[i,k]=float(DA_gp["m_pri"][j])
+            GPphotpriorwid2[i,k]=float(DA_gp["m_pri_wid"][j])
+            GPphotlim2up[i,k]=float(DA_gp["m_up"][j])
+            GPphotlim2lo[i,k]=float(DA_gp["m_lo"][j])
+            GPall[i,k]=False
+
+            if DA_gp["WN"][j] == 'y':
+                GPphotWNstart[i] = np.log((GPphotWNstartppm/1e6)**2) # in absolute
+                GPphotWNstep[i] = 0.1
+                GPphotWNprior[i] = 0.0
+                GPphotWNpriorwid[i] = 0.
+                GPphotWNlimup[i] = -5.2
+                GPphotWNlimlo[i] = -21.0
+                GPphotWN[i] = 'y'
+
+
+
+
 
 
 #============rv_data========================== 
@@ -179,87 +187,102 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     #from load_lightcurves.setup_transit_rv()
 
     config_par = lc._config_par
-    DA_conf    =   {}
-    for it in lc._items:
-        DA_conf[it] = [config_par[p].__dict__[it] for p in lc._parnames]
-    
-    DA_in = [DA_conf["start_value"],DA_conf["step_size"],DA_conf["bounds_lo"],DA_conf["bounds_hi"],
-               DA_conf["prior_mean"],DA_conf["prior_width_lo"],DA_conf["prior_width_hi"]]        
-    
-    DA_ext = [DA_conf["prior_mean"],DA_conf["prior_width_lo"],DA_conf["prior_width_hi"]]
     
    #rprs
-    rprs_in = [d[0] for d in DA_in]
-    rprs0 = rprs_in[0]
-    rprs_ext = [d[0] for d in DA_ext]    
-    if rprs_in[1] != 0.: njumpphot=njumpphot+1
-    if (DA_conf["to_fit"][0] == 'n' and DA_conf["prior"][0] == 'p'):
+    rprs0 = config_par['RpRs'].start_value
+    rprs_in = [ config_par['RpRs'].start_value,config_par['RpRs'].step_size, \
+                config_par['RpRs'].bounds_lo,config_par['RpRs'].bounds_hi, \
+                config_par['RpRs'].prior_mean,config_par['RpRs'].prior_width_lo,\
+                config_par['RpRs'].prior_width_hi ]  
+    rprs_ext = [config_par['RpRs'].prior_mean,config_par['RpRs'].prior_width_lo,\
+                config_par['RpRs'].prior_width_hi]    
+    if config_par['RpRs'].step_size != 0.: njumpphot=njumpphot+1
+    if (config_par['RpRs'].to_fit == 'n' and config_par['RpRs'].prior == 'p'):
         extinpars.append('RpRs')
 
     erprs0=np.copy(0)
     
    #imp par
-    b_in = [d[1] for d in DA_in]
-    b_ext = [d[1] for d in DA_ext]    
-    if b_in[1] != 0.: njumpphot=njumpphot+1
-    if (DA_conf["to_fit"][1] == 'n' and DA_conf["prior"][1] == 'p'):
+    b_in = [config_par['Impact_para'].start_value,config_par['Impact_para'].step_size,\
+            config_par['Impact_para'].bounds_lo,config_par['Impact_para'].bounds_hi,\
+            config_par['Impact_para'].prior_mean,config_par['Impact_para'].prior_width_lo,\
+            config_par['Impact_para'].prior_width_hi]  
+    b_ext = [config_par['Impact_para'].prior_mean,config_par['Impact_para'].prior_width_lo,\
+            config_par['Impact_para'].prior_width_hi]     
+    if config_par['Impact_para'].step_size != 0.: njumpphot=njumpphot+1
+    if (config_par['Impact_para'].to_fit == 'n' and config_par['Impact_para'].prior == 'p'):
         extinpars.append('b')
 
    #duration
-    dur_in = [d[2] for d in DA_in]
-    dur_ext = [d[2] for d in DA_ext]    
-    if dur_in[1] != 0.: njumpphot=njumpphot+1
-    if (DA_conf["to_fit"][2] == 'n' and DA_conf["prior"][2] == 'p'):
+    dur_in = [config_par['Duration'].start_value,config_par['Duration'].step_size,\
+            config_par['Duration'].bounds_lo,config_par['Duration'].bounds_hi,\
+            config_par['Duration'].prior_mean,config_par['Duration'].prior_width_lo,\
+            config_par['Duration'].prior_width_hi]  
+    dur_ext = [config_par['Duration'].prior_mean,config_par['Duration'].prior_width_lo,\
+                config_par['Duration'].prior_width_hi]     
+    if config_par['Duration'].step_size != 0.: njumpphot=njumpphot+1
+    if (config_par['Duration'].to_fit == 'n' and config_par['Duration'].prior == 'p'):
         extinpars.append('dur_[d]')
         
    #T0
-    T0_in = [d[3] for d in DA_in]
-    T0_ext = [d[3] for d in DA_ext]    
-    if T0_in[1] != 0.: 
+    T0_in = [config_par['T_0'].start_value,config_par['T_0'].step_size,config_par['T_0'].bounds_lo,\
+            config_par['T_0'].bounds_hi,config_par['T_0'].prior_mean,config_par['T_0'].prior_width_lo,\
+            config_par['T_0'].prior_width_hi]  
+    T0_ext = [config_par['T_0'].prior_mean,config_par['T_0'].prior_width_lo,config_par['T_0'].prior_width_hi]    
+    if config_par['T_0'].step_size != 0. != 0.: 
         njumpphot=njumpphot+1
         njumpRV=njumpRV+1
 
-    if (DA_conf["to_fit"][3] == 'n' and DA_conf["prior"][3] == 'p'):
+    if (config_par['T_0'].to_fit == 'n' and config_par['T_0'].prior == 'p'):
         extinpars.append('T_0')
         
     
    #per
-    per_in = [d[4] for d in DA_in]
-    per_ext = [d[4] for d in DA_ext]    
-    if per_in[1] != 0.: 
+    per_in = [config_par['Period'].start_value,config_par['Period'].step_size,config_par['Period'].bounds_lo,\
+            config_par['Period'].bounds_hi,config_par['Period'].prior_mean,config_par['Period'].prior_width_lo,\
+            config_par['Period'].prior_width_hi]  
+    per_ext = [config_par['Period'].prior_mean,config_par['Period'].prior_width_lo,config_par['Period'].prior_width_hi]    
+    if config_par['Period'].step_size != 0. != 0.: 
         njumpphot=njumpphot+1
         njumpRV=njumpRV+1
 
-    if (DA_conf["to_fit"][4] == 'n' and DA_conf["prior"][4] == 'p'):
+    if (config_par['Period'].to_fit == 'n' and config_par['Period'].prior == 'p'):
         extinpars.append('Period_[d]')
 
    #ecc
-    ecc_in = [d[5] for d in DA_in]
-    eccpri= DA_conf["prior"][5]
-    if ecc_in[1] != 0.: 
+    ecc_in = [config_par['Eccentricity'].start_value,config_par['Eccentricity'].step_size,\
+        config_par['Eccentricity'].bounds_lo,config_par['Eccentricity'].bounds_hi,\
+        config_par['Eccentricity'].prior_mean,config_par['Eccentricity'].prior_width_lo,\
+        config_par['Eccentricity'].prior_width_hi]
+    eccpri= config_par['Eccentricity'].prior
+    if config_par['Eccentricity'].step_size != 0.: 
         njumpRV=njumpRV+1
-    if (DA_conf["to_fit"][5] == 'n' and DA_conf["prior"][5] == 'p'):
+    if (config_par['Eccentricity'].to_fit == 'n' and config_par['Eccentricity'].prior == 'p'):
         _raise(ValueError, 'cant externally input eccentricity at this time!')
 
    #omega
-    opri= DA_conf["prior"][6]
-    omega_in = [d[6] for d in DA_in]
+    opri= config_par['omega'].prior
+    omega_in = [config_par['omega'].start_value,config_par['omega'].step_size,config_par['omega'].bounds_lo,\
+                config_par['omega'].bounds_hi,config_par['omega'].prior_mean,config_par['omega'].prior_width_lo,\
+                config_par['omega'].prior_width_hi]
     omega_in = np.multiply(omega_in,np.pi)/180.
-    if omega_in[1] != 0.: 
+    if config_par['omega'].step_size != 0.: 
         njumpRV=njumpRV+1
-    if (DA_conf["to_fit"][6] == 'n' and DA_conf["prior"][6] == 'p'):
+    if (config_par['omega'].to_fit == 'n' and config_par['omega'].prior == 'p'):
         _raise(ValueError, 'cant externally input eccentricity at this time!')
         
    #K
-    Kpri= DA_conf["prior"][7]
-    K_in = [d[7] for d in DA_in]    
+    Kpri= config_par['K'].prior
+    K_in = [config_par['K'].start_value,config_par['K'].step_size,config_par['K'].bounds_lo,\
+            config_par['K'].bounds_hi,config_par['K'].prior_mean,config_par['K'].prior_width_lo,\
+            config_par['K'].prior_width_hi]   
     K_in=np.divide(K_in,1000.)  # convert to km/s
     
-    K_ext = [d[7] for d in DA_ext]
+    K_ext = [config_par['K'].prior_mean,config_par['K'].prior_width_lo,config_par['K'].prior_width_hi] 
     K_ext = np.divide(K_ext,1000.)  # convert to km/s
-    if K_in[1] != 0.: njumpRV=njumpRV+1
+    if config_par['K'].step_size != 0.: njumpRV=njumpRV+1
 
-    if (DA_conf["to_fit"][7] == 'n' and DA_conf["prior"][7] == 'p'):
+    if (config_par['K'].to_fit == 'n' and config_par['K'].prior == 'p'):
         extinpars.append('K')
         
 
@@ -310,13 +333,13 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
         j = np.where(filnames == f )
         k = np.where(np.array(lc._filters)== f)
 
-        occ_in[j,:] = [DA_occ["start_value"][i], DA_occ["step_size"][i], DA_occ["bounds_lo"][i], DA_occ["bounds_lo"][i],
+        occ_in[j,:] = [DA_occ["start_value"][i], DA_occ["step_size"][i], DA_occ["bounds_lo"][i], DA_occ["bounds_hi"][i],
                         DA_occ["prior_mean"][i], DA_occ["prior_width_lo"][i], DA_occ["prior_width_hi"][i] ]           
 
         if occ_in[j,1] != 0.:
             njumpphot[k]=njumpphot[k]+1
     
-    
+
 #============limb darkening===============
     #from load_lightcurves.limb_darkening()
     DA_ld = lc._ld_dict
@@ -432,19 +455,24 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
 #********************************************************************
 #============Start computations as in original CONANGP===============
 #********************************************************************
+############################ GPs for RVs setup #############################################
+
+    ### BUG: this should be read in! And should contain RV inputs ###
+    # all of these should be lists with nphot bzw nRV items
+
     useGPrv=['n']
 
     GPrvpars1=np.array([0.])
     GPrvpars2=np.array([0.])
     GPrvstep1=np.array([0.001])
     GPrvstep2=np.array([0.001])
-
     GPrvWN=['y']    #fitWN
     GPrvwnstartms = np.array([10])
     GPrvwnstart = np.log((GPrvwnstartms/1e3)**2)  # in km/s
     GPrvWNstep = np.array([0.1])
 
-
+    #============================= SETUP ARRAYS =======================================
+    print('Setting up photometry arrays ...')                                
     tarr=np.array([]) # initializing array with all timestamps
     farr=np.array([]) # initializing array with all flux values
     earr=np.array([]) # initializing array with all error values
@@ -463,10 +491,10 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
 
 
     if ddfYN == 'y':   # if ddFs are fit: set the Rp/Rs to the value specified at the jump parameters, and fix it.
-        rprs_in = [rprs_in[0],0,0,1,0,0,0]
-        nddf    = nfilt
+        rprs_in=[rprs_in[0],0,0,1,0,0,0]
+        nddf=nfilt
     else:
-        nddf = 0
+        nddf=0
 
     # set up the parameters
     params   = np.array([T0_in[0], rprs_in[0], b_in[0], dur_in[0], per_in[0], eos_in[0], eoc_in[0], K_in[0]])  # initial guess params
@@ -547,6 +575,8 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
         
     nbc_tot = np.copy(0)  # total number of baseline coefficients let to vary (leastsq OR jumping)
 
+    #################################### GP setup #########################################
+    print('Setting up photometry GPs ...')
     GPobjects = []
     GPparams = []
     GPstepsizes = []
@@ -556,6 +586,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     GPlimup = []
     GPlimlo =[]
     GPnames = []
+    GPcombined = []
     pargps = []
 
     for i in range(nphot):
@@ -573,16 +604,15 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
         aarr=np.concatenate((aarr,airm), axis=0)
         warr=np.concatenate((warr,fwhm), axis=0)
         sarr=np.concatenate((sarr,sky), axis=0)
-        barr=np.concatenate((barr,np.zeros(len(t),dtype=np.int)), axis=0)   # bisector array: filled with 0s
-        carr=np.concatenate((carr,np.zeros(len(t),dtype=np.int)), axis=0)   # contrast array: filled with 0s
-        lind=np.concatenate((lind,np.zeros(len(t),dtype=np.int)+i), axis=0)
+        barr=np.concatenate((barr,np.zeros(len(t),dtype=int)), axis=0)   # bisector array: filled with 0s
+        carr=np.concatenate((carr,np.zeros(len(t),dtype=int)), axis=0)   # contrast array: filled with 0s
+        lind=np.concatenate((lind,np.zeros(len(t),dtype=int)+i), axis=0)
         indices=np.where(lind==i)
         if verbose: print(lind, indices)
         indlist.append(indices)
         
         pargp = np.vstack((t, xshift, yshift, airm, fwhm, sky, eti)).T  # the matrix with all the possible inputs to the GPs
-            
-    
+
         if (useGPphot[i]=='n'):
             A_in,B_in,C1_in,C2_in,D_in,E_in,G_in,H_in,nbc = basecoeff(bases[i])  # the baseline coefficients for this lightcurve; each is a 2D array
             nbc_tot = nbc_tot+nbc # add up the number of jumping baseline coeff
@@ -610,16 +640,10 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
             #    p a r a m e t e r s   |  d d F s        | Limb Darkening                             | const.  time  (5)     |      AM (2)  |     coordinate shifts   (5)      |     FWHM  (2) |   sky  (2)   | SIN (3)  | CNM (2) |
             #    each lightcurve has 21 baseline jump parameters, starting with index  8+nddf+4*n_filt+nRV
 
-
         elif (useGPphot[i]=='y'):
             # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
             A_in,B_in,C1_in,C2_in,D_in,E_in,G_in,H_in,nbc = basecoeff(bases[i])  # the baseline coefficients for this lightcurve; each is a 2D array
             nbc_tot = nbc_tot+nbc # add up the number of jumping baseline coeff
-            #if (baseLSQ == "y"):
-            #    abvar=np.concatenate(([A_in[1,:],B_in[1,:],C_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]]))
-            #    abind=np.where(abvar!=0.)
-            #    bvars.append(abind)
-            #    A_in[1,:]=B_in[1,:]=C_in[1,:]=D_in[1,:]=E_in[1,:]=G_in[1,:]=H_in[1,:]=0                             # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
             
             params=np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
             stepsize=np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
@@ -632,7 +656,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
 
             # define the index in the set of filters that this LC has:
             k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
-            k = np.asscalar(k[0])
+            k = k[0].item()
             # ddf of this LC:
             if (ddfYN=='y'):           
                 ddfhere=params[8+k]
@@ -642,110 +666,70 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
             # define the correct LDCs c1, c2:
             c1here=params[8+nddf+nocc+k*4]
             c2here=params[8+nddf+nocc+k*4+1]
-            #bfstart=8+nddf+nfilt*4 + nRV  # the first index in the param array that refers to a baseline function    
-            #blind = np.asarray(range(bfstart+i*20,bfstart+i*20+20))  # the indices for the coefficients for the base function    
-            #basehere = params[blind]
             
             mean_model=Transit_Model(T0=params[0],RpRs=params[1],b=params[2],dur=params[3],per=params[4],eos=params[5],eoc=params[6],ddf=ddfhere,occ=params[8+nddf+k],c1=c1here,c2=c2here)
-            #specify the GP objects
-            
-            
-            if (GPphotWN[i]=='y'):
-                # check the number of kernel components for this light curve
-            # print GPphotkerns
-            # print noth
-                # go through them and build up the kernel 
-                # create the lists as needed, containing [white_noise, gp1_param1, gp1_param2, gp2_param1, gp2_param2, ...]
-                # once the kernel is built, define the GP and specify that WN is fitted
-                GPparams=np.concatenate((GPparams,[GPphotWNstart[i]]), axis=0)            
-                GPstepsizes=np.concatenate((GPstepsizes,[GPphotWNstep[i]]),axis=0)
-                GPindex=np.concatenate((GPindex,[i]),axis=0)
-                GPprior=np.concatenate((GPprior,[GPphotWNprior[i]]),axis=0)
-                GPpriwid=np.concatenate((GPpriwid,[GPphotWNpriorwid[i]]),axis=0)
-                GPlimup=np.concatenate((GPlimup,[GPphotWNlimup[i]]),axis=0)
-                GPlimlo=np.concatenate((GPlimlo,[GPphotWNlimlo[i]]),axis=0)
-                GPnames=np.concatenate((GPnames,['GPphotWN_lc'+str(i+1)]),axis=0)
-
-                iii=0
-
-                for ii in range(ndimGP):
-                    #set up the individual kernel
-                    #if there is a GP to jump in this dimension                
-                    if GPjumping[i][ii]=='y':
-                        if iii>0:
-                            k2 = k3
-                        if verbose: print(GPphotkerns[i][ii])
-
-                        if (GPphotkerns[i][ii]=='sqexp'):
-                            k1 = GPphotpars1[i][ii] * kernels.ExpSquaredKernel(GPphotpars2[i][ii], ndim=ndimGP, axes=ii)  
-                        elif (GPphotkerns[i][ii]=='mat32'):
-                            k1 = GPphotpars1[i][ii] * kernels.Matern32Kernel(GPphotpars2[i][ii], ndim=ndimGP, axes=ii)  
-                        else:
-                            _raise(ValueError, 'kernel not recognized!')
-                        
-                        if iii==0:
-                            k3 = k1
-                        else:
-                            k3 = k2 + k1
-                        
-                        GPparams=np.concatenate((GPparams,(np.log(GPphotpars1[i][ii]),np.log(GPphotpars2[i][ii]))), axis=0)            
-                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[i][ii],GPphotstep2[i][ii])),axis=0)
-                        GPindex=np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
-                        GPprior=np.concatenate((GPprior,(GPphotprior1[i][ii],GPphotprior2[i][ii])),axis=0)
-                        GPpriwid=np.concatenate((GPpriwid,(GPphotpriorwid1[i][ii],GPphotpriorwid2[i][ii])),axis=0)
-                        GPlimup=np.concatenate((GPlimup,(GPphotlim1up[i][ii],GPphotlim2up[i][ii])),axis=0)
-                        GPlimlo=np.concatenate((GPlimlo,(GPphotlim1lo[i][ii],GPphotlim2lo[i][ii])),axis=0)
-                        GPnames=np.concatenate((GPnames,(['GPphotscale_lc'+str(i+1)+'dim'+str(ii),"GPphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
-
-                        iii=iii+1
-                    
-                gp = GPnew(k3, mean=mean_model,white_noise=GPphotWNstart[i],fit_white_noise=True)
-
-            else:
-
-                GPparams=np.concatenate((GPparams,[0.]), axis=0)            
-                GPstepsizes=np.concatenate((GPstepsizes,[0.]),axis=0)
-                GPindex=np.concatenate((GPindex,[i]),axis=0)
-                GPprior=np.concatenate((GPprior,[0.]),axis=0)
-                GPpriwid=np.concatenate((GPpriwid,[0.]),axis=0)
-                GPlimup=np.concatenate((GPlimup,[0.]),axis=0)
-                GPlimlo=np.concatenate((GPlimlo,[0.]),axis=0)
-                GPnames=np.concatenate((GPnames,['GPphotWN_lc'+str(+1)]),axis=0)
-                
-                iii=0
-
-                for ii in range(ndimGP):
-                    #set up the individual kernel
-
-                    if GPjumping[i][ii]=='y':
-
-                        if ii>0:
-                            k2 = k3
-                    
-                        if (GPphotkerns[i][ii]=='sqexp'):
-                            k1 = GPphotpars1[i][ii] * kernels.ExpSquaredKernel(GPphotpars2[i][ii], ndim=ndimGP, axes=ii)  
-                        elif (GPphotkerns[i][ii]=='mat32'):
-                            k1 = GPphotpars1[i][ii] * kernels.Matern32Kernel(GPphotpars2[i][ii], ndim=ndimGP, axes=ii)  
-                        else:
-                            _raise(ValueError, 'kernel not recognized!')
-                        
-                        if iii==0:
-                            k3 = k1
-                        else:
-                            k3 = k2 + k1
-                        
-                        GPparams=np.concatenate((GPparams,(np.log(GPphotpars1[i][ii]),np.log(GPphotpars2[i][ii]))), axis=0)            
-                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[i][ii],GPphotstep2[i][ii])),axis=0)
-                        GPindex=np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
-                        GPprior=np.concatenate((GPprior,(GPphotprior1[i][ii],GPphotprior2[i][ii])),axis=0)
-                        GPpriwid=np.concatenate((GPpriwid,(GPphotpriorwid1[i][ii],GPphotpriorwid2[i][ii])),axis=0)
-                        GPlimup=np.concatenate((GPlimup,(GPphotlim1up[i][ii],GPphotlim2up[i][ii])),axis=0)
-                        GPlimlo=np.concatenate((GPlimlo,(GPphotlim1lo[i][ii],GPphotlim2lo[i][ii])),axis=0)
-                        GPnames=np.concatenate((GPnames,(['GPphotscale_lc'+str(i+1),"GPphotmetric_lc"+str(i+1)])),axis=0)
-
-                        iii=iii+1
         
-                gp = GPnew(k3, mean=mean_model,white_noise=0.,fit_white_noise=False)  
+            if GPphotWNstart[i] == GPphotWNstart[0] and GPphotWNstep[i]==0.0:
+                d_combined = 1.0
+            elif GPphotWN[0] == 'all':
+                d_combined = 1.0
+            else:
+                d_combined = 0.0
+
+
+            GPparams=np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   
+            GPstepsizes=np.concatenate((GPstepsizes,GPphotWNstep[i]),axis=0)
+            GPindex=np.concatenate((GPindex,[i]),axis=0)
+            GPprior=np.concatenate((GPprior,GPphotWNprior[i]),axis=0)
+            GPpriwid=np.concatenate((GPpriwid,GPphotWNpriorwid[i]),axis=0)
+            GPlimup=np.concatenate((GPlimup,GPphotWNlimup[i]),axis=0)
+            GPlimlo=np.concatenate((GPlimlo,GPphotWNlimlo[i]),axis=0)
+            GPnames=np.concatenate((GPnames,['GPphotWN_lc'+str(i+1)]),axis=0)
+            GPcombined=np.concatenate((GPcombined,[d_combined]),axis=0)
+
+            iii=0
+
+            for ii in range(ndimGP):
+                if GPall[0,ii] == True:
+                    j = 0
+                else:
+                    j = i
+
+                if GPjumping[j,ii]==True:
+                    if iii>0:
+                        k2 = k3
+
+                    if (GPphotkerns[j,ii]=='sqexp'):
+                        k1 = GPphotpars1[j,ii] * kernels.ExpSquaredKernel(GPphotpars2[j,ii], ndim=ndimGP, axes=ii)  
+                    elif (GPphotkerns[j,ii]=='mat32'):
+                        k1 = GPphotpars1[j,ii] * kernels.Matern32Kernel(GPphotpars2[j,ii], ndim=ndimGP, axes=ii)  
+                    else:
+                        _raise(ValueError, 'kernel not recognized! Must be either "sqexp" or "mat32" ')
+                        
+                    if iii==0:
+                        k3 = k1
+                    else:
+                        k3 = k2 + k1
+                        
+                    GPparams=np.concatenate((GPparams,(np.log(GPphotpars1[j,ii]),np.log(GPphotpars2[j,ii]))), axis=0)           
+                    if GPall[0,ii] == True and i == 0:         
+                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
+                    elif GPall[0,ii] == True and i != 0:
+                        GPstepsizes=np.concatenate((GPstepsizes,(0.,0.)),axis=0)
+                    else:
+                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
+                    GPindex=np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
+                    GPprior=np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
+                    GPpriwid=np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
+                    GPlimup=np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
+                    GPlimlo=np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
+                    GPnames=np.concatenate((GPnames,(['GPphotscale_lc'+str(i+1)+'dim'+str(ii),"GPphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
+                    GPcombined=np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
+
+                    iii=iii+1
+                    
+            gp = GPnew(k3, mean=mean_model,white_noise=GPphotWNstart[i],fit_white_noise=True)
+
                 
             # freeze the parameters that are not jumping!
             # indices of the GP mean model parameters in the params model
@@ -761,20 +745,23 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
             GPobjects.append(gp)
             pargps.append(pargp) 
     
+
+    print('Setting up RV arrays ...')
+
     for i in range(nRV):
         t, rv, err, bis, fwhm, contrast = np.loadtxt(fpath+RVnames[i], usecols=(0,1,2,3,4,5), unpack = True)  # reading in the data
         
         tarr = np.concatenate((tarr,t), axis=0)
         farr = np.concatenate((farr,rv), axis=0)    # ! add the RVs to the "flux" array !
         earr = np.concatenate((earr,err), axis=0)   # ! add the RV errors to the "earr" array !
-        xarr=np.concatenate((xarr,np.zeros(len(t),dtype=np.int)), axis=0)  # xshift array: filled with 0s
-        yarr=np.concatenate((yarr,np.zeros(len(t),dtype=np.int)), axis=0)  # yshift array: filled with 0s
-        aarr=np.concatenate((aarr,np.zeros(len(t),dtype=np.int)), axis=0)  # airmass array: filled with 0s
+        xarr=np.concatenate((xarr,np.zeros(len(t),dtype=int)), axis=0)  # xshift array: filled with 0s
+        yarr=np.concatenate((yarr,np.zeros(len(t),dtype=int)), axis=0)  # yshift array: filled with 0s
+        aarr=np.concatenate((aarr,np.zeros(len(t),dtype=int)), axis=0)  # airmass array: filled with 0s
         warr=np.concatenate((warr,fwhm), axis=0)
-        sarr=np.concatenate((sarr,np.zeros(len(t),dtype=np.int)), axis=0)  # sky array: filled with 0s
+        sarr=np.concatenate((sarr,np.zeros(len(t),dtype=int)), axis=0)  # sky array: filled with 0s
         barr=np.concatenate((barr,bis), axis=0)  # bisector array
         carr=np.concatenate((carr,contrast), axis=0)  # contrast array
-        lind=np.concatenate((lind,np.zeros(len(t),dtype=np.int)+i+nphot), axis=0)   # indices
+        lind=np.concatenate((lind,np.zeros(len(t),dtype=int)+i+nphot), axis=0)   # indices
         indices=np.where(lind==i+nphot)
         indlist.append(indices)
         Pin = sinPs[i]
@@ -814,7 +801,6 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
         
     inmcmc='n'
 
-    #print nothing
     LCjump = [] # a list where each item contain a list of the indices of params that jump and refer to this specific lc
 
     #ATTENTION: pass to the lnprob function the individual subscript (of variable p) that are its jump parameters for each LC
@@ -832,7 +818,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
         
         # define the index in the set of filters that this LC has:
         k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
-        k = np.asscalar(k[0])
+        k = k[0].item()
 
         if (ddfYN=='y'):    
             if temp.shape:    
@@ -875,7 +861,6 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
         
         LCjump.append(temp)
 
-
     RVjump = [] # a list where each item contain a list of the indices of params that jump and refer to this specific RV dataset
 
     for i in range(nRV):
@@ -901,23 +886,10 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
         if rvstep[0]: 
             temp.append(rvstep)
             temp=np.concatenate(([temp],[rvstep]),axis=0)
-
-        #and also add the GPparams
-        #gind = np.where(GPindex==i)
-        #gindl = list(gind[0]+len(params))
-        #gind = gind[0]+len(params)
-
-        #if gindl:
-        #    temp = np.concatenate((temp,gind),axis=0)
         
         RVjump.append(temp)
 
-    func=ff.fitfunc
-    #ln_func=ln.lnprob
-
-    # ==============================================================================
-
-    # here we start: set up the problem. our initial parameters are the parameters as the input p in logprob_multi
+    # =============================== CALCULATION ==========================================
 
 
     pnames_all = np.concatenate((pnames,GPnames))
@@ -928,11 +900,6 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     priorwids = np.concatenate((priwid,GPpriwid))
     lim_low = np.concatenate((pmin,GPlimlo))
     lim_up = np.concatenate((pmax,GPlimup))
-
-    #ATTENTION: we now want to isolate the parameters that jump. Only those should form p0
-    # so, initial contains params AND GPparams. 
-
-    # how many dimensions does the problem have?
     ndim = np.count_nonzero(steps)
     jumping=np.where(steps!=0.)
     jumping_noGP = np.where(stepsize!=0.)
@@ -958,20 +925,26 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     ewarr=grweights(earr,indlist,grnames,groups,ngroup,nphot)
 
 
+    ############################## Initial guess ##################################
+    print('\nPlotting initial guess')
+
     inmcmc = 'n'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes]
+    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined]
     
     mval, merr,dump1,dump2 = logprob_multi(initial[jumping],*indparams)
     if not os.path.exists("init"): os.mkdir("init")    #folder to put initial plots    
     mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'init/init_',initial,T0_in[0],per_in[0])
 
 
+    ########################### MCMC run ###########################################
+    print('\nRunning MCMC')
+
     inmcmc = 'y'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes]
+    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined]
 
     print('No of dimensions: ', ndim)
     print('No of chains: ', nchains)
-    print(pnames_all[jumping])
+    print('fitting parameters: ', pnames_all[jumping])
 
 
     # put starting points for all walkers, i.e. chains
@@ -1036,7 +1009,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
 
     npar=len(jnames)
     if (baseLSQ == "y"):
-        print("BUG here if you are doing GPs")
+        print("TODO: validate if GPs and leastsquare_for_basepar works together")
         npar = npar + nbc_tot   # add the baseline coefficients if they are done by leastsq
 
     medp=np.copy(initial)
@@ -1044,19 +1017,22 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     maxp=initial
     maxp[[ijnames][0]]=maxvals
 
-    # now do some plotting --- this still needs some modifications I think
+    #============================== PLOTTING ===========================================
+    print('Plotting output figures')
 
     inmcmc='n'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes]
+    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes,GPcombined]
 
+    #median
     mval, merr,T0_post,p_post = logprob_multi(medp[jumping],*indparams)
     mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'med_',medp,T0_post,p_post)
 
+    #max_posterior
     mval2, merr2, T0_post, p_post = logprob_multi(maxp[jumping],*indparams)
     mcmc_plots(mval2,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'max_',maxp, T0_post,p_post)
 
 
-    maxresiduals = farr - mval2 if statistic is not "median" else farr - mval  #Akin allow statistics to be based on median of posterior
+    maxresiduals = farr - mval2 if statistic != "median" else farr - mval  #Akin allow statistics to be based on median of posterior
     chisq = np.sum(maxresiduals**2/earr**2)
 
     ndat = len(tarr)
@@ -1064,7 +1040,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     aic=get_AIC_emcee(npar,ndat,chisq)
 
 
-    rarr=farr-mval2  if statistic is not "median" else farr - mval  # the full residuals
+    rarr=farr-mval2  if statistic != "median" else farr - mval  # the full residuals
     bw, br, brt, cf, cfn = corfac(rarr, tarr, earr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
 
     outfile='CF.dat'
@@ -1084,21 +1060,38 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median",
     
         # ==== corner plot ================
 
-    #### No corner plot right now because too many parameters ### 
-    if len(jnames) <=12:
-        c=corner.corner(sampler.flatchain, labels=jnames)
-        c.savefig("corner_GP.png", bbox_inches='tight')
-        plt.close()
+    #### corner plot only if few parameters
+    # if len(jnames) <=12:
+    #     c=corner.corner(sampler.flatchain, labels=jnames)
+    #     c.savefig("corner_GP.png", bbox_inches='tight')
+    #     plt.close()
         
-        ndim, nwalkers = sampler.chain.shape[2], sampler.chain.shape[0]
-        fig = plt.figure(figsize=(12,15))
-        for j in range(ndim):
-            plt.subplot(ndim,1,j+1)
-            plt.ylabel(jnames[j])
-            plt.autoscale(enable=True, axis='x', tight=True)
-            for i in range(0,nwalkers-1): plt.plot(sampler.chain[i,:, j],"k",alpha=0.05)
-            plt.subplots_adjust(hspace=0.01,bottom=0.1, top=0.9)
-        fig.savefig("chains.png", bbox_inches="tight")
+    #     ndim, nwalkers = sampler.chain.shape[2], sampler.chain.shape[0]
+    #     fig = plt.figure(figsize=(12,15))
+    #     for j in range(ndim):
+    #         plt.subplot(ndim,1,j+1)
+    #         # plt.ylabel(jnames[j])
+    #         plt.autoscale(enable=True, axis='x', tight=True)
+    #         for i in range(0,nwalkers-1): 
+    #             plt.plot(sampler.chain[i,:, j],"k",alpha=0.05, label=f"{jnames[j]}")
+    #             if i==0: plt.legend(loc='upper left')
+    #         plt.subplots_adjust(hspace=0.01,bottom=0.1, top=0.9)
+    #     fig.savefig("chains.png", bbox_inches="tight")
 
-    
-    # matplotlib.use('TKagg')
+    result = load_chains()
+
+    matplotlib.use('Agg')
+    try:
+        fig = result.plot_chains()
+        fig.savefig("chains.png", bbox_inches="tight")
+    except:
+        pass
+
+    try:
+        fig = result.plot_corner()
+        fig.savefig("corner.png", bbox_inches="tight")
+    except: pass
+
+    matplotlib.use(__default_backend__)
+
+    return result

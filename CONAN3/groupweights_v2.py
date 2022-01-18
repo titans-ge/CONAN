@@ -18,7 +18,6 @@ def grweights(earr,indlist,grnames,groups,ngroup,nphot):
         nlc=len(ind)            # number of lcs in this group
         nplc=len(indlist[ind[0]][0])      # number of lc points
         errsum=np.zeros(nplc)   # this will contain the error sum for the group
-        print(jj)
         # sum the errors up at each time step
         for k in range(nlc):
             if (len(indlist[ind[k]][0]) != nplc):
@@ -28,12 +27,6 @@ def grweights(earr,indlist,grnames,groups,ngroup,nphot):
     # calculate the weights for each lightcurve
 
         for k in range(nlc):
-            print(len(indlist[ind[k]][0]))
-            print('ping')
-            print(len(indlist[ind[k]][0]))
-            print(len(ewarr))
-            print(len(ewarr[indlist[ind[k]][0]]))
-            print(len(errsum))
             ewarr[indlist[ind[k]][0]]=np.power(ewarr[indlist[ind[k]][0]],2)*errsum
      
  #   print np.divide(1.,ewarr[indlist[0]]), np.divide(1.,ewarr[indlist[1]]), np.divide(1.,ewarr[indlist[2]])

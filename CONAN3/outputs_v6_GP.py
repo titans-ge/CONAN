@@ -4,7 +4,7 @@ from .plots_v12 import *
 import subprocess
 import scipy.stats as stats
 import scipy.interpolate as si
-import pickle
+
 # sys.path.append("/home/lendl/Work/OurCode/transit_fit/")
 
 from .credibleregion_ML import *
@@ -283,7 +283,6 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      of.close()
      
      #now write out outfile2: the peak of the posterior and the area containing 68% of points
-     posterior_dict = {}
      for i in range(npara):     
          vals=posterior[:,i]
          pdf, xpdf, HPDmin, iHDP = credregionML(vals)
@@ -296,7 +295,6 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
          sig3m[i,1] = np.amax(xpdf[pdf>HPDmin]) - maxvals[i]      
          of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (jnames[i], maxvals[i],sig1m[i,0],sig1m[i,1], sig3m[i,0], sig3m[i,1])) 
          param_histbp(vals,jnames[i],medvals[i],sig1[i],sig3[i],maxvals[i],sig1m[i],sig3m[i],bp[ijnames[0][i]],s1bps)
-         posterior_dict[jnames[i]] = vals
 
      of2.write('====================================================================================================\n')
      of2.write('Additional input parameters: \n')
@@ -311,7 +309,6 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
      of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
      param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms)
-     posterior_dict['Rstar'] = vals
      vals=Ms_PDF
      pdf, xpdf, HPDmin, iHDP = credregionML(vals)
      maxval = xpdf[iHDP]
@@ -322,7 +319,6 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
      of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
      param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms)
-     posterior_dict['Mstar'] = vals
 
      for i in range(len(extinpars)):
          vals = extind_PDF[:,i]
@@ -367,7 +363,6 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
              
          of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (derived_pnames[i], maxvalsd[i], sig1md[i,0],sig1md[i,1], sig3md[i,0], sig3md[i,1])) 
          param_hist(vals,derived_pnames[i],medvalsd[i],sig1d[i],sig3d[i],maxvalsd[i],sig1md[i],sig3md[i])
-         posterior_dict['derived_'+derived_pnames[i]] = vals
      
      of2.write('====================================================================================================\n')
      of2.write('Fixed parameters: \n')
@@ -383,7 +378,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      
      of2.write('====================================================================================================\n')    
      of2.close()
-     pickle.dump(posterior_dict,open("posterior_dict.pkl","wb"))  
+         
          
      #now write out outfile3: the peak of the posterior and the uncertainties given by MC3
      for i in range(npara):
@@ -649,7 +644,7 @@ def derive_parameters(filnames, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur
         nfil = c1_PDF.shape
         pnames_LD = []
         LD_PDFs = []
-        print(nfil[0])
+        #print(nfil[0])
         for i in range(nfil[0]):
             u1 = (c1_PDF[i] + c2_PDF[i]) / 3.
             u2 = (c1_PDF[i] - 2. * c2_PDF[i]) / 3.

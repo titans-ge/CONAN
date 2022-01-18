@@ -9,10 +9,7 @@ from george import kernels
 from .gpnew import *
 from .model_GP_v3 import *
 
-# sys.path.append("/home/lendl/Work/OurCode/CONAN/")
-
 from .RVmodel_v3 import *
-from .Transitmodel_v2 import *
 
 
 def logprob_multi(p, *args):
@@ -75,10 +72,10 @@ def logprob_multi(p, *args):
     jit_apply = args[54]
     jumping_GP = args[55]
     GPstepsizes = args[56]
+    GPcombined = args[57]
     lnprob = 0.
     
-
-    #TODO: the input GP parameters (gp1,gp2) need to enter. actually, they are jump parameters so should be part of params()
+    lc0_combinedGPs = np.where(GPcombined == 1.0)
     
     mod, emod = [], [] # output arrays in case we're not in the mcmc
     
@@ -95,16 +92,15 @@ def logprob_multi(p, *args):
         bt = np.copy(barr[indlist[j][0]])
         ct = np.copy(carr[indlist[j][0]])
         name = names[j]
-        
+        if baseLSQ == "y":
+            bvar = bvars[j][0]
+        else:
+            bvar=[]
+
         pp=p[pindices[j]]  # the elements of the p array jumping in this LC
-        
-      #  print p
-      #  print pp
-      #  print params        
         
         # extract the parameters input to the modeling function from the input array
         
-
         #specify the LD and ddf correctly
             
         # identify the filter index of this LC
@@ -179,6 +175,14 @@ def logprob_multi(p, *args):
         else:
             occin = params[occind]
             
+
+        ##########
+        if occin < 0.0:
+            occin = 0.0
+
+        #########
+
+
         #now check the correct LD coeffs
         if (u1ind in jumping[0]):    # index of specific LC LD in jumping array -> check in jumping array
             c1in = pp[ppcount]
@@ -195,6 +199,7 @@ def logprob_multi(p, *args):
         bfstart = 8+nddf+nocc+4*nfilt+nRV+ j*20  # index in params of the first baseline param of this light curve
         blind = np.asarray(list(range(bfstart,bfstart+20))) # the indices of the baseline params of this light curve
         basesin = np.zeros(20)
+        
         for jj in range(len(blind)):
             basein = blind[jj]
                 
@@ -203,7 +208,7 @@ def logprob_multi(p, *args):
                 ppcount = ppcount + 1
             else:
                 basesin[jj]=params[basein]
-        
+
         #A test to find out what kind of model this is
         if (useGPphot[j]=='y'):   
             pargp = pargps[j]
@@ -213,8 +218,8 @@ def logprob_multi(p, *args):
             kwargs = dict(**Parest)
             
             # and specify the correct arguments
-            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee]
-            
+            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee,bvar]
+       
             mean_model = Transit_Model(T0=T0in, RpRs=RpRsin, b=bbin, dur=durin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in)
             
             # parameters to go into the GP: transit followed by the GP parameters and the WN
@@ -222,6 +227,10 @@ def logprob_multi(p, *args):
             # which GP parameters are those of this light curve? 
             GPthisLC = np.where(GPindex == j)[0]
             GPuse = []
+
+            ppcount_lc0 = ppcount
+
+            l = 0
             
             for jj in range(len(GPthisLC)):
                 
@@ -230,6 +239,10 @@ def logprob_multi(p, *args):
                     GPuse = np.concatenate((GPuse,[pp[ppcount]]),axis=0)
                     ppcount = ppcount + 1
  
+                elif GPcombined[GPthisLC[jj]] == 1.0:
+                    GPuse = np.concatenate((GPuse,[p[pindices[0]][ppcount_lc0+lc0_combinedGPs[0][l]]]),axis=0)
+                    l = l+1
+
                 else:
                     GPuse = np.concatenate((GPuse,[GPparams[GPthisLC[jj]]]),axis=0)   # otherwise, set it to the value in GPparams
 
@@ -238,9 +251,7 @@ def logprob_multi(p, *args):
             # here: define the correct para array
             para=[T0in,RpRsin, bbin, durin, perin, eosin, eocin, ddf0, occin, c1in, c2in]
             para=np.concatenate((para,(GPuse)),axis=0)
-            
-           # print para
-            
+                        
             # here we need to call the correct GP objects
             gp = GPobjects[j]
 
@@ -248,6 +259,9 @@ def logprob_multi(p, *args):
             
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
+                print('\nLightcurve number:',j)
+                print('GP values used:',GPuse)
+
                 pred, pred_var = gp.predict(ft, pargp, return_var=True, args=argu)
                 
                 mod = np.concatenate((mod,pred))
@@ -307,20 +321,56 @@ def logprob_multi(p, *args):
             
         else:
 
-            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee]            
-            
-            mt = get_Tramod(T0in, RpRsin, bbin, durin, perin, eosin, eocin, ddf0, occin, c1in, c2in, argu)
-                        
-            chisq = np.sum((mt-ft)**2/ee**2)
+            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee,bvar]     
+
+
+            # #### MONIKA: let's call the transit model from "model_GP_v3.pro" to avoid inconsitencies #####
+            #      get_Tramod shoud now be obsolete
+            #
+            #  mt = get_Tramod(T0in, RpRsin, bbin, durin, perin, eosin, eocin, ddf0, occin, c1in, c2in, argu)
+
+            tramod_call = Transit_Model(T0=T0in, RpRs=RpRsin, b=bbin, dur=durin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in)
+            mt=tramod_call.get_value(tt, argu)
+
             #lnprob_thislc = -1./2 * (len(tt) * np.log(2*np.pi) + np.sum(np.log(ee**2)) + chisq ) 
             lnprob_thislc = -1./2. * np.sum( (mt-ft)**2/ee**2 + np.log(ee**2))
             lnprob = lnprob + lnprob_thislc
+            chisq = np.sum((mt-ft)**2/ee**2)
+            
+            # get the transit-only model with no parametric baselines
+            basesin_non = np.zeros(20)
+            basesin_non[0] = 1.
+            argu2 = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,'n',basesin_non,vcont,name,ee,bvar]
+            mt0=tramod_call.get_value(tt, argu2)
             
             if inmcmc == 'n':
                 mod = np.concatenate((mod,mt))
-                emod = np.concatenate((emod,np.zeros(len(mt))))       
-#    print lpri        
-#    print llim
+                emod = np.concatenate((emod,np.zeros(len(mt)))) 
+
+                # #### Monika modificatons for outputs without GPs #####
+                #
+                # write out an output file in the same format as the GP output files. 
+                #   But set the GP prediciton ("pred") to the full model
+                ts=tt-tt[0]
+                if (baseLSQ == 'y'):
+                    mres=ft/mt0
+                    #bvar contains the indices of the non-fixed baseline variables
+                    coeffstart = np.copy(basesin[bvar])   
+                    icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mt0, ft, ts, at, xt, yt, wt, st))
+                    coeff = np.copy(basesin)
+                    coeff[bvar] = np.copy(icoeff)
+                    bfunc_para = basefunc_noCNM(coeff, ts, at, xt, yt, wt, st)
+                else:
+                    bfunc_para = basefunc_noCNM(basesin, ts, at, xt, yt, wt, st)
+
+                pred=mt0*bfunc_para
+                fco_full = ft/bfunc_para
+                outfile=name[:-4]+'_out_full.dat'
+                of=open(outfile,'w')
+                for k in range(len(tt)):
+                    of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k], bfunc_para[k], mt0[k],fco_full[k])) 
+                
+                of.close()      
     
     # now do the RVs and add their proba to the model
     for j in range(nRV):
@@ -433,10 +483,14 @@ def logprob_multi(p, *args):
 
 # ====== return outputs ======
     
+    # MONIKA: adding a check against NaN log probs
     if inmcmc == 'y':
-        return lnprob
-    else:
         
+        if np.isnan(lnprob) == True:
+            lnprob = -np.inf
+
+        return lnprob
+    else:      
         return mod, emod, T0in, perin
 
 def norm_prior(value,center,sigma):

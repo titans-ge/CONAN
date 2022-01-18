@@ -3,6 +3,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
     import matplotlib
     import os
     matplotlib.use('Agg')
+    from ._classes import __default_backend__
     import matplotlib.pyplot as plt    
     import numpy as np
     from matplotlib.ticker import FormatStrFormatter    
@@ -39,8 +40,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         bfunc = bfunc[clipin.flatten()]
         et = et[clipin.flatten()]
 
-
-        ph = np.modf(np.abs(tt-T0)/period)[0] #calculate phase
+        ph = np.modf((np.modf((tt-T0)/period)[0])+1.0)[0] #calculate phase
 
         #Add data to array to phasefold them later
         phase_phasefold = np.append(phase_phasefold,ph)
@@ -137,6 +137,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
     binsize = 10./(24.*60.) / period #10 minute bins in units of one phase
     nbin = int((np.max(phase_phasefold)-np.min(phase_phasefold))/binsize)
     phase_bins = np.linspace(np.min(phase_phasefold),np.max(phase_phasefold),nbin+1)
+    pbin = phase_bins+0.5*binsize # MONIKA: defining the bin centers for plotting
     flux_bins = np.zeros(np.size(phase_bins))
     res_bins = np.zeros(np.size(phase_bins))
     error_bins = np.zeros(np.size(phase_bins))
@@ -160,7 +161,6 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
             res_err_bins[i] = np.std(res_in_bin)/np.sqrt(np.size(res_in_bin))
 
     ### Plot Phasecurve
-
     fig,ax=plt.subplots(nrows=2, gridspec_kw={'height_ratios':[2,1]},figsize=(12,9))
 
     ax[0].set_title('Phasefolded, fitted lightcurve')
@@ -169,8 +169,8 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
     ax[1].plot(phase_phasefold, res_phasefold,'o',c='skyblue',ms=2, zorder=1)
     ax[0].plot(phase_phasefold,model_phasefold,'r-')
     ax[1].plot(phase_phasefold,np.zeros(np.size(phase_phasefold)),'r-')
-    ax[0].errorbar(phase_bins, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
-    ax[1].errorbar(phase_bins, res_bins, yerr=res_err_bins, fmt='o', c='midnightblue', ms=5, capsize=2)
+    ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
+    ax[1].errorbar(pbin, res_bins, yerr=res_err_bins, fmt='o', c='midnightblue', ms=5, capsize=2)
 
     ax[0].set_ylim([np.min(flux_phasefold) - 0.1 *np.abs((1.0 - np.min(flux_phasefold))),np.max(flux_phasefold) + 0.1 * np.abs((np.max(flux_phasefold)-1.0))])
     ax[1].set_ylim([np.min(res_phasefold) + 0.1 * np.min(res_phasefold),np.max(res_phasefold) + 0.1 * np.max(res_phasefold)])
@@ -225,13 +225,15 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         plt.ylabel("RV [km/s]")
         plt.savefig(outname)  
 
+    matplotlib.use(__default_backend__)
 
 def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
     
     # this needs to be written. Just make a histogram plot of the parameter (values vals), label it (pname), and indicate the 1- and 3- sigma limits (s1, s3)
 
     import numpy as np
-    import matplotlib 
+    import matplotlib
+    from ._classes import __default_backend__
     matplotlib.use('Agg')
     import matplotlib.mlab as mlab
     import matplotlib.pyplot as plt
@@ -264,6 +266,8 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
     outname="histograms/hist_"+pname+".png"
     plt.savefig(outname)
 
+    matplotlib.use(__default_backend__)
+
 #    if not os.path.exists("posteriors"): os.mkdir("posteriors")
 #    outfile="posteriors/posterior_"+pname+".dat"
 #    of=open(outfile,'w')
@@ -278,7 +282,8 @@ def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm):
     # this needs to be written. Just make a histogram plot of the parameter (values vals), label it (pname), and indicate the 1- and 3- sigma limits (s1, s3)
 
     import numpy as np
-    import matplotlib 
+    import matplotlib
+    from ._classes import __default_backend__ 
     matplotlib.use('Agg')
     import matplotlib.mlab as mlab
     import matplotlib.pyplot as plt
@@ -315,6 +320,9 @@ def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm):
     outname="histograms/hist_"+pname+".png"
     plt.savefig(outname)
 
+    matplotlib.use(__default_backend__)
+
+
 #    if not os.path.exists("posteriors"): os.mkdir("posteriors")
 #    outfile="posteriors/posterior_"+pname+".dat"
 #    of=open(outfile,'w')
@@ -327,6 +335,7 @@ def plot_traspec(dRpRsres, edRpRsres, ulamdas):
     
     import numpy as np
     import matplotlib
+    from ._classes import __default_backend__
     matplotlib.use('Agg')
     import matplotlib.mlab as mlab
     import matplotlib.pyplot as plt
@@ -338,6 +347,9 @@ def plot_traspec(dRpRsres, edRpRsres, ulamdas):
     plt.xlabel("Wavelength [A]")
     plt.ylabel("Rp/Rs")
     plt.savefig(outname)
+
+    matplotlib.use(__default_backend__)
+
     
 def plot_phasecurve(params, filename):
 
@@ -413,3 +425,4 @@ def plot_phasecurve(params, filename):
     axes[2].set_xlim([-0.51, 0.51])
 
     fig.savefig(filename+"_PC.pdf")
+    matplotlib.use(__default_backend__)

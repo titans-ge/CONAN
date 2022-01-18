@@ -39,7 +39,7 @@ import numpy as np
 import matplotlib
 
 #matplotlib.use('TKagg')
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 
@@ -1277,4 +1277,4 @@ c=corner.corner(sampler.flatchain, labels=jnames)
 c.savefig("corner_GP.pdf", bbox_inches='tight')
 plt.close()
 
-matplotlib.use('TKagg')
+#matplotlib.use('TKagg')
