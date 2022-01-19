@@ -1139,12 +1139,26 @@ def create_configfile(lc, rv, mcmc, filename="input_config.dat"):
     f.close()
 
 
-def load_configfile(configfile="input_config.dat", return_objects=True, verbose=True):
+def load_configfile(configfile="input_config.dat", return_fit=False, verbose=True):
     """
         configure conan from specified configfile.
         
+        Parameters:
+        -----------
+        configfile: filepath;
+            path to configuration file.
+
+        return_fit: bool;
+            whether to immediately perform the fit from this function call.
+            if True, the result object from the fit is also returned
+
+        verbose: bool;
+            show print statements
+
         Returns:
         --------
+        lc_data, rv_data, mcmc. if return_fit is True, the result object of fit is also returned
+
         lc_data: object;
             light curve data object generated from `conan3.load_lighturves`.
         
@@ -1152,7 +1166,10 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
             rv data object generated from `conan3.load_rvs`
             
         mcmc: object;
-            fitting objected generated from `conan3.setup_fit`
+            fitting object generated from `conan3.setup_fit`.
+
+        result: object;
+            result object containing chains of the mcmc fit.
     
     """
     _file = open(configfile,"r")
@@ -1476,7 +1493,13 @@ def load_configfile(configfile="input_config.dat", return_objects=True, verbose=
                          lssq_use_Lev_Marq=lssquseLevMarq, apply_CFs=applyCFs,apply_jitter=applyjitter,
                          verbose=verbose)
 
-    _file.close()   
+    _file.close()
+
+    if return_fit:
+        from .fit_data import fit_data
+        result =   fit_data(lc_data, rv_data, mcmc) 
+        return lc_data,rv_data,mcmc,result
+
     return lc_data,rv_data,mcmc
 
 
