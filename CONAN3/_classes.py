@@ -1553,7 +1553,7 @@ class load_chains:
             ax.autoscale(enable=True, axis='x', tight=True)
         plt.subplots_adjust(hspace=0.0)
         axes[-1].set_xlabel("step number", fontsize=label_size);
-        # plt.show()
+
         return fig
         
     def plot_corner(self, pars=None, bins=20, thin=1, discard=0,
@@ -1609,14 +1609,22 @@ class load_chains:
                     title_fmt=title_fmt,quantiles=q,title_kwargs={"fontsize": 14},
                     label_kwargs={"fontsize":20})
         
-        # plt.show()
         return fig
 
 
     def plot_posterior(self, par, thin=1, discard=0, bins=20, density=True, range=None,
-                        q = [0.0015,0.16,0.5,0.85,0.9985], multiply_by=1, add_value=0):
+                        q = [0.0015,0.16,0.5,0.85,0.9985], multiply_by=1, add_value=0, 
+                        return_values=False):
         """
         Plot the posterior distribution of a single input parameter, par.
+        if return_values = True, the summary statistic for the parameter is also returned as an output.  
+
+        Returns:
+        --------
+        fig: figure object
+
+        result: tuple of len 3;
+            summary statistic for the parameter, par, in the order [median, -1sigma, +1sigma] 
         """
         assert isinstance(par, str), 'par must be a single parameter of type str'
         assert par in self._par_names, f'{par} is not one of the parameter labels in the mcmc run.'
@@ -1646,5 +1654,9 @@ class load_chains:
             plt.title(f"{par}={med:.4f}$^{{+{sigma_1[1]:.4f}}}_{{-{sigma_1[0]:.4f}}}$")
 
         plt.xlabel(par);
+
+        if return_values:
+            result = [med, sigma_1[0],sigma_1[1]]
+            return fig, result
 
         return fig
