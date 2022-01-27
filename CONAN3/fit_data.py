@@ -32,8 +32,8 @@ import multiprocessing as mp
 mp.set_start_method('fork')
 __all__ = ["fit_data"]
 
-def fit_data(lc, rv=None, mcmc=None, statistic = "median",
-verbose=False, debug=False):
+def fit_data(lc, rv=None, mcmc=None, statistic = "max",
+verbose=False, debug=False, **kwargs):
     """
     function to fit the data using the light-curve object lc, rv_object rv and mcmc setup object mcmc.
 
@@ -42,6 +42,8 @@ verbose=False, debug=False):
     result: object containining labeled mcmc chains
         Object that contains methods to plot the chains, corner, and histogram of parameters.
         e.g result.plot_chains(), result.plot_corner, result.plot_posterior("T_0")
+
+    **kwargs: other parameters sent to emcee.EnsembleSampler.run_mcmc() function
     """
     print('CONAN3 launched!!!\n') 
     #begin loading data from the 3 objects and calling the methods
@@ -956,7 +958,7 @@ verbose=False, debug=False):
     sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams),pool=Pool(nproc), moves=moves)
 
     print("\nRunning first burn-in...")
-    p0, lp, _ = sampler.run_mcmc(p0, 20, progress=True)
+    p0, lp, _ = sampler.run_mcmc(p0, 20, progress=True, **kwargs)
 
     print("Running second burn-in...")
     p0 = p0[np.argmax(lp)] + steps[jumping] * np.random.randn(nchains, ndim) # this can create problems!

@@ -286,8 +286,8 @@ class load_lightcurves:
                 s_pri.append(s[0])
                 scale.append( np.exp(s[0]) )
                 s_pri_wid.append(s[1])
-                s_up.append( np.max(s[0]+10, s[0]+5*s[1]) )    #set bounds at +/- 10 from prior mean or 5stdev (the larger value)
-                s_lo.append( np.min(s[0]-10, s[0]-5*s[1]) )
+                s_up.append( np.max((s[0]+10, s[0]+5*s[1])) )    #set bounds at +/- 10 from prior mean or 5stdev (the larger value)
+                s_lo.append( np.min((s[0]-10, s[0]-5*s[1])) )
 
             elif isinstance(s,tuple) and len(s)==3:
                 s_pri_wid.append(0)          #using uniform prior so set width = 0
@@ -304,8 +304,8 @@ class load_lightcurves:
                 m_pri.append(m[0])
                 metric.append( np.exp(m[0]) )
                 m_pri_wid.append(m[1])
-                m_up.append( np.max(m[0]+10,m[0]+5*m[1]) )    #set uniform bounds at _+/- 10 from prior mean
-                m_lo.append( np.min(m[0]-10, m[0]-5*m[1]) )
+                m_up.append( np.max((m[0]+10,m[0]+5*m[1])) )    #set uniform bounds at _+/- 10 from prior mean
+                m_lo.append( np.min((m[0]-10, m[0]-5*m[1])) )
                 
             elif isinstance(m,tuple) and len(m)==3:
                 m_pri_wid.append(0)       
@@ -1082,7 +1082,10 @@ class mcmc_setup:
                 number of cpus to use for parallelization.
             
             sampler: int;
-                sampler algorithm to use in traversing the parameter space. Options are ["demc","snooker"]
+                sampler algorithm to use in traversing the parameter space. Options are ["demc","snooker"].
+                if None, the default emcee StretchMove is used.
+            
+            Other keyword arguments to the emcee sampler function `run_mcmc` can be given in the call to `CONAN3.fit_data`.
         """
         
         DA = _reversed_dict(locals().copy())
