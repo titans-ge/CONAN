@@ -3,7 +3,7 @@ import numpy as np
 def ecc_om_par(ecc_in, omega_in):
 
     sesino=np.sqrt(ecc_in[0])*np.sin(omega_in[0])     # starting value
-    sesinolo=0.   # lower limit
+    sesinolo=-1.   # lower limit
     sesinoup=1.   # upper limit
     
     dump1=np.sqrt(ecc_in[0]+ecc_in[1])*np.sin(omega_in[0]+omega_in[1])-np.sqrt(ecc_in[0])*np.sin(omega_in[0])
@@ -42,7 +42,7 @@ def ecc_om_par(ecc_in, omega_in):
     sesinopup=np.abs(np.nanmax([dump1,dump2,dump3,dump4]))
                                     
     secoso=np.sqrt(ecc_in[0])*np.cos(omega_in[0])
-    secosolo=0.   # lower limit
+    secosolo=-1.   # lower limit
     secosoup=1.   # upper limit
 
     dump1=np.sqrt(ecc_in[0]+ecc_in[1])*np.cos(omega_in[0]+omega_in[1])-np.sqrt(ecc_in[0])*np.cos(omega_in[0])

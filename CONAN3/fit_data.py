@@ -9,7 +9,6 @@ import emcee
 from occultquad import *
 from occultnl import *
 from .basecoeff_v14_LM import *
-from . import fitfunc_v25 as ff
 from .model_GP_v3 import *
 from .logprob_multi_sin_v4 import *
 from .plots_v12 import *
@@ -79,7 +78,7 @@ verbose=False, debug=False, **kwargs):
     GPphotkerns = np.zeros((nphot,ndimGP),dtype=object)
     GPphotWN = np.zeros((nphot,1),dtype=object)
     GPphotWNstartppm = 50      # start at 50 ppm 
-    GPphotWNstart = np.zeros((nphot,1))
+    GPphotWNstart = -50*np.ones((nphot,1)) # set WN very low in case WN is not used
     GPphotWNstep = np.zeros((nphot,1))
     GPphotWNprior = np.zeros((nphot,1))
     GPphotWNpriorwid = np.zeros((nphot,1))
