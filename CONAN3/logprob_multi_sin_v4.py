@@ -238,12 +238,10 @@ def logprob_multi(p, *args):
                 
                     GPuse = np.concatenate((GPuse,[pp[ppcount]]),axis=0)
                     ppcount = ppcount + 1
- 
-                elif GPcombined[GPthisLC[jj]] == 1.0 and GPphotWN[j] == 'n' and jj != 0:
+
+                elif GPcombined[GPthisLC[jj]] == 1.0:
                     if GPphotWN[j] == 'n' and jj == 0:
                         GPuse = np.concatenate((GPuse,[GPparams[GPthisLC[jj]]]),axis=0)
-                        GPuse = np.concatenate((GPuse,[p[pindices[0]][ppcount_lc0+lc0_combinedGPs[0][l]]]),axis=0)
-                        l = l+1
                     else:
                         GPuse = np.concatenate((GPuse,[p[pindices[0]][ppcount_lc0+lc0_combinedGPs[0][l]]]),axis=0)
                         l = l+1
