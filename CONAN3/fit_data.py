@@ -545,8 +545,8 @@ verbose=False, debug=False, **kwargs):
     for i in range(nfilt):  # add the LD coefficients for the filters to the parameters
         params=np.concatenate((params, [c1_in[i,0], c2_in[i,0], c3_in[i,0], c4_in[i,0]]))
         stepsize=np.concatenate((stepsize, [c1_in[i,1], c2_in[i,1], c3_in[i,1], c4_in[i,1]]))
-        pmin=np.concatenate((pmin, [c1_in[i,2], c2_in[i,2], c3_in[i,2], c4_in[i,2]]))
-        pmax=np.concatenate((pmax, [c1_in[i,3], c2_in[i,3], c3_in[i,3], c4_in[i,3]]))
+        pmin=np.concatenate((pmin, [c1_in[i,5], c2_in[i,5], c3_in[i,5], c4_in[i,5]]))
+        pmax=np.concatenate((pmax, [c1_in[i,6], c2_in[i,6], c3_in[i,6], c4_in[i,6]]))
         prior=np.concatenate((prior, [c1_in[i,4], c2_in[i,4], c3_in[i,4], c4_in[i,4]]))
         priorlow=np.concatenate((priorlow, [c1_in[i,5], c2_in[i,5], c3_in[i,5], c4_in[i,5]]))
         priorup=np.concatenate((priorup, [c1_in[i,6], c2_in[i,6], c3_in[i,6], c4_in[i,6]]))
