@@ -32,15 +32,15 @@ mp.set_start_method('fork')
 __all__ = ["fit_data"]
 
 def fit_data(lc, rv=None, mcmc=None, statistic = "max",
-verbose=False, debug=False, **kwargs):
+verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     """
     function to fit the data using the light-curve object lc, rv_object rv and mcmc setup object mcmc.
 
     Returns:
     --------
-    result: object containining labeled mcmc chains
+    result: object containing labeled mcmc chains
         Object that contains methods to plot the chains, corner, and histogram of parameters.
-        e.g result.plot_chains(), result.plot_corner, result.plot_posterior("T_0")
+        e.g result.plot_chains(), result.plot_burnin_chains(), result.plot_corner, result.plot_posterior("T_0")
 
     **kwargs: other parameters sent to emcee.EnsembleSampler.run_mcmc() function
     """
@@ -176,6 +176,9 @@ verbose=False, debug=False, **kwargs):
     gamprilo = [] if rv is None else rv._gamprilo
     gamprihi = [] if rv is None else rv._gamprihi
     sinPs    = [] if rv is None else rv._sinPs
+    if rv is None: #remove k as a free parameter
+        lc._config_par["K"].to_fit = "n"
+        lc._config_par["K"].step_size = 0   
     
     nRV=len(RVnames)             # the number of RV input files
     njumpRV=np.zeros(nRV)
@@ -461,7 +464,7 @@ verbose=False, debug=False, **kwargs):
     ### BUG: this should be read in! And should contain RV inputs ###
     # all of these should be lists with nphot bzw nRV items
 
-    useGPrv=['n']
+    useGPrv=['n']*nRV
 
     GPrvpars1=np.array([0.])
     GPrvpars2=np.array([0.])
@@ -564,7 +567,7 @@ verbose=False, debug=False, **kwargs):
         
         if (jit_apply=='y'):
             print('does jitter work?')
-            print(nothing)
+            # print(nothing)
             params=np.concatenate((params,[0.]), axis=0)
             stepsize=np.concatenate((stepsize,[0.001]), axis=0)
             pmin=np.concatenate((pmin,[0.]), axis=0)
@@ -646,6 +649,13 @@ verbose=False, debug=False, **kwargs):
             A_in,B_in,C1_in,C2_in,D_in,E_in,G_in,H_in,nbc = basecoeff(bases[i])  # the baseline coefficients for this lightcurve; each is a 2D array
             nbc_tot = nbc_tot+nbc # add up the number of jumping baseline coeff
             
+            # if the least-square fitting for the baseline is turned on (baseLSQ = 'y'), then set the stepsize of the jump parameter to 0
+            if (baseLSQ == "y"):
+                abvar=np.concatenate(([A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]]))
+                abind=np.where(abvar!=0.)
+                bvars.append(abind)
+                A_in[1,:]=B_in[1,:]=C1_in[1,:]=C2_in[1,:]=D_in[1,:]=E_in[1,:]=G_in[1,:]=H_in[1,:]=0                             # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
+
             params=np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
             stepsize=np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
             pmin=np.concatenate((pmin,A_in[2,:],B_in[2,:],C1_in[2,:],C2_in[2,:],D_in[2,:],E_in[2,:],G_in[2,:],H_in[2,:]))
@@ -841,7 +851,7 @@ verbose=False, debug=False, **kwargs):
         if (stepsize[c2ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[c2ind]),axis=0)
     
-        bfstart= 8+nddf+nocc+nfilt*4 + nRV  # the first index in the param array that refers to a baseline function    
+        bfstart= 8+nddf+nocc+nfilt*4 + nRV*2  # the first index in the param array that refers to a baseline function    
         blind = np.asarray(list(range(bfstart+i*20,bfstart+i*20+20)))  # the indices for the coefficients for the base function    
         if verbose: print(bfstart, blind, nocc, nfilt)
 
@@ -861,7 +871,7 @@ verbose=False, debug=False, **kwargs):
             temp = np.concatenate((temp,gind),axis=0)
         
         LCjump.append(temp)
-
+    # print(f"LCjump:{LCjump}")
     RVjump = [] # a list where each item contain a list of the indices of params that jump and refer to this specific RV dataset
 
     for i in range(nRV):
@@ -875,12 +885,12 @@ verbose=False, debug=False, **kwargs):
             temp=np.copy(rvstep)
 
         # identify the gamma index of this RV
-        gammaind = 8+nddf+nocc+nfilt*4+i
+        gammaind = 8+nddf+nocc+nfilt*4+i*2
         
         if (stepsize[gammaind]!=0.):           
             temp=np.concatenate((temp,[gammaind]),axis=0)
 
-        bfstart= 8+nddf+nocc+nfilt*4 + nRV + nphot*20  # the first index in the param array that refers to an RV baseline function    
+        bfstart= 8+nddf+nocc+nfilt*4 + nRV*2 + nphot*20  # the first index in the param array that refers to an RV baseline function    
         blind = list(range(bfstart+i*8,bfstart+i*8+8))  # the indices for the coefficients for the base function    
 
         rvstep = np.where(stepsize[blind]!=0.)
@@ -889,7 +899,7 @@ verbose=False, debug=False, **kwargs):
             temp=np.concatenate(([temp],[rvstep]),axis=0)
         
         RVjump.append(temp)
-
+    # print(f"RVjump:{RVjump}")
     # =============================== CALCULATION ==========================================
 
 
@@ -903,6 +913,7 @@ verbose=False, debug=False, **kwargs):
     lim_up = np.concatenate((pmax,GPlimup))
     ndim = np.count_nonzero(steps)
     jumping=np.where(steps!=0.)
+    # print(f"\njumping={jumping}")
     jumping_noGP = np.where(stepsize!=0.)
     jumping_GP = np.where(GPstepsizes!=0.)
 
@@ -922,6 +933,8 @@ verbose=False, debug=False, **kwargs):
         both.sort()
         indices_A = [fullist.index(x) for x in both]
         pindices.append(indices_A)
+    # print(f"initial:{initial[jumping]}")
+    # print(f"pindices:{pindices}")
 
     ewarr=grweights(earr,indlist,grnames,groups,ngroup,nphot)
 
@@ -930,7 +943,11 @@ verbose=False, debug=False, **kwargs):
     print('\nPlotting initial guess')
 
     inmcmc = 'n'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined]
+    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
+                nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, 
+                cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
+                pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
+                jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined]
     
     mval, merr,dump1,dump2 = logprob_multi(initial[jumping],*indparams)
     if not os.path.exists("init"): os.mkdir("init")    #folder to put initial plots    
@@ -941,12 +958,19 @@ verbose=False, debug=False, **kwargs):
     print('\nRunning MCMC')
 
     inmcmc = 'y'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined]
+    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
+                nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV,
+                cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
+                pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
+                jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined]
 
     print('No of dimensions: ', ndim)
     print('No of chains: ', nchains)
     print('fitting parameters: ', pnames_all[jumping])
 
+
+    ijnames = np.where(steps != 0.)
+    jnames = pnames_all[[ijnames][0]]  # jnames are the names of the jump parameters
 
     # put starting points for all walkers, i.e. chains
     p0 = np.random.rand(ndim * nchains).reshape((nchains, ndim))*np.asarray(steps[jumping])*2 + (np.asarray(initial[jumping])-np.asarray(steps[jumping]))
@@ -963,6 +987,15 @@ verbose=False, debug=False, **kwargs):
     p0 = p0[np.argmax(lp)] + steps[jumping] * np.random.randn(nchains, ndim) # this can create problems!
     sampler.reset()
     pos, prob, state = sampler.run_mcmc(p0, burnin, progress=True)
+    if save_burnin_chains:
+        burnin_chains = sampler.chain
+
+        #save burn-in chains to file
+        burnin_chains_dict =  {}
+        for ch in range(burnin_chains.shape[2]):
+            burnin_chains_dict[jnames[ch]] = burnin_chains[:,:,ch]
+        pickle.dump(burnin_chains_dict,open("burnin_chains_dict.pkl","wb"))  
+        print("burn-in chain written to disk.")
     sampler.reset()
 
     print("Running production...")
@@ -975,8 +1008,6 @@ verbose=False, debug=False, **kwargs):
     print(("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction))))
     GRvals = grtest_emcee(chains)
 
-    ijnames = np.where(steps != 0.)
-    jnames = pnames_all[[ijnames][0]]  # jnames are the names of the jump parameters
     gr_print(jnames,GRvals)
 
     nijnames = np.where(steps == 0.)
@@ -990,7 +1021,8 @@ verbose=False, debug=False, **kwargs):
     chains_dict =  {}
     for ch in range(chains.shape[2]):
         chains_dict[jnames[ch]] = chains[:,:,ch]
-    pickle.dump(chains_dict,open("chains_dict.pkl","wb"))  
+    pickle.dump(chains_dict,open("chains_dict.pkl","wb"))
+    print("Production chain written to disk as `chains_dict.pkl`. Run `result=CONAN3.load_chains()` to load it.")  
 
     dim=posterior.shape
     # calculate PDFs of the stellar parameters given 
@@ -1010,7 +1042,7 @@ verbose=False, debug=False, **kwargs):
 
     npar=len(jnames)
     if (baseLSQ == "y"):
-        print("TODO: validate if GPs and leastsquare_for_basepar works together")
+        # print("TODO: validate if GPs and leastsquare_for_basepar works together")
         npar = npar + nbc_tot   # add the baseline coefficients if they are done by leastsq
 
     medp=np.copy(initial)
@@ -1022,7 +1054,12 @@ verbose=False, debug=False, **kwargs):
     print('Plotting output figures')
 
     inmcmc='n'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes,GPcombined]
+    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt,
+         filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, 
+              baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,
+                  useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump, 
+                      priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps, 
+                          jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes,GPcombined]
 
     #median
     mval, merr,T0_post,p_post = logprob_multi(medp[jumping],*indparams)

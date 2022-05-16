@@ -1,0 +1,11 @@
+numpy
+matplotlib
+scipy
+emcee
+george
+celerite
+corner
+pandas
+lmfit
+batman-package
+mc3

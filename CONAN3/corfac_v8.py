@@ -122,6 +122,6 @@ def corfac(rarr, tarr, earr, indlist, nphot, njumpphot):
 def redchisqmin(jit,nfree, res, err):
     
     redchisq = np.sum(res**2/(err**2 + jit**2)) / nfree
-    print(redchisq, np.std(res), np.mean(err), nfree, jit)
+    # print(redchisq, np.std(res), np.mean(err), nfree, jit)
     
     return 1-redchisq

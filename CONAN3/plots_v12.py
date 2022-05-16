@@ -29,16 +29,16 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
         
         #CLIP
-        fluxclip = sigma_clip(fco, sigma=5.0)
-        clipin = np.argwhere(fluxclip>0)
+        # fluxclip = sigma_clip(fco, sigma=5.0)
+        # clipin = np.argwhere(fluxclip>0)
 
-        tt = tt[clipin.flatten()]
-        fco = fco[clipin.flatten()]
-        ft = ft[clipin.flatten()]
-        mt = mt[clipin.flatten()]
-        mm = mm[clipin.flatten()]
-        bfunc = bfunc[clipin.flatten()]
-        et = et[clipin.flatten()]
+        # tt = tt[clipin.flatten()]
+        # fco = fco[clipin.flatten()]
+        # ft = ft[clipin.flatten()]
+        # mt = mt[clipin.flatten()]
+        # mm = mm[clipin.flatten()]
+        # bfunc = bfunc[clipin.flatten()]
+        # et = et[clipin.flatten()]
 
         ph = np.modf((np.modf((tt-T0)/period)[0])+1.0)[0] #calculate phase
 
@@ -75,14 +75,15 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         outname=prefix+names[j][:-4]+'_fit.png'
         plt.figure(10)
         plt.clf()
-        plt.plot(tt-7000, ft,'o',c='skyblue', ms=2, zorder=1, label='data')
-        plt.plot(tt-7000, mt, "-r", label='MCMC best fit')
-        plt.errorbar(tbin-7000, ftbin, yerr=etbin, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3, label='binned data')
+        plt.plot(tt, ft,'o',c='skyblue', ms=2, zorder=1, label='data')
+        plt.plot(tt, mt, "-r", zorder=5,label='MCMC best fit')
+        plt.errorbar(tbin, ftbin, yerr=etbin, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3, label='binned data')
         plt.title(tit)
         plt.gca().xaxis.set_major_formatter(FormatStrFormatter('%5.2f'))
         plt.legend(loc="best")
-        plt.xlabel("BJD - 2457000")
+        plt.xlabel("BJD")
         plt.ylabel("Relative Flux")
+        plt.ylim([min(ft)-0.1*(1-min(ft)), max(ft)+0.1*(max(ft)-1)])
         plt.savefig(outname)
 
         
@@ -91,18 +92,18 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         outname=prefix+names[j][:-4]+'_model.png'
         tit='Model for lightcurve '+names[j][:-4]
         fig,ax=plt.subplots(nrows=2, gridspec_kw={'height_ratios':[2,1]},figsize=(12,9))
-        ax[0].plot(tt-7000, fco,'o',c='skyblue',ms=2, zorder=1)
-        ax[1].plot(tt-7000, ft-mt,'o',c='skyblue',ms=2, zorder=1)
-        ax[0].plot(tt-7000,mm,'r-')
-        ax[1].plot(tt-7000,np.zeros(np.size(tt)),'r-')
-        ax[0].errorbar(tbin-7000, fcobin, yerr=etbin, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
-        ax[1].plot(tbin-7000, resbin,'o', c='midnightblue', ms=5, zorder=3)
+        ax[0].plot(tt, fco,'o',c='skyblue',ms=2, zorder=1)
+        ax[1].plot(tt, ft-mt,'o',c='skyblue',ms=2, zorder=1)
+        ax[0].plot(tt,mm,'r-',zorder=5)
+        ax[1].plot(tt,np.zeros(np.size(tt)),'r-')
+        ax[0].errorbar(tbin, fcobin, yerr=etbin, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
+        ax[1].plot(tbin, resbin,'o', c='midnightblue', ms=5, zorder=3)
 
         ax[0].set_ylim([np.min(fco) - 0.1 *np.abs((1.0 - np.min(fco))),np.max(fco) + 0.1 * np.abs((np.max(fco)-1.0))])
-        ax[1].set_ylim([np.min(ft-mt) + 0.1 * np.min(ft-mt),np.max(ft-mt) + 0.1 * np.max(ft-mt)])
+        ax[1].set_ylim([np.min(ft-mt) - 0.1 * np.min(ft-mt),np.max(ft-mt) + 0.1 * np.max(ft-mt)])
 
         ax[0].set_title(tit)
-        ax[1].set_xlabel('BJD - 2457000')
+        ax[1].set_xlabel('BJD')
         ax[0].set_ylabel('Flux - Baseline')
         ax[1].set_ylabel('Residuals')
 
@@ -114,15 +115,15 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
 
     ######### PLOT phasecurve ##############
     ### Clip outliers
-    fluxclip = sigma_clip(flux_phasefold, sigma=5.0)
-    clipin = np.argwhere(fluxclip>0)
+    # fluxclip = sigma_clip(flux_phasefold, sigma=5.0)
+    # clipin = np.argwhere(fluxclip>0)
 
-    phase_phasefold = phase_phasefold[clipin.flatten()]
-    flux_phasefold = flux_phasefold[clipin.flatten()]
-    model_phasefold = model_phasefold[clipin.flatten()]
+    # phase_phasefold = phase_phasefold[clipin.flatten()]
+    # flux_phasefold = flux_phasefold[clipin.flatten()]
+    # model_phasefold = model_phasefold[clipin.flatten()]
 
     #Adapt phase for transit to be in the middle of the plot
-    if model_phasefold[phase_phasefold == np.min(phase_phasefold)] < 1.0:
+    if model_phasefold[np.argmin(phase_phasefold)] < 1.0:
         phase_phasefold[phase_phasefold > 0.5] = phase_phasefold[phase_phasefold >= 0.5] - 1.0
 
     ### Order by phase and calculate residuals
@@ -167,7 +168,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
 
     ax[0].plot(phase_phasefold, flux_phasefold,'o',c='skyblue',ms=2, zorder=1)
     ax[1].plot(phase_phasefold, res_phasefold,'o',c='skyblue',ms=2, zorder=1)
-    ax[0].plot(phase_phasefold,model_phasefold,'r-')
+    ax[0].plot(phase_phasefold,model_phasefold,'r-',zorder=5)
     ax[1].plot(phase_phasefold,np.zeros(np.size(phase_phasefold)),'r-')
     ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
     ax[1].errorbar(pbin, res_bins, yerr=res_err_bins, fmt='o', c='midnightblue', ms=5, capsize=2)

@@ -6,7 +6,7 @@ import scipy
 
 #plt.ion()
 
-def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV):
+def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV, gammaind):
 
     #RVmes = np.copy(farr[indlist[nphot+j][0]])
     #RVerr = np.copy(earr[indlist[nphot+j][0]])
@@ -71,8 +71,8 @@ def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,no
     TA_rv = np.mod(TA_rv,2*np.pi)  # that's the true anomaly!
 
     # get the model RV at each time stamp
-    gammaind = 8 + nddf + nocc+ nfilt*4
-    
+    # gammaind = 8 + nddf + nocc+ nfilt*4
+    # print(f"params:{params}\ngamma_ind={gammaind}\ngamma={params[gammaind]}")
     mod_RV = params[7] * (np.cos(TA_rv + ome) + ecc * np.sin(ome)) + params[gammaind]
 
     bfstartRV= 8 + nddf + nocc + nfilt*4 + nRV + nphot*20 # the first index in the param array that refers to a baseline function
@@ -134,6 +134,8 @@ def para_minfuncRV(icoeff, ivars, mod_RV, RVmes, ts, bis, fwhm, contra):
 
 def basefuncRV(coeff, ts, bis, fwhm, contra):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
-    bfunc=coeff[0]*ts+coeff[1]*np.power(ts,2)+coeff[2]*bis+coeff[3]*np.power(bis,2)+coeff[4]*fwhm+coeff[5]*np.power(fwhm,2)+coeff[6]*contra+coeff[7]*np.power(contra,2)+coeff[8]*np.sin(2.*np.pi/coeff[9]*ts+coeff[10])
+    bfunc=coeff[0]*ts+coeff[1]*np.power(ts,2)+coeff[2]*bis+coeff[3]*np.power(bis,2)+ +\
+            coeff[4]*fwhm+coeff[5]*np.power(fwhm,2)+coeff[6]*contra+coeff[7]*np.power(contra,2)+ +\
+                coeff[8]*np.sin(coeff[9]*ts+coeff[10])
     
     return bfunc    

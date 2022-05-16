@@ -204,7 +204,9 @@ class Transit_Model(Model):
 
 def basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
-    bfunc=coeff[0]+coeff[1]*ts+coeff[2]*np.power(ts,2)+coeff[3]*np.power(ts,3)+coeff[4]*np.power(ts,4)+coeff[5]*am+coeff[6]*np.power(am,2)+coeff[7]*cx+coeff[8]*np.power(cx,2)+coeff[9]*cy+coeff[10]*np.power(cy,2)+coeff[11]*fwhm+coeff[12]*np.power(fwhm,2)+coeff[13]*sky+coeff[14]*np.power(sky,2)+coeff[15]*np.sin(ts*coeff[16]+coeff[17])
+    bfunc=coeff[0]+coeff[1]*ts+coeff[2]*np.power(ts,2)+ coeff[3]*np.power(ts,3)+ coeff[4]*np.power(ts,4)+ +\
+        coeff[5]*am+coeff[6]*np.power(am,2)+coeff[7]*cx+coeff[8]*np.power(cx,2)+coeff[9]*cy+coeff[10]*np.power(cy,2)+ +\
+            coeff[11]*fwhm+coeff[12]*np.power(fwhm,2)+coeff[13]*sky+coeff[14]*np.power(sky,2)+coeff[15]*np.sin(ts*coeff[16]+coeff[17])
 
     return bfunc
 

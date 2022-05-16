@@ -84,7 +84,7 @@ def basecoeff(ibase):
     # D coeff => fwhm:  D[0]*fwhm + D[1]*fwhm^2
     D_in=np.zeros((4,2), dtype=np.float)
     if ibase[4] > 0:
-        D_in[:,0]=[2.,0.1,-1.e7,1.e7]  # set the starting value and limits of the first-order D_in
+        D_in[:,0]=[0.,0.1,-1.e7,1.e7]  # set the starting value and limits of the first-order D_in
         nbc = nbc+1
         
     if ibase[4] > 1:
