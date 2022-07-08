@@ -1,3 +1,4 @@
+from logging import exception
 from telnetlib import STATUS
 import numpy as np
 from types import SimpleNamespace
@@ -131,6 +132,10 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 GPphotWNlimup[0] = -5.2
                 GPphotWNlimlo[0] = -21.0
                 GPphotWN[0] = 'all'
+            elif DA_gp["WN"][j] == 'n':
+                GPphotWN[:] = 'n'
+            else:
+                raise ValueError('For at least one GP an invalid White-Noise option input was provided. Set it to either y or n.')
 
 
         else: 
@@ -159,6 +164,10 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 GPphotWNlimup[i] = -5.2
                 GPphotWNlimlo[i] = -21.0
                 GPphotWN[i] = 'y'
+            elif DA_gp["WN"][j] == 'n':
+                GPphotWN[j] = 'n'
+            else:
+                raise ValueError('For at least one GP an invalid White-Noise option input was provided. Set it to either y or n.')
 
 
 
