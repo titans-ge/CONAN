@@ -193,10 +193,6 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 GPphotWN[j] = 'n'
             else:
                 raise ValueError('For at least one GP an invalid White-Noise option input was provided. Set it to either y or n.')
-<<<<<<< HEAD
-=======
-
->>>>>>> 9429a7ff1da6f911effd87666c79e8c6ba5c67a6
 
 
 
