@@ -1780,8 +1780,8 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         dump=_file.readline()
 
 
-    lc_data.transit_depth_variation(depth_per_group,div_white,
-                                    ddf,step,bounds,prior,pr_width,
+    lc_data.transit_depth_variation(ddf,depth_per_group,div_white,
+                                    step,bounds,prior,pr_width,
                                     verbose)
 
  #=========== occultation setup ===========================
