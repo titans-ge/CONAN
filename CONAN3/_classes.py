@@ -9,7 +9,7 @@ import pandas as pd
 from lmfit import minimize, Parameters, Parameter
 import batman
 
-__all__ = ["load_lightcurves", "load_rvs", "setup_fit", "__default_backend__"]
+__all__ = ["load_lightcurves", "load_rvs", "setup_fit", "__default_backend__","load_result_array"]
 
 #helper functions
 __default_backend__ = matplotlib.get_backend()
@@ -360,15 +360,14 @@ def _print_output(self, section: str, file=None):
     if section == "limb_darkening":
         DA = self._ld_dict
         _print_limb_darkening = f"""#=========== Limb darkending setup ==================================================================="""+\
-                                f"""\n{'filters':7s} priors\t{'c_1':4s} {'step1':5s}  low_lim1  up_lim1\t{'c_2':4s} {'step2':5s} low_lim2 up_lim2"""
+                                f"""\n{'filters':7s} priors\t{'c_1':4s} {'step1':5s}  sig_lo1  sig_hi1  lo_lim1 hi_lim1\t{'c_2':4s} {'step2':5s} sig_lo2 sig_hi2  lo_lim2 hi_lim2"""
 
         #define print out format
-        txtfmt = "\n{0:7s} {1:6s}\t{2:4.3f} {3:5.3f} {4:7.4f} {5:7.4f}\t{6:4.3f} {7:5.3f} {8:7.4f} {9:7.4f}"       
+        txtfmt = "\n{0:7s} {1:6s}\t{2:4.3f} {3:5.3f} {4:7.4f} {5:7.4f}  {6:7.4f} {7:7.4f}\t{8:4.3f} {9:5.3f} {10:7.4f} {11:7.4f}  {12:7.4f} {13:7.4f}"       
         for i in range(len(self._filnames)):
             t = txtfmt.format(self._filnames[i],DA["priors"][i], 
-                            DA["c1"][i], DA["step1"][i], DA["bound_lo1"][i], 
-                            DA["bound_hi1"][i], DA["c2"][i], DA["step2"][i], 
-                            DA["bound_lo2"][i], DA["bound_hi2"][i])
+                            DA["c1"][i], DA["step1"][i], DA["sig_lo1"][i], DA["sig_hi1"][i], DA["bound_lo1"][i], DA["bound_hi1"][i], 
+                            DA["c2"][i], DA["step2"][i], DA["sig_lo2"][i], DA["sig_hi2"][i], DA["bound_lo2"][i], DA["bound_hi2"][i],)
             _print_limb_darkening += t
 
         print(_print_limb_darkening, file=file)
@@ -926,11 +925,11 @@ class load_lightcurves:
 
         if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_occultation` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
 
-    def transit_depth_variation(self, transit_depth_per_group=[(0.1,0.0001)], divwhite="n",
-                        ddFs="n", step=0.001, bounds=(-1,1), prior="n", prior_width=(0,0),
+    def transit_depth_variation(self, ddFs="n", transit_depth_per_group=[(0.1,0.0001)], divwhite="n",
+                        step=0.001, bounds=(-1,1), prior="n", prior_width=(0,0),
                        verbose=True):
         """
-            Include transit depth variation between the lightcurves.
+            Include transit depth variation between the different lcs or lc groups. Note RpRs must be fixed to a reference value and not a jump parameter.
             
             Parameters:
             ----------
@@ -965,6 +964,9 @@ class load_lightcurves:
         """
         
         self._ddfs= SimpleNamespace()
+
+        if ddFs == "y":
+            assert self._config_par["RpRs"].to_fit == "n",'Fix `RpRs` in `setup_transit_rv` to a reference value in order to setup depth variation.'
         
         assert isinstance(transit_depth_per_group, (tuple,list)),f"transit_depth_per_group must be type tuple or list of tuples."
         if isinstance(transit_depth_per_group,tuple): transit_depth_per_group = [transit_depth_per_group]
@@ -1055,7 +1057,7 @@ class load_lightcurves:
         for dp in start_depth:
             if isinstance(dp,tuple) and len(dp)==2:
                 start_value.append(dp[0])
-                prior.append("y")
+                prior.append("y" if dp[1] else "n")
                 prior_mean.append(dp[0])
                 prior_width_hi.append(dp[1])
                 prior_width_lo.append(dp[1])
@@ -1118,62 +1120,66 @@ class load_lightcurves:
         self._occ_dict =  DA = DA2
         if verbose: _print_output(self,"occultations")
 
-    def limb_darkening(self, priors="n",
-                             c1=0, step1=0.001,
-                             c2=0, step2=0.001,
-                             verbose=True):
+    def limb_darkening(self, c1=0, c2 = 0,verbose=True):
         """
             Setup quadratic limb darkening LD parameters (c1, c2) for transit light curves. 
             Different LD parameters are required if observations of different filters are used.
 
             Parameters:
             ---------
-            priors : "y" or "n":
-                specify if the ldc should be fitted/
-
             c1,c2 : float/tuple or list of float/tuple for each filter;
-                 limb darkening coefficient.
-                 *if tuple, must be of length 3 defined as (lo_lim, val, uplim) 
-
-            step1,step2 : float or list of floats;
-                stepsize for fitting        
+                Stellar quadratic limb darkening coefficients.
+                if tuple, must be of - length 2 for normal prior (mean,std) or length 3 for uniform prior defined as (lo_lim, val, uplim).
+                **recall the conditions: c1+c2<1, c1>0, c1+c2>0  (https://ui.adsabs.harvard.edu/abs/2013MNRAS.435.2152K/abstract)\n
+                This implies the a broad uniform prior of [0,2] for c1 and [-1,1] for c2. However, it is highly recommended to use gaussian priors on c1 and c2. 
                     
         """
-        #not used yet
-        c3 = step3 = 0
-        c4 = step4 = 0
+        #defaults
+        c3 = c4 = 0
+        bound_lo1 = bound_lo2= bound_lo3 = bound_lo4 = 0
+        bound_hi1 = bound_hi2= bound_hi3 = bound_hi4 = 0
+        sig_lo1 = sig_lo2 = sig_lo3 = sig_lo4 = 0
+        sig_hi1 = sig_hi2 = sig_hi3 = sig_hi4 = 0
+        step1 = step2 = step3 = step4 = 0     
 
         DA = _reversed_dict(locals().copy())
         _ = DA.pop("self")            #remove self from dictionary
         _ = DA.pop("verbose")
 
         nfilt = len(self._filnames)
-        
-        temp_DA = {}
+
         for par in DA.keys():
-            if isinstance(DA[par], (int,float,str)): DA[par] = [DA[par]]*nfilt
-            elif (isinstance(DA[par], tuple) and len(DA[par])==3): DA[par] = [DA[par]]*nfilt 
+            if isinstance(DA[par], (int,float)): DA[par] = [DA[par]]*nfilt
+            elif isinstance(DA[par], tuple): 
+                if len(DA[par])==2 or len(DA[par])==3: DA[par] = [DA[par]]*nfilt
             elif isinstance(DA[par], list): assert len(DA[par]) == nfilt,f"length of list {par} must be equal to number of unique filters (={nfilt})."
-            else: _raise(TypeError, f"{par} must be int/float or tuple of len 3 but {DA[par]} is given.")
-
-            if par in ["c1","c2","c3","c4"]:
-                for i,d in enumerate(DA[par]):
-                    if isinstance(d, (int,float)):  
-                        DA[par][i] = (0,d,0)
-                        DA[f"step{par[-1]}"][i] = 0
-                    elif isinstance(d, tuple):
-                        DA[par][i] = d
-
-                temp_DA[f"bound_lo{par[-1]}"] = [b[0] for b in DA[par]]
-                temp_DA[f"bound_hi{par[-1]}"] = [b[2] for b in DA[par]]
-                DA[par] = [b[1] for b in DA[par]]
-
-        for k in temp_DA.keys():
-            DA[k] = temp_DA[k]
-
-        for i in range(nfilt):
-            DA["priors"][i] = "y" if np.any( [DA["step1"][i], DA["step2"][i],DA["step3"][i], DA["step4"][i] ]) else "n"
+            else: _raise(TypeError, f"{par} must be int/float, or tuple of len 2 (for gaussian prior) or 3 (for uniform prior) but {DA[par]} is given.")
         
+        for par in ["c1","c2","c3","c4"]:
+            for i,d in enumerate(DA[par]):
+                if isinstance(d, (int,float)):  #fixed
+                    DA[par][i] = d
+                    DA[f"step{par[-1]}"][i] = DA[f"bound_lo{par[-1]}"][i] = DA[f"bound_hi{par[-1]}"][i] = 0
+                elif isinstance(d, tuple):
+                    if len(d) == 2:  #normal prior
+                        DA[par][i] = d[0]
+                        DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = d[1]
+                        DA[f"bound_lo{par[-1]}"][i] = 0 if par=="c1" else -1
+                        DA[f"bound_hi{par[-1]}"][i] = 2 if par=="c1" else 1
+                        DA[f"step{par[-1]}"][i] = 0.001 if d[1] else 0  #if width is > 0
+
+
+                    if len(d) == 3:  #uniform prior
+                        DA[par][i] = d[1]
+                        DA[f"bound_lo{par[-1]}"][i] = d[0]
+                        DA[f"bound_hi{par[-1]}"][i] = d[2]
+                        DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = 0
+                        DA[f"step{par[-1]}"][i] = 0.001 if (d[0] or d[2]) else 0 #if bounds !=  0
+  
+        DA["priors"] = [0]*nfilt
+        for i in range(nfilt):
+            DA["priors"][i] = "y" if np.any( [DA["sig_lo1"][i], DA["sig_lo2"][i],DA["sig_lo3"][i], DA["sig_lo4"][i] ]) else "n"
+
         self._ld_dict = DA
         if verbose: _print_output(self,"limb_darkening")
 
@@ -1804,18 +1810,28 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     dump=_file.readline()
     dump=_file.readline()
 
-    priors,c1,c2,step1,step2 =[],[],[],[],[]
+    c1,c2,step =[],[],[]
     while dump[0] != '#':
         adump=dump.split()
-        priors.append(adump[1])
-        step1.append(float(adump[3]))
-        step2.append(float(adump[7]))
-        c1.append( (float(adump[4]),float(adump[2]),float(adump[5])))
-        c2.append( (float(adump[8]),float(adump[6]),float(adump[9])))
+        step    = ( float(adump[3]), float(adump[9]))
+
+        sig_lo1 = float(adump[4])
+        lo_lim1 = float(adump[6])
+        hi_lim1 = float(adump[7])
+
+        sig_lo2 = float(adump[10])
+        lo_lim2 = float(adump[12])
+        hi_lim2 = float(adump[13])
+
+        if step[0]: c1.append( (float(adump[2]),sig_lo1) if sig_lo1 else (lo_lim1,float(adump[2]),hi_lim1) )
+        else: c1.append(float(adump[2]))
+
+        if step[1]: c2.append( (float(adump[8]),sig_lo2) if sig_lo2 else (lo_lim2,float(adump[8]),hi_lim2) )
+        else: c2.append(float(adump[8]))
 
         dump=_file.readline()
 
-    lc_data.limb_darkening(priors,c1,step1,c2,step2,verbose )
+    lc_data.limb_darkening(c1,c2,verbose )
 
  #=========== contamination setup === 
     dump=_file.readline()
@@ -1965,14 +1981,13 @@ class load_chains:
             
         """
         assert pars is None or isinstance(pars, list) or pars == "all", \
-             f'pars must be None, "all", or list of relevant parameters.'
+             f'pars must be None, "all", or list of iu8999relevant parameters.'
         if pars is None or pars == "all": pars = [p for p in self._par_names]
         for p in pars:
             assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
         
         ndim = len(pars)
-        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. \
-            Use force_plot = True to continue anyways.'
+        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
 
         if figsize is None: figsize = (12,6+int(ndim/2))
         fig, axes = plt.subplots(ndim, sharex=True, figsize=figsize)
@@ -2012,7 +2027,6 @@ class load_chains:
 
             discard : int;
                 to discard first couple of steps within the chains. 
-            
         
         """
         assert pars is None or isinstance(pars, list) or pars == "all", \
@@ -2022,8 +2036,7 @@ class load_chains:
             assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
         
         ndim = len(pars)
-        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. \
-            Use force_plot = True to continue anyways.'
+        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
 
         if figsize is None: figsize = (12,6+int(ndim/2))
         fig, axes = plt.subplots(ndim, sharex=True, figsize=figsize)
@@ -2101,7 +2114,7 @@ class load_chains:
             samples[:,i] = self._chains[p][:,discard::thin].reshape(-1) * multiply_by[i] + add_value[i]
         
         
-        fig = corner.corner(samples, bins=bins, labels=pars, show_titles=show_titles,
+        fig = corner.corner(samples, bins=bins, labels=pars, show_titles=show_titles, range=range,
                     title_fmt=title_fmt,quantiles=q,title_kwargs={"fontsize": titlesize},
                     label_kwargs={"fontsize":labelsize})
         
@@ -2169,3 +2182,41 @@ class load_chains:
             return fig, result
 
         return fig
+
+
+
+def load_result_array():
+    """
+        Load result array from CONAN3 fit allowing for customised plots.
+        All files with '_out_full.dat' are loaded. 
+
+        Returns:
+        --------
+            results : dict;
+                dictionary of holding the arrays for each output file.
+            
+        Examples
+        --------
+        >>> import CONAN3
+        >>> results = CONAN3.load_result_array()
+        >>> list(results.keys())
+        ['lc8det_out_full.dat', 'lc6bjd_out_full.dat']
+
+        >>> df1 = results['lc8det_out_full.dat']
+        >>> df1.keys()
+        ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
+
+        >>> #plot arrays
+        >>> plt.plot(df["time"], df["flux"],"b.")
+        >>> plt.plot(df["time"], df["gp*base"],"r")
+        >>> plt.plot(df["time"], df["transit"],"g")
+        
+    """
+    out_files = [ f  for f in os.listdir() if '_out_full.dat' in f]
+    results = {}
+    for f in out_files:
+        df = pd.read_fwf(f, header=0)
+        df = df.rename(columns={'# time': 'time'})
+        results[f] = df
+    print(f"Output files loaded are: {out_files} ")
+    return results

@@ -1,0 +1,8 @@
+**10-07-2022:
+ - changed format of quadratic limb darekening: now allows either gaussian or uniform priors. Gaussian still recommended
+ - included 1D GP fitting using Celerite (~5X faster than with George)
+    to use celerite gp for a lightcurve, use "ce" instead of "y" in function lc_baseline().
+ - added function get_decorr()  for light curves object to find best baseline model for each lc.
+ - added function plot_burnin_chains() to the results object to see how the chains evolved during burn-in.
+ - added function load_result_array() to load result array for customized plotting.
+ - some  notebooks in example folder

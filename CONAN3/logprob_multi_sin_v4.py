@@ -4,14 +4,14 @@ import sys
 import numpy as np
 import time
 
-from george.modeling import Model
-from george import kernels
-from .gpnew import *
+# from george.modeling import Model
+# from george import kernels
+# from .gpnew import *
 from .model_GP_v3 import *
 from celerite.modeling import Model 
 from celerite import terms
 import celerite
-from celeritenew import *
+from CONAN3.celeritenew import *
 
 from .RVmodel_v3 import *
 
@@ -85,6 +85,8 @@ def logprob_multi(p, *args):
     
     # restrict the parameters to those of the light curve
     for j in range(nphot):
+        if inmcmc == 'n':
+            print('\nLightcurve number:',j)
         tt = np.copy(tarr[indlist[j][0]]) # time values of lightcurve j
         ft = np.copy(farr[indlist[j][0]]) # flux values of lightcurve j
         ee = np.copy(earr[indlist[j][0]]) # error values of lightcurve j
@@ -266,7 +268,9 @@ def logprob_multi(p, *args):
             
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
-                print('\nLightcurve number:',j)
+                print("Using George GP") if useGPphot[j]=='y' else print("Using Celerite GP")
+                # print(f"GP terms: {gp.get_parameter_names( include_frozen=True)}")
+                # print(f"GP vector: {gp.get_parameter_vector( include_frozen=True)}")
                 print('GP values used:',GPuse)
 
                 pred, pred_var = gp.predict(ft, t=pargp, return_var=True, args=argu) #gp+transit*baseline
@@ -310,8 +314,8 @@ def logprob_multi(p, *args):
                 model_transit = mo/bfunc_para
                 fco_full = ft/bfunc_full    #detrended_data
  
-                print("Writing init with gp to file")
                 outfile=name[:-4]+'_out_full.dat'
+                print(f"Writing init with gp to file: {outfile}")
                 of=open(outfile,'w')
                 of.write("%10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","gp*base","transit","det_flux"))
                 for k in range(len(tt)):
@@ -368,7 +372,7 @@ def logprob_multi(p, *args):
                 #   But set the GP prediciton ("pred") to the full model
                 ts=tt-tt[0]
                 if (baseLSQ == 'y'):
-                    print("Running LSQ on baseline model")
+                    # print("Running LSQ on baseline model")
                     mres=ft/mt0
                     #bvar contains the indices of the non-fixed baseline variables
                     coeffstart = np.copy(basesin[bvar])   
@@ -377,12 +381,13 @@ def logprob_multi(p, *args):
                     coeff[bvar] = np.copy(icoeff)
                     bfunc_para = basefunc_noCNM(coeff, ts, at, xt, yt, wt, st)
                 else:
-                    print("Taking default straight-line baseline")
+                    # print("Taking default straight-line baseline")
                     bfunc_para = basefunc_noCNM(basesin, ts, at, xt, yt, wt, st)
 
                 pred=mt0*bfunc_para
                 fco_full = ft/bfunc_para
                 outfile=name[:-4]+'_out_full.dat'
+                print(f"Writing init without gp to file: {outfile}")
                 of=open(outfile,'w')
                 of.write("%10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","base","transit","det_flux"))
                 for k in range(len(tt)):
@@ -403,7 +408,7 @@ def logprob_multi(p, *args):
         st = np.copy(sarr[indlist[j+nphot][0]])
         bt = np.copy(barr[indlist[j+nphot][0]])
         ct = np.copy(carr[indlist[j+nphot][0]])
-        # name = names[j]
+        name = names[j]
         
         argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,bvars,vcont,name,ee]
 

@@ -22,6 +22,10 @@ from george.modeling import Model
 from george import kernels
 import corner
 from .gpnew import *
+import celerite
+from celerite import terms
+from .celeritenew import GPnew as clnGPnew
+
 
 from ._classes import _raise, mcmc_setup, __default_backend__, load_chains
 import matplotlib
@@ -107,6 +111,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         k = np.where(np.array(GPchoices) == DA_gp["pars"][j])
 
         if nm == 'all':
+            i = np.where(np.array(names) == nm)
             GPjumping[0,k]=True
             GPphotkerns[0,k]=DA_gp["kernels"][j]
             GPphotpars1[0,k]=float(DA_gp["scale"][j])
@@ -123,15 +128,27 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             GPphotlim2lo[0,k]=float(DA_gp["m_lo"][j])
             GPall[0,k]=True
 
-            if DA_gp["WN"][j] == 'y':
+            if DA_gp["WN"][j] == 'y' and useGPphot[i]=='ce':
+                GPphotWNstart[0] = -7.   
+                GPphotWNstep[0] = 0.1 
+                GPphotWNprior[0] = 0.
+                GPphotWNpriorwid[0] = 0.
+                GPphotWNlimup[0] = -3
+                GPphotWNlimlo[0] = -21
+                GPphotWN[0] = 'all'
+
+            if DA_gp["WN"][j] == 'y' and useGPphot[i]=='y':
                 GPphotWNstart[:] = np.log((GPphotWNstartppm/1e6)**2) # in absolute
                 GPphotWNstep[0] = 0.1
                 GPphotWNprior[0] = 0.0
                 GPphotWNpriorwid[0] = 0.
-                GPphotWNlimup[0] = -5.2
-                GPphotWNlimlo[0] = -21.0
+                GPphotWNlimup[0] = -3
+                GPphotWNlimlo[0] = -25.0
                 GPphotWN[0] = 'all'
-
+            elif DA_gp["WN"][j] == 'n':
+                GPphotWN[:] = 'n'
+            else:
+                raise ValueError('For at least one GP an invalid White-Noise option input was provided. Set it to either y or n.')
 
         else: 
             i = np.where(np.array(names) == nm)
@@ -151,15 +168,26 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             GPphotlim2lo[i,k]=float(DA_gp["m_lo"][j])
             GPall[i,k]=False
 
-            if DA_gp["WN"][j] == 'y':
+            if DA_gp["WN"][j] == 'y' and useGPphot[i[0][0]] == 'ce':
+                GPphotWNstart[i[0][0]] = -7.
+                GPphotWNstep[i[0][0]] = 0.1
+                GPphotWNprior[i[0][0]] = 0.
+                GPphotWNpriorwid[i[0][0]] = 0.
+                GPphotWNlimup[i[0][0]] = -3
+                GPphotWNlimlo[i[0][0]] = -21
+                GPphotWN[i[0][0]] = DA_gp["WN"][j]
+            elif DA_gp["WN"][j] == 'y' and useGPphot[i[0][0]] == 'y':
                 GPphotWNstart[i] = np.log((GPphotWNstartppm/1e6)**2) # in absolute
                 GPphotWNstep[i] = 0.1
                 GPphotWNprior[i] = 0.0
                 GPphotWNpriorwid[i] = 0.
-                GPphotWNlimup[i] = -5.2
+                GPphotWNlimup[i] = -3
                 GPphotWNlimlo[i] = -21.0
                 GPphotWN[i] = 'y'
-
+            elif DA_gp["WN"][j] == 'n':
+                GPphotWN[j] = 'n'
+            else:
+                raise ValueError('For at least one GP an invalid White-Noise option input was provided. Set it to either y or n.')
 
 
 
@@ -357,25 +385,26 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         j=np.where(filnames == filnames[i])              # make sure the sequence in this array is the same as in the "filnames" array
         k=np.where(np.array(lc._filters) == filnames[i])
 
-        c1_in[j,:] = [DA_ld["c1"][i], DA_ld["step1"][i],-3.,3.,DA_ld["c1"][i],DA_ld["bound_lo1"][i],DA_ld["bound_hi1"][i]]
+        c1_in[j,:] = [DA_ld["c1"][i], DA_ld["step1"][i],DA_ld["bound_lo1"][i],DA_ld["bound_hi1"][i],DA_ld["c1"][i],DA_ld["sig_lo1"][i],DA_ld["sig_hi1"][i]]
+        c1_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else c1_in[j,5])
         c1_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else c1_in[j,6])
         if c1_in[j,1] != 0.:
             njumpphot[k]=njumpphot[k]+1
 
 
-        c2_in[j,:] = [DA_ld["c2"][i], DA_ld["step2"][i],-3.,3.,DA_ld["c2"][i],DA_ld["bound_lo2"][i],DA_ld["bound_hi2"][i]]  # the limits are -3 and 3 => very safe
+        c2_in[j,:] = [DA_ld["c2"][i], DA_ld["step2"][i],DA_ld["bound_lo2"][i],DA_ld["bound_hi2"][i],DA_ld["c2"][i],DA_ld["sig_lo2"][i],DA_ld["sig_hi2"][i]]  # the limits are -3 and 3 => very safe
         c2_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step2"][i] == 0.) else c2_in[j,5])
         c2_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step2"][i] == 0.) else c2_in[j,6])
         if c2_in[j,1] != 0.:
             njumpphot[k]=njumpphot[k]+1
 
-        c3_in[j,:] = [DA_ld["c3"][i], DA_ld["step3"][i],-3.,3.,DA_ld["c3"][i],DA_ld["bound_lo3"][i],DA_ld["bound_hi3"][i]]  # the limits are -3 and 3 => very safe
+        c3_in[j,:] = [DA_ld["c3"][i], DA_ld["step3"][i],DA_ld["bound_lo3"][i],DA_ld["bound_hi3"][i],DA_ld["c3"][i],DA_ld["sig_lo3"][i],DA_ld["sig_hi3"][i]]  # the limits are -3 and 3 => very safe
         c3_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step3"][i] == 0.) else c3_in[j,5])
         c3_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step3"][i] == 0.) else c3_in[j,6])
         if c3_in[j,1] != 0.:
             njumpphot[k]=njumpphot[k]+1
 
-        c4_in[j,:] = [DA_ld["c4"][i], DA_ld["step4"][i],-3.,3.,DA_ld["c4"][i],DA_ld["bound_lo4"][i],DA_ld["bound_hi4"][i]]  # the limits are -3 and 3 => very safe
+        c4_in[j,:] = [DA_ld["c4"][i], DA_ld["step4"][i],DA_ld["bound_lo4"][i],DA_ld["bound_hi4"][i],DA_ld["c4"][i],DA_ld["sig_lo4"][i],DA_ld["sig_hi4"][i]]  # the limits are -3 and 3 => very safe
         c4_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step4"][i] == 0.) else c4_in[j,5])
         c4_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step4"][i] == 0.) else c4_in[j,6])
         if c4_in[j,1] != 0.:
@@ -384,21 +413,30 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         
         if (c3_in[j,0] == 0. and c4_in[j,0]==0 and c3_in[j,1] == 0. and c4_in[j,1] == 0.):
             if verbose: print('Limb-darkening law: quadratic')
-            v1=2.*c1_in[j,0]+c2_in[j,0]
+            v1=2.*c1_in[j,0]+c2_in[j,0] #transform c1 and c2
             v2=c1_in[j,0]-c2_in[j,0]
-            ev1=np.sqrt(4.*c1_in[j,1]**2+c2_in[j,1]**2)
+            ev1=np.sqrt(4.*c1_in[j,1]**2+c2_in[j,1]**2)  #transform steps
             ev2=np.sqrt(c1_in[j,1]**2+c2_in[j,1]**2)
-            lov1=np.sqrt(4.*c1_in[j,5]**2+c2_in[j,5]**2)
+            lov1=np.sqrt(4.*c1_in[j,5]**2+c2_in[j,5]**2) #transform sig_los
             lov2=np.sqrt(c1_in[j,5]**2+c2_in[j,5]**2)
-            hiv1=np.sqrt(4.*c1_in[j,6]**2+c2_in[j,6]**2)
-            hiv2=np.sqrt(c1_in[j,6]**2+c2_in[j,6]**2) 
-            c1_in[j,0]=np.copy(v1)
+            hiv1=np.sqrt(4.*c1_in[j,6]**2+c2_in[j,6]**2) #transform sig_his
+            hiv2=np.sqrt(c1_in[j,6]**2+c2_in[j,6]**2)
+            lo_lim1 = 2.*c1_in[j,2]+c2_in[j,2]      #transform bound_lo
+            lo_lim2 = c1_in[j,2]-c2_in[j,3] 
+            hi_lim1 = 2.*c1_in[j,3]+c2_in[j,3]
+            hi_lim2 = c1_in[j,3]-c2_in[j,2]
+            #replace inputs LDs with transformations
+            c1_in[j,0]=np.copy(v1)  #replace c1 and c2
             c2_in[j,0]=np.copy(v2)
-            c1_in[j,4]=np.copy(v1)
+            c1_in[j,4]=np.copy(v1)  #replace prior mean
             c2_in[j,4]=np.copy(v2)
-            c1_in[j,1]=np.copy(ev1)
+            c1_in[j,1]=np.copy(ev1) #replace steps
             c2_in[j,1]=np.copy(ev2)
-            if (DA_ld["priors"][i] == 'y'):    # prior on LDs
+            c1_in[j,2]=np.copy(lo_lim1)  #replace bound_lo
+            c2_in[j,2]=np.copy(lo_lim2)
+            c1_in[j,3]=np.copy(hi_lim1)  #replace bound_hi
+            c2_in[j,3]=np.copy(hi_lim2)            
+            if (DA_ld["priors"][i] == 'y'):    # replace prior on LDs
                 c1_in[j,5]=np.copy(lov1)
                 c1_in[j,6]=np.copy(hiv1)
                 c2_in[j,5]=np.copy(lov2)
@@ -548,8 +586,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     for i in range(nfilt):  # add the LD coefficients for the filters to the parameters
         params=np.concatenate((params, [c1_in[i,0], c2_in[i,0], c3_in[i,0], c4_in[i,0]]))
         stepsize=np.concatenate((stepsize, [c1_in[i,1], c2_in[i,1], c3_in[i,1], c4_in[i,1]]))
-        pmin=np.concatenate((pmin, [c1_in[i,5], c2_in[i,5], c3_in[i,5], c4_in[i,5]]))
-        pmax=np.concatenate((pmax, [c1_in[i,6], c2_in[i,6], c3_in[i,6], c4_in[i,6]]))
+        pmin=np.concatenate((pmin, [c1_in[i,2], c2_in[i,2], c3_in[i,2], c4_in[i,2]]))
+        pmax=np.concatenate((pmax, [c1_in[i,3], c2_in[i,3], c3_in[i,3], c4_in[i,3]]))
         prior=np.concatenate((prior, [c1_in[i,4], c2_in[i,4], c3_in[i,4], c4_in[i,4]]))
         priorlow=np.concatenate((priorlow, [c1_in[i,5], c2_in[i,5], c3_in[i,5], c4_in[i,5]]))
         priorup=np.concatenate((priorup, [c1_in[i,6], c2_in[i,6], c3_in[i,6], c4_in[i,6]]))
@@ -688,7 +726,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 d_combined = 0.0
 
 
-            GPparams=np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   
+            GPparams=np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   # start gppars with the white noise
             GPstepsizes=np.concatenate((GPstepsizes,GPphotWNstep[i]),axis=0)
             GPindex=np.concatenate((GPindex,[i]),axis=0)
             GPprior=np.concatenate((GPprior,GPphotWNprior[i]),axis=0)
@@ -740,22 +778,137 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                     iii=iii+1
                     
             gp = GPnew(k3, mean=mean_model,white_noise=GPphotWNstart[i],fit_white_noise=True)
-
-                
+            
+  
             # freeze the parameters that are not jumping!
             # indices of the GP mean model parameters in the params model
             pindices = [0,1,2,3,4,5,6,8+k,8+nddf+k,8+nddf+nocc+k*4,8+nddf+nocc+k*4+1]
-                    
+            
             GPparnames=gp.get_parameter_names(include_frozen=True)
             for ii in range(len(pindices)):
                 if (stepsize[pindices[ii]]==0.):
                     gp.freeze_parameter(GPparnames[ii])
                     if verbose: print((GPparnames[ii]))
-
+  
             gp.compute(pargp, err)
             GPobjects.append(gp)
             pargps.append(pargp) 
-    
+            
+    # ================ MODIFICATIONS: adding celerite ===============
+        elif (useGPphot[i]=='ce'):
+            pargp = np.copy(t)
+            # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
+            A_in,B_in,C1_in,C2_in,D_in,E_in,G_in,H_in,nbc = basecoeff(bases[i])  # the baseline coefficients for this lightcurve; each is a 2D array
+            nbc_tot = nbc_tot+nbc # add up the number of jumping baseline coeff
+            # if the least-square fitting for the baseline is turned on (baseLSQ = 'y'), then set the stepsize of the jump parameter to 0
+            if (baseLSQ == "y"):
+                abvar=np.concatenate(([A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]]))
+                abind=np.where(abvar!=0.)
+                bvars.append(abind)
+                A_in[1,:]=B_in[1,:]=C1_in[1,:]=C2_in[1,:]=D_in[1,:]=E_in[1,:]=G_in[1,:]=H_in[1,:]=0                             # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
+
+            params=np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
+            stepsize=np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
+            pmin=np.concatenate((pmin,A_in[2,:],B_in[2,:],C1_in[2,:],C2_in[2,:],D_in[2,:],E_in[2,:],G_in[2,:],H_in[2,:]))
+            pmax=np.concatenate((pmax,A_in[3,:],B_in[3,:],C1_in[3,:],C2_in[3,:],D_in[3,:],E_in[3,:],G_in[3,:],H_in[3,:]))
+            prior=np.concatenate((prior, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorlow=np.concatenate((priorlow, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorup=np.concatenate((priorup, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            pnames=np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1',names[i]+'_A2',names[i]+'_A3',names[i]+'_A4',names[i]+'_B1',names[i]+'_B2',names[i]+'_C11', names[i]+'_C12',names[i]+'_C21', names[i]+'_C22',names[i]+'_D1',names[i]+'_D2',names[i]+'_E1',names[i]+'_E2',names[i]+'_G1',names[i]+'_G2',names[i]+'_G3',names[i]+'_H1',names[i]+'_H2']))
+
+            # define the index in the set of filters that this LC has:
+            k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
+            k = k[0].item()
+            # ddf of this LC:
+            if (ddfYN=='y'):           
+                ddfhere=params[8+k]
+            else:
+                ddfhere=0.
+            
+            # define the correct LDCs c1, c2:
+            c1here=params[8+nddf+nocc+k*4]
+            c2here=params[8+nddf+nocc+k*4+1]
+            
+            mean_model=Transit_Model(T0=params[0],RpRs=params[1],b=params[2],dur=params[3],per=params[4],eos=params[5],eoc=params[6],ddf=ddfhere,occ=params[8+nddf+k],c1=c1here,c2=c2here)
+        
+            if GPphotWNstart[i] == GPphotWNstart[0] and GPphotWNstep[i]==0.0:
+                d_combined = 1.0
+            elif GPphotWN[0] == 'all':
+                d_combined = 1.0
+            else:
+                d_combined = 0.0
+
+            # define a Matern 3/2 kernel
+            #celerite.terms.Matern32Term(*args, **kwargs)
+
+            c_sigma=np.copy(np.log(GPphotpars1[i][0]))
+            c_rho =np.copy(np.log(GPphotpars2[i][0]))
+            c_eps=0.001
+
+            if GPphotWNstep[i]>1e-12:  #if the white nois is jumping
+
+                GPparams=np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   
+                GPstepsizes=np.concatenate((GPstepsizes,GPphotWNstep[i]),axis=0)
+                GPindex=np.concatenate((GPindex,[i]),axis=0)
+                GPprior=np.concatenate((GPprior,GPphotWNprior[i]),axis=0)
+                GPpriwid=np.concatenate((GPpriwid,GPphotWNpriorwid[i]),axis=0)
+                GPlimup=np.concatenate((GPlimup,GPphotWNlimup[i]),axis=0)
+                GPlimlo=np.concatenate((GPlimlo,GPphotWNlimlo[i]),axis=0)
+                GPnames=np.concatenate((GPnames,['CEphotWN_lc'+str(i+1)]),axis=0)
+                GPcombined=np.concatenate((GPcombined,[d_combined]),axis=0)
+
+                c_WN=np.copy(GPphotWNstart[i])
+                bounds_w = dict(log_sigma=(GPphotWNlimlo[i],GPphotWNlimup[i]))
+                k1 = terms.JitterTerm(log_sigma=c_WN, bounds=bounds_w)
+                bounds = dict(log_sigma=(GPphotlim1lo[i][0], GPphotlim1up[i][0]), log_rho=(GPphotlim2lo[i][0], GPphotlim2up[i][0]))
+                k2 = terms.Matern32Term(log_sigma=c_sigma, log_rho=c_rho, bounds=bounds)
+                k3=k1 + k2
+                NparGP=3
+
+            else:
+                bounds = dict(log_sigma=(GPphotlim1lo[0][0], GPphotlim1up[0][0]), log_rho=(GPphotlim2lo[0][0], GPphotlim2up[0][0]))
+                k3 = terms.Matern32Term(log_sigma=c_sigma, log_rho=c_rho, bounds=bounds)
+                NparGP=2
+
+
+            ii=0 
+            j=i           
+            GPparams=np.concatenate((GPparams,[c_sigma,c_rho]), axis=0)             
+            if GPall[0,ii] == True and i == 0:         
+                GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
+            elif GPall[0,ii] == True and i != 0:
+                GPstepsizes=np.concatenate((GPstepsizes,(0.,0.)),axis=0)
+            else:
+                GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
+            GPindex=np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
+            GPprior=np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
+            GPpriwid=np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
+            GPlimup=np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
+            GPlimlo=np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
+            GPnames=np.concatenate((GPnames,(['CEphotscale_lc'+str(i+1)+'dim'+str(ii),"CEphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
+            GPcombined=np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
+        
+
+            gp = clnGPnew(k3, mean=mean_model)#,log_white_noise=GPphotWNstart[i],fit_white_noise=True)
+
+  
+            # freeze the parameters that are not jumping!
+            # indices of the GP mean model parameters in the params model
+            pindices = [0,1,2,3,4,5,6,8+k,8+nddf+k,8+nddf+nocc+k*4,8+nddf+nocc+k*4+1]
+
+            GPparnames=gp.get_parameter_names(include_frozen=True)
+            for ii in range(len(pindices)):
+                if (stepsize[pindices[ii]]==0.):
+                    _ = gp.freeze_parameter(GPparnames[ii+NparGP])
+                    if verbose: print(f"gppars from main: {GPparnames[ii+NparGP]}")
+
+            gp.compute(pargp, err)
+            # print('main program gp input parameter vector')
+            # print(f"celerite GPpars: {GPparnames}")
+            # print(gp.get_parameter_vector(include_frozen=True))
+            GPobjects.append(gp)
+            pargps.append(pargp)  
+        # time.sleep(3000)
 
     print('Setting up RV arrays ...')
 
@@ -913,7 +1066,6 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     lim_up = np.concatenate((pmax,GPlimup))
     ndim = np.count_nonzero(steps)
     jumping=np.where(steps!=0.)
-    # print(f"\njumping={jumping}")
     jumping_noGP = np.where(stepsize!=0.)
     jumping_GP = np.where(GPstepsizes!=0.)
 
@@ -933,14 +1085,12 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         both.sort()
         indices_A = [fullist.index(x) for x in both]
         pindices.append(indices_A)
-    # print(f"initial:{initial[jumping]}")
-    # print(f"pindices:{pindices}")
 
     ewarr=grweights(earr,indlist,grnames,groups,ngroup,nphot)
 
 
     ############################## Initial guess ##################################
-    print('\nPlotting initial guess')
+    print('\nPlotting initial guess\n---------------------------')
 
     inmcmc = 'n'
     indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,

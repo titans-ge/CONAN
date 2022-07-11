@@ -65,10 +65,10 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      if (len(inde) > 0):
          RpRs_PDF = np.squeeze(extind_PDF[:,inde])
      
-     ind = np.where(np.char.find(jnames, 'b')==0)[0]
-     indn = np.where(np.char.find(njnames, 'b')==0)[0]
+     ind = np.where(jnames == "b")[0] #np.where(np.char.find(jnames, 'b')==0)[0] (fixes problems when lc file name begins with b)
+     indn = np.where(njnames == "b")[0] #np.where(np.char.find(njnames, 'b')==0)[0]
      if len(extinpars) > 0:
-        inde = np.where(np.char.find(extinpars, 'b')==0)[0]
+        inde = np.where(extinpars == "K")[0] #np.where(np.char.find(extinpars, 'b')==0)[0]
      else :
          inde = []
      if (len(ind) > 0):
@@ -117,10 +117,10 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
          esinw_PDF[:] = bp[nijnames[0][indn]]
          esinw_bp = bp[nijnames[0][indn]]
 
-     ind = np.where(np.char.find(jnames, 'K')==0)[0]
-     indn = np.where(np.char.find(njnames, 'K')==0)[0]
+     ind = np.where(jnames == "K")[0] #np.where(np.char.find(jnames, 'K')==0)[0] (fixes problems when lc file name begins with K)
+     indn = np.where(njnames == "K")[0] #np.where(np.char.find(njnames, 'K')==0)[0]
      if len(extinpars) > 0:
-        inde = np.where(np.char.find(extinpars, 'K')==0)[0]
+        inde = np.where(extinpars == "K")[0] #np.where(np.char.find(extinpars, 'K')==0)[0]
      else :
          inde = []
      if (len(ind) > 0):
