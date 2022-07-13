@@ -480,7 +480,8 @@ class load_lightcurves:
 
             
         file_list : list;
-            List of filenames for the lightcurves.
+            List of filenames for the lightcurves. Files must have 9 columns: time,flux,err,xc,xc,xc,xc,xc,xc. 
+            where xc are columns that can be used in decorrelating the flux. Arrays of zeroes are put in xc if file contains less than 9 columns.
             
         filter : list, str, None;
             filter for each lightcurve in file_list. if a str is given, it is used for all lightcurves,
@@ -498,7 +499,7 @@ class load_lightcurves:
     def __init__(self, file_list, data_filepath=None, filters=None, lamdas=None,
                  verbose=True, show_guide=False):
         self._obj_type = "lc_obj"
-        self._fpath = os.getcwd() if data_filepath is None else data_filepath
+        self._fpath = os.getcwd()+'/' if data_filepath is None else data_filepath
         self._names = [file_list] if isinstance(file_list, str) else file_list
         for lc in self._names: assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
         
@@ -519,6 +520,16 @@ class load_lightcurves:
         assert len(self._names) == len(self._filters) == len(self._lamdas), \
             f"filters and lamdas must be a list with same length as file_list (={len(self._names)})"
         self._filnames   = np.array(list(sorted(set(self._filters),key=self._filters.index)))
+
+        #modify input files to have 9 columns as CONAN expects
+        for f in self._names:
+            fdata = np.loadtxt(self._fpath+f)
+            nrow,ncol = fdata.shape
+            if ncol < 9:
+                print(f"writing zeros to the missing columns of file: {f}")
+                new_cols = np.zeros((nrow,9-ncol))
+                ndata = np.hstack((fdata,new_cols))
+                np.savetxt(self._fpath+f,ndata,fmt='%.8f')
 
         if verbose: 
             print(f"Filters: {self._filters}")
@@ -1050,12 +1061,21 @@ class load_lightcurves:
             else: filters_occ= [filters_occ]
         if filters_occ is None: filters_occ = []
 
-        assert isinstance(start_depth,(tuple,list)), f"start depth must be list of tuple for depth in each filter or tuple for same in all filters."
+        assert isinstance(start_depth,(int,float,tuple,list)), f"start depth must be list of tuple for depth in each filter or tuple for same in all filters."
         if isinstance(start_depth, tuple): start_depth= [start_depth]
         # unpack start_depth input
         start_value, prior, prior_mean, prior_width_hi, prior_width_lo, bounds_hi, bounds_lo = [],[],[],[],[],[],[]
         for dp in start_depth:
-            if isinstance(dp,tuple) and len(dp)==2:
+            if isinstance(dp, (int,float)):
+                start_value.append(dp)
+                prior.append("n")
+                prior_mean.append(0)
+                prior_width_hi.append(0)
+                prior_width_lo.append(0)
+                bounds_lo.append(0)
+                bounds_hi.append(0)
+
+            elif isinstance(dp,tuple) and len(dp)==2:
                 start_value.append(dp[0])
                 prior.append("y" if dp[1] else "n")
                 prior_mean.append(dp[0])
