@@ -138,7 +138,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 GPphotWNlimlo[0] = -21
                 GPphotWN[0] = 'all'
 
-            if DA_gp["WN"][j] == 'y' and useGPphot[i]=='y':
+            elif DA_gp["WN"][j] == 'y' and useGPphot[i]=='y':
                 GPphotWNstart[:] = np.log((GPphotWNstartppm/1e6)**2) # in absolute
                 GPphotWNstep[0] = 0.1
                 GPphotWNprior[0] = 0.0
@@ -786,11 +786,16 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             pindices = [0,1,2,3,4,5,6,8+k,8+nddf+k,8+nddf+nocc+k*4,8+nddf+nocc+k*4+1]
             
             GPparnames=gp.get_parameter_names(include_frozen=True)
+            frz = []
             for ii in range(len(pindices)):
                 if (stepsize[pindices[ii]]==0.):
                     gp.freeze_parameter(GPparnames[ii])
-                    if verbose: print((GPparnames[ii]))
-  
+                    frz.append(ii)
+            if debug: 
+                print(f'GP frozen parameters:{GPparnames[frz]}')
+                print(f'GP parameters to fit: {gp.get_parameter_names()}')
+                print(f'with values: {gp.get_parameter_vector()}')
+
             gp.compute(pargp, err)
             GPobjects.append(gp)
             pargps.append(pargp) 
@@ -898,15 +903,18 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             pindices = [0,1,2,3,4,5,6,8+k,8+nddf+k,8+nddf+nocc+k*4,8+nddf+nocc+k*4+1]
 
             GPparnames=gp.get_parameter_names(include_frozen=True)
+            frz=[]
             for ii in range(len(pindices)):
                 if (stepsize[pindices[ii]]==0.):
                     _ = gp.freeze_parameter(GPparnames[ii+NparGP])
-                    if verbose: print(f"gppars from main: {GPparnames[ii+NparGP]}")
+                    print(f"gppars from main: {GPparnames[ii+NparGP]}")
+                    frz.append(ii+NparGP)
+            if debug: 
+                print(f'GP frozen parameters:{GPparnames[frz]}')
+                print(f'GP parameters to fit: {gp.get_parameter_names()}')
+                print(f'with values: {gp.get_parameter_vector()}')
 
             gp.compute(pargp, err)
-            # print('main program gp input parameter vector')
-            # print(f"celerite GPpars: {GPparnames}")
-            # print(gp.get_parameter_vector(include_frozen=True))
             GPobjects.append(gp)
             pargps.append(pargp)  
         # time.sleep(3000)
