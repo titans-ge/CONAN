@@ -31,7 +31,7 @@ def basecoeff(ibase):
     if ibase[6] > 0:                          # if we have a CNM
         A_in[:,0]=[0.00,0.0001,-2.,2.1]       # set the starting value and limits of the 0th-order start at 0
     else:
-        A_in[:,0]=[1.,0.0001,0.,2.1]        # no CNM: set the starting value and limits of the 0th-order start at 1        
+        A_in[:,0]=[1.,0.0001,0.8,1.2]        # no CNM: set the starting value and limits of the 0th-order start at 1        
     
     nbc = nbc+1
     

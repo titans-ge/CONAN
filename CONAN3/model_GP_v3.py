@@ -68,12 +68,12 @@ class Transit_Model(Model):
             ecc = 0.99
             if (self.eoc/np.sqrt(ecc) < 1.):
                 ome2 = np.arccos(self.eoc/np.sqrt(ecc))
-                print(ome2)
+                # print(ome2)
             else:
                 ome2 = 0   
-                print('ome2 000')
+                # print('ome2 000')
             self.eos = np.sqrt(ecc)*np.sin(ome2)
-            print('here')
+            # print('here')
         
         if (ecc>0.00001):
             if (np.abs(self.eos<0.00000001)):

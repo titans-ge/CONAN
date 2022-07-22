@@ -541,14 +541,14 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def get_decorr(self, T_0=None, P=None, dur=None, L=0, b=0, rp=1e-5,q1=0, q2=0, mask=False, decorr_bound =(-1,1),
+    def get_decorr(self, T_0=None, P=None, dur=None, L=0, b=0, rp=1e-5,q1=0, q2=0, mask=False, delta_BIC=-1, decorr_bound =(-1,1),
                      cheops=False, verbose=True, show_steps=False, plot_model=True, use_result=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
             It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
             It uses columns 0,3,4,5,6,7 to construct the polynomial trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order in column i.
             If cheops is True, A5, B5 are the sin and cos of the roll-angle while A5_i, B5_i are the corresponding harmonics with i=2,3. If these are significant, a gp in roll-angle will be needed.
-            Decorrelation parameters that reduces the BIC (favored with Bayes factor > 1) are iteratively selected.
+            Decorrelation parameters that reduces the BIC by 1(i.e delta_BIC = -1) are iteratively selected.
             The result can then be used to populate the `lc_baseline` method, if use_result is set to True.
 
             Parameters:
@@ -560,6 +560,10 @@ class load_lightcurves:
             q1,q2 : float  (optional);
                 quadratic limb darkening parameters according to kipping 2013. values are in the range (0,1).
     
+            delta_BIC : float (negative);
+                BIC improvement a parameter needs to provide in order to be considered relevant for decorrelation. + \
+                    Default is conservative and set to -1 i.e, parameters needs to lower the BIC by 1 to be included as decorrelation parameter.
+
             mask : bool ;
                 If True, transits and eclipses are masked using T_0, P and dur which must be float/int.
         
@@ -589,22 +593,18 @@ class load_lightcurves:
         self._decorr_result = []   #list of decorr result for each lc
         self._tra_occ_pars = dict(T_0=T_0, P=P, dur=dur, L=L, b=b, rp=rp, q1=q1,q2=q2)  #transit/occultation parameters
         
-        #if input transit par is iterable, make no of elements=3 [min, start, max]
-        # for p in self._tra_occ_pars.keys():
-        #     if isinstance(self._tra_occ_pars[p],(list, tuple)) and len(self._tra_occ_pars[p])==2:
-        #         val = self._tra_occ_pars[p]
-        #         self._tra_occ_pars[p] = (val[0], np.median(val), val[1])    
-        
+
         #check cheops input
+        assert delta_BIC<0,f'get_decorr: delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
         if isinstance(cheops, bool): cheops_flag = [cheops]*len(self._names)
         elif isinstance(cheops, list):
             assert len(cheops) == len(self._names),f"list given for cheops must have same +\
                 length as number of input lcs but {len(cheops)} given."
             for flag in cheops:
-                assert isinstance(flag, bool), f"all elements in cheops list must be bool: +\
+                assert isinstance(flag, bool), f"get_decorr: all elements in cheops list must be bool: +\
                      True or False, but {flag} given"
             cheops_flag = cheops
-        else: _raise(TypeError, f"`cheops` must be bool or list of bool with same length as +\
+        else: _raise(TypeError, f"get_decorr: `cheops` must be bool or list of bool with same length as +\
             number of input files but type{cheops} given.")
 
 
@@ -620,9 +620,8 @@ class load_lightcurves:
             best_pars = {"offset":0}
             if show_steps: print(f"{'Param':7s} : {'BIC':6s} N_pars \n---------------------------")
 
-            # bic_ratio = 0 
-            bf = np.inf
-            while  bf > 1:
+            del_BIC = -np.inf # bic_ratio = 0 # bf = np.inf
+            while del_BIC < delta_BIC:#while  bf > 1:
                 if show_steps: print(f"{'Best':7s} : {best_bic:.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
                 pars_bic = {}
                 for p in all_par:
@@ -640,7 +639,7 @@ class load_lightcurves:
                 bf = np.exp(-0.5*(del_BIC))
                 if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
             #     if bic_ratio < 1:
-                if bf>1:
+                if del_BIC < delta_BIC:# if bf>1:
                     if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
                     best_pars[par_in]=0
                     best_bic = par_in_bic
@@ -724,7 +723,7 @@ class load_lightcurves:
         for par in dict_args.keys():
             assert dict_args[par] is None or isinstance(dict_args[par], (int,str)) or \
                 (isinstance(dict_args[par], (list,np.ndarray)) and len(dict_args[par]) == n_lc), \
-                    f"parameter {par} must be a list of length {n_lc} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
+                    f"lc_baseline: parameter {par} must be a list of length {n_lc} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
             
             if isinstance(dict_args[par], (int,str)): dict_args[par] = [dict_args[par]]*n_lc
             elif dict_args[par] is None: dict_args[par] = [0]*n_lc
@@ -791,8 +790,9 @@ class load_lightcurves:
                 step sizes of the scale and metric parameter of the GP kernel.
         
         """
-        assert isinstance(log_scale, (tuple,list)), f"log_scale must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
-        assert isinstance(log_metric, (tuple,list)), f"log_metric must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
+        assert hasattr(self,"_bases"), f"add_GP: need to run lc_baseline() function before adding GP."
+        assert isinstance(log_scale, (tuple,list)), f"add_GP: log_scale must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
+        assert isinstance(log_metric, (tuple,list)), f"add_GP: log_metric must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
 
         if isinstance(log_scale, tuple): log_scale= [log_scale]
         if isinstance(log_metric, tuple): log_metric= [log_metric]
@@ -814,7 +814,7 @@ class load_lightcurves:
                 s_pri.append(0.0)
                 s_up.append(s[2])
             
-            else: _raise(TypeError, f"tuple of len 2 or 3 was expected but got the value {s} in log_scale.")
+            else: _raise(TypeError, f"add_GP: tuple of len 2 or 3 was expected but got the value {s} in log_scale.")
 
         metric, m_pri, m_pri_wid, m_lo, m_up  = [], [], [], [], []
         for m in log_metric:
@@ -832,7 +832,7 @@ class load_lightcurves:
                 m_pri.append(0.0)
                 m_up.append(m[2])
 
-            else: _raise(TypeError, f"tuple of len 2 or 3 was expected but got the value {m} in log_metric.")
+            else: _raise(TypeError, f"add_GP: tuple of len 2 or 3 was expected but got the value {m} in log_metric.")
 
 
         DA = locals().copy()
@@ -852,11 +852,11 @@ class load_lightcurves:
 
         if 'all' not in lc_list:
             for lc in self._gp_lcs: 
-                assert lc in lc_list,f"GP was expected for {lc} but was not given in lc_list."   
+                assert lc in lc_list,f"add_GP: GP was expected for {lc} but was not given in lc_list."   
 
             for lc in lc_list: 
-                assert lc in self._names,f"{lc} is not one of the loaded lightcurve files"
-                assert lc in self._gp_lcs, f"while defining baseline model in the `lc_baseline` method, gp = 'y' was not specified for {lc}."
+                assert lc in self._names,f"add_GP: {lc} is not one of the loaded lightcurve files"
+                assert lc in self._gp_lcs, f"add_GP: while defining baseline model in the `lc_baseline` method, gp = 'y' was not specified for {lc}."
         n_list = len(lc_list)
         
         #transform        
@@ -864,17 +864,17 @@ class load_lightcurves:
             if (isinstance(DA[key],list) and len(DA[key])==1): 
                 DA[key]= DA[key]*n_list
             if isinstance(DA[key], list):
-                assert len(DA[key]) == n_list, f"{key} must have same length as lc_list"
+                assert len(DA[key]) == n_list, f"add_GP: {key} must have same length as lc_list"
             if isinstance(DA[key],(float,int,str)):  
                 DA[key] = [DA[key]]*n_list
                 
         
         for p in DA["pars"]: 
             assert p in ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"], \
-                f"pars {p} cannot be the GP independent variable"             
+                f"add_GP: pars {p} cannot be the GP independent variable"             
         
         
-        assert len(DA["pars"]) == len(DA["kernels"]) == len(DA["WN"]) == n_list, f"pars and kernels must have same length as lc_list (={len(lc_list)})"
+        assert len(DA["pars"]) == len(DA["kernels"]) == len(DA["WN"]) == n_list, f"add_GP:pars and kernels must have same length as lc_list (={len(lc_list)})"
                                             
         self._GP_dict = DA     #save dict of gp pars in lc object
 
@@ -905,7 +905,8 @@ class load_lightcurves:
         self._npars = 8
 
         for par in DA.keys():
-            if par in ["RpRs","Impact_para","Duration", "Eccentricity"]: up_lim = 1
+            if par in ["RpRs","Duration", "Eccentricity"]: up_lim = 1
+            elif par=="Impact_para": up_lim=1.5
             elif par == "omega": up_lim = 360
             else: up_lim = 10000
 
@@ -913,20 +914,20 @@ class load_lightcurves:
             if isinstance(DA[par], tuple):
                 #gaussian       
                 if len(DA[par]) == 2:        
-                    DA[par] = _param_obj(["y", DA[par][0], 0.01*DA[par][1], "p", DA[par][0],
+                    DA[par] = _param_obj(["y", DA[par][0], 0.1*DA[par][1], "p", DA[par][0],
                                   DA[par][1], DA[par][1], 0, up_lim])
                 #uniform
                 elif len(DA[par]) == 3: 
-                    DA[par] = _param_obj(["y", DA[par][1], 0.01*np.ptp(DA[par]), "n", DA[par][1],
+                    DA[par] = _param_obj(["y", DA[par][1], min(0.01,0.01*np.ptp(DA[par])), "n", DA[par][1],
                                        0, 0, DA[par][0], DA[par][2]])
                 
-                else: _raise(ValueError, f"length of tuple is {len(DA[par])} but it must be 2 or 3 such that it follows (lo_limit, start_value, up_limit).")
+                else: _raise(ValueError, f"setup_transit_rv: length of tuple is {len(DA[par])} but it must be 2 or 3 such that it follows (lo_limit, start_value, up_limit).")
             #fixing parameter
             elif isinstance(DA[par], (int, float)):
                 DA[par] = _param_obj(["n", DA[par], 0.00, "n", DA[par],
                                        0,  0, 0, up_lim])
 
-            else: _raise(TypeError, f"{par} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par])}")
+            else: _raise(TypeError, f"setup_transit_rv: {par} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par])}")
 
         self._config_par = DA      #add to object
         self._items = DA["RpRs"].__dict__.keys()
@@ -979,15 +980,15 @@ class load_lightcurves:
         if ddFs == "y":
             assert self._config_par["RpRs"].to_fit == "n",'Fix `RpRs` in `setup_transit_rv` to a reference value in order to setup depth variation.'
         
-        assert isinstance(transit_depth_per_group, (tuple,list)),f"transit_depth_per_group must be type tuple or list of tuples."
+        assert isinstance(transit_depth_per_group, (tuple,list)),f"transit_depth_variation: transit_depth_per_group must be type tuple or list of tuples."
         if isinstance(transit_depth_per_group,tuple): transit_depth_per_group = [transit_depth_per_group]
         depth_per_group     = [d[0] for d in transit_depth_per_group]
         depth_err_per_group = [d[1] for d in transit_depth_per_group]
 
-        assert isinstance(prior_width, tuple),f"prior_width must be tuple with lower and upper widths."
+        assert isinstance(prior_width, tuple),f"transit_depth_variation: prior_width must be tuple with lower and upper widths."
         prior_width_lo, prior_width_hi = prior_width
 
-        assert isinstance(bounds, tuple),f"bounds must be tuple with lower and upper values."
+        assert isinstance(bounds, tuple),f"transit_depth_variation: bounds must be tuple with lower and upper values."
         bounds_lo, bounds_hi = bounds
 
 
@@ -1004,7 +1005,7 @@ class load_lightcurves:
 
         
         assert len(depth_per_group)== len(depth_err_per_group)== ngroup, \
-            f"length of depth_per_group and depth_err_per_group must be equal to the number of unique groups (={ngroup}) defined in `lc_baseline`"
+            f"transit_depth_variation: length of depth_per_group and depth_err_per_group must be equal to the number of unique groups (={ngroup}) defined in `lc_baseline`"
         
         nphot      = len(self._names)             # the number of photometry input files
 
@@ -1016,11 +1017,11 @@ class load_lightcurves:
         self._ddfs.prior_width_lo      = prior_width_lo
         self._ddfs.prior_width_hi      = prior_width_hi
         if divwhite=="y":
-            assert ddFs=='n', 'you can not do divide-white and not fit ddfs!'
+            assert ddFs=='n', 'transit_depth_variation: you can not do divide-white and not fit ddfs!'
             
             for i in range(nphot):
                 if (self._bases[i][6]>0):
-                    _raise(ValueError, 'you can not have CNMs active and do divide-white')
+                    _raise(ValueError, 'transit_depth_variation: you can not have CNMs active and do divide-white')
         
 
         if (ddFs=='n' and np.max(self._grbases)>0):
@@ -1029,7 +1030,7 @@ class load_lightcurves:
             
         if verbose: _print_output(self,"depth_variation")
                 
-    def setup_occultation(self, filters_occ=None, start_depth=[(0,500e-6,1000e-6)], step_size=0.00001,verbose=True):
+    def setup_occultation(self, filters_occ=None, start_depth=[(0,20e-6,1000e-6)], step_size=0.00001,verbose=True):
         """
             setup fitting for occultation depth
             
@@ -1061,8 +1062,8 @@ class load_lightcurves:
             else: filters_occ= [filters_occ]
         if filters_occ is None: filters_occ = []
 
-        assert isinstance(start_depth,(int,float,tuple,list)), f"start depth must be list of tuple for depth in each filter or tuple for same in all filters."
-        if isinstance(start_depth, tuple): start_depth= [start_depth]
+        assert isinstance(start_depth,(int,float,tuple,list)), f"setup_occulation:start depth must be list of tuple/float for depth in each filter or tuple/float for same in all filters."
+        if isinstance(start_depth, (int,float,tuple)): start_depth= [start_depth]
         # unpack start_depth input
         start_value, prior, prior_mean, prior_width_hi, prior_width_lo, bounds_hi, bounds_lo = [],[],[],[],[],[],[]
         for dp in start_depth:
@@ -1093,7 +1094,7 @@ class load_lightcurves:
                 bounds_lo.append(dp[0])
                 bounds_hi.append(dp[2])
 
-            else: _raise(TypeError, f"tuple of len 2 or 3 was expected but got the value {dp} in start_depth.")
+            else: _raise(TypeError, f"setup_occultation: float or tuple (of len 2 or 3) was expected but got the value {dp} in start_depth.")
 
 
         DA = _reversed_dict(locals().copy())
@@ -1113,12 +1114,12 @@ class load_lightcurves:
 
         if filters_occ != []:
             for f in filters_occ: assert f in self._filnames, \
-                f"{f} is not in list of defined filters"
+                f"setup_occultation: {f} is not in list of defined filters"
             
             for par in DA.keys():
                 assert isinstance(DA[par], (int,float,str)) or \
                     (isinstance(DA[par], list) and ( (len(DA[par]) == nocc) or (len(DA[par]) == 1))), \
-                    f"length of input {par} must be equal to the length of filters_occ (={nocc}) or float or None."
+                    f"setup_occultation: length of input {par} must be equal to the length of filters_occ (={nocc}) or float or None."
 
                 if (isinstance(DA[par], list) and len(DA[par]) == 1):  DA[par] = DA[par]*nocc
                 if isinstance(DA[par], (int,float,str)):             DA[par] = [DA[par]]*nocc
@@ -1137,6 +1138,7 @@ class load_lightcurves:
             for i,j in zip(indx, range(nocc)):                
                 DA2[par][i] = DA[par][j]
 
+        DA2["filt_to_fit"] = [("y" if step else "n") for step in DA2["step_size"]]
         self._occ_dict =  DA = DA2
         if verbose: _print_output(self,"occultations")
 
@@ -1152,7 +1154,8 @@ class load_lightcurves:
                 if tuple, must be of - length 2 for normal prior (mean,std) or length 3 for uniform prior defined as (lo_lim, val, uplim).
                 **recall the conditions: c1+c2<1, c1>0, c1+c2>0  (https://ui.adsabs.harvard.edu/abs/2013MNRAS.435.2152K/abstract)\n
                 This implies the a broad uniform prior of [0,2] for c1 and [-1,1] for c2. However, it is highly recommended to use gaussian priors on c1 and c2. 
-                    
+
+            Note: c1,c2 are reparameterised in the mcmc fitting to: 2*c1+c2 and c1-c2      
         """
         #defaults
         c3 = c4 = 0
@@ -1172,8 +1175,8 @@ class load_lightcurves:
             if isinstance(DA[par], (int,float)): DA[par] = [DA[par]]*nfilt
             elif isinstance(DA[par], tuple): 
                 if len(DA[par])==2 or len(DA[par])==3: DA[par] = [DA[par]]*nfilt
-            elif isinstance(DA[par], list): assert len(DA[par]) == nfilt,f"length of list {par} must be equal to number of unique filters (={nfilt})."
-            else: _raise(TypeError, f"{par} must be int/float, or tuple of len 2 (for gaussian prior) or 3 (for uniform prior) but {DA[par]} is given.")
+            elif isinstance(DA[par], list): assert len(DA[par]) == nfilt,f"limb_darkening: length of list {par} must be equal to number of unique filters (={nfilt})."
+            else: _raise(TypeError, f"limb_darkening: {par} must be int/float, or tuple of len 2 (for gaussian prior) or 3 (for uniform prior) but {DA[par]} is given.")
         
         for par in ["c1","c2","c3","c4"]:
             for i,d in enumerate(DA[par]):
@@ -1186,15 +1189,16 @@ class load_lightcurves:
                         DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = d[1]
                         DA[f"bound_lo{par[-1]}"][i] = 0 if par=="c1" else -1
                         DA[f"bound_hi{par[-1]}"][i] = 2 if par=="c1" else 1
-                        DA[f"step{par[-1]}"][i] = 0.001 if d[1] else 0  #if width is > 0
+                        DA[f"step{par[-1]}"][i] = 0.1*DA[f"sig_lo{par[-1]}"][i] if d[1] else 0  #if width is > 0
 
 
                     if len(d) == 3:  #uniform prior
+                        if d[0]!= 0 and d[2]!=0: assert d[0]<d[1]<d[2],f'limb_darkening: uniform prior be (lo_lim, val, uplim) where lo_lim < val < uplim but {d} given.'
                         DA[par][i] = d[1]
                         DA[f"bound_lo{par[-1]}"][i] = d[0]
                         DA[f"bound_hi{par[-1]}"][i] = d[2]
                         DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = 0
-                        DA[f"step{par[-1]}"][i] = 0.001 if (d[0] or d[2]) else 0 #if bounds !=  0
+                        DA[f"step{par[-1]}"][i] = min(0.001, np.ptp([d[0],d[2]])) if (d[0] or d[2]) else 0 #if bounds !=  0
   
         DA["priors"] = [0]*nfilt
         for i in range(nfilt):
@@ -1254,13 +1258,13 @@ class load_lightcurves:
         _ = DA.pop("verbose")
         
         for par in ["R_st", "M_st"]:
-            assert DA[par] is None or isinstance(DA[par],tuple), f"{par} must be either None or tuple of length 2 or 3 "
+            assert DA[par] is None or isinstance(DA[par],tuple), f"stellar_parameters: {par} must be either None or tuple of length 2 or 3 "
             if DA[par] is None: DA[par] = (1,0.01)
             if isinstance(DA[par],tuple):
-                assert len(DA[par])==2 or len(DA[par]) <=3, f"length of {par} tuple must be 2 or 3 "
+                assert len(DA[par])==2 or len(DA[par]) <=3, f"stellar_parameters: length of {par} tuple must be 2 or 3 "
                 if len(DA[par])== 2: DA[par]= (DA[par][0], DA[par][1], DA[par][1])
         
-        assert DA["par_input"] in ["Rrho","Mrho", "MR"], f"par_input must be one of 'Rrho','Mrho' or 'MR'. "
+        assert DA["par_input"] in ["Rrho","Mrho", "MR"], f"stellar_parameters: par_input must be one of 'Rrho','Mrho' or 'MR'. "
             
         self._stellar_dict = DA
          
@@ -1293,7 +1297,7 @@ class load_lightcurves:
         else:
             possible_sections= ["lc_baseline", "gp", "transit_rv_pars", "depth_variation",
                                  "occultations", "limb_darkening", "contamination", "stellar_pars"]
-            assert section in possible_sections, f"{section} not a valid section of `lc_data`. \
+            assert section in possible_sections, f"print: {section} not a valid section of `lc_data`. \
                 section must be one of {possible_sections}."
             _print_output(self, section)
 
@@ -1326,10 +1330,10 @@ class load_lightcurves:
                 return figure object for saving to file.
         """
         if not (isinstance(plot_cols, tuple) and len(plot_cols) in [2,3]): 
-            raise TypeError(f"plot_cols must be tuple of length 2 or 3, but is {type(plot_cols)} and length of {len(plot_cols)}.")
+            raise TypeError(f"plot: plot_cols must be tuple of length 2 or 3, but is {type(plot_cols)} and length of {len(plot_cols)}.")
         
         assert col_labels is None or ((isinstance(col_labels, tuple) and len(col_labels)==2)), \
-            f"col_labels must be tuple of length 2, but is {type(col_labels)} and length of {len(col_labels)}."
+            f"plot: col_labels must be tuple of length 2, but is {type(col_labels)} and length of {len(col_labels)}."
         
         assert isinstance(fit_order,int),f'fit_order must be an integer'
         
@@ -1362,15 +1366,24 @@ class load_rvs:
         --------
         rv_data : rv object
     """
-    def __init__(self, file_list=None, data_filepath=None):
+    def __init__(self, file_list=None, data_filepath=None, show_guide =False):
         self._obj_type = "rv_obj"
-        self._fpath = os.getcwd() if data_filepath is None else data_filepath
+        self._fpath = os.getcwd()+"/" if data_filepath is None else data_filepath
         self._names   = [] if file_list is None else file_list  
         if self._names == []:
             self.rv_baseline(verbose=False)
         else: 
             for rv in self._names: assert os.path.exists(self._fpath+rv), f"file {rv} does not exist in the path {self._fpath}."
-            print("Next: use method `rv_baseline` to define baseline model for for the each rv")
+            if show_guide: print("Next: use method `rv_baseline` to define baseline model for for the each rv")
+            #modify input files to have 6 columns as CONAN expects
+            for f in self._names:
+                fdata = np.loadtxt(self._fpath+f)
+                nrow,ncol = fdata.shape
+                if ncol < 6:
+                    print(f"Expected 6 columns for RV file: writing zeros to the missing columns of file: {f}")
+                    new_cols = np.zeros((nrow,6-ncol))
+                    ndata = np.hstack((fdata,new_cols))
+                    np.savetxt(self._fpath+f,ndata,fmt='%.8f')
 
         self._nRV = len(self._names)
 
@@ -1506,7 +1519,7 @@ class mcmc_setup:
         class to setup fitting
     """
     def __init__(self, n_chains=64, n_steps=2000, n_burn=500, n_cpus=2, sampler=None,
-                    leastsq_for_basepar="n", apply_CFs="y",apply_jitter="y",
+                    leastsq_for_basepar="n", apply_CFs="y",apply_jitter="n",
                     verbose=True, remove_param_for_CNM="n", lssq_use_Lev_Marq="n",
                     GR_test="y", make_plots="n", leastsq="y", savefile="output_ex1.npy",
                     savemodel="n", adapt_base_stepsize="y"):
@@ -1799,10 +1812,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         depth_per_group.append( (float(adump[1]),float(adump[2])))
         dump=_file.readline()
 
-
-    lc_data.transit_depth_variation(ddf,depth_per_group,div_white,
-                                    step,bounds,prior,pr_width,
-                                    verbose)
+    if ddf != "n":
+        lc_data.transit_depth_variation(ddf,depth_per_group,div_white,
+                                        step,bounds,prior,pr_width,
+                                        verbose)
+    else: lc_data.transit_depth_variation(verbose=verbose)
 
  #=========== occultation setup ===========================
     dump=_file.readline()
@@ -1976,7 +1990,7 @@ class load_chains:
         if os.path.exists(burnin_chain_file):
             self._burnin_chains = pickle.load(open(burnin_chain_file,"rb"))
 
-        self._par_names = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains
+        self._par_names = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
         
     def __repr__(self):
         return f'Object containing chains (main or burn-in) from mcmc. \
@@ -2001,7 +2015,7 @@ class load_chains:
             
         """
         assert pars is None or isinstance(pars, list) or pars == "all", \
-             f'pars must be None, "all", or list of iu8999relevant parameters.'
+             f'pars must be None, "all", or list of relevant parameters.'
         if pars is None or pars == "all": pars = [p for p in self._par_names]
         for p in pars:
             assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
@@ -2089,7 +2103,7 @@ class load_chains:
             Parameters:
             ----------
             pars : list of str;
-                parameter names to plot. Ideally less than 12 pars for clarity of plot
+                parameter names to plot. Ideally less than 14 pars for clarity of plot
 
             bins : int;
                 number of bins in 1d histogram
@@ -2116,8 +2130,8 @@ class load_chains:
 
         ndim = len(pars)
 
-        if not force_plot: assert ndim <= 12, \
-            f'number of parameters to plot should be <=12 for clarity. Use force_plot = True to continue anyways.'
+        if not force_plot: assert ndim <= 14, \
+            f'number of parameters to plot should be <=14 for clarity. Use force_plot = True to continue anyways.'
 
         lsamp = len(self._chains[pars[0]][:,discard::thin].flatten())
         samples = np.empty((lsamp,ndim))
@@ -2232,11 +2246,13 @@ def load_result_array():
         >>> plt.plot(df["time"], df["transit"],"g")
         
     """
-    out_files = [ f  for f in os.listdir() if '_out_full.dat' in f]
+    out_files_lc = [ f  for f in os.listdir() if '_out_full.dat' in f]
+    out_files_rv = [ f  for f in os.listdir() if '_out.dat' in f]
+    all_files = out_files_lc+out_files_rv
     results = {}
-    for f in out_files:
+    for f in all_files:
         df = pd.read_fwf(f, header=0)
         df = df.rename(columns={'# time': 'time'})
         results[f] = df
-    print(f"Output files loaded are: {out_files} ")
+    print(f"Output files loaded: {all_files} ")
     return results

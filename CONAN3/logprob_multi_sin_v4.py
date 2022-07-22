@@ -16,7 +16,7 @@ from CONAN3.celeritenew import *
 from .RVmodel_v3 import *
 
 
-def logprob_multi(p, *args):
+def logprob_multi(p, *args,verbose=False,debug=False):
     
     # distribute out all the input arguments
     tarr = args[0]
@@ -86,7 +86,7 @@ def logprob_multi(p, *args):
     # restrict the parameters to those of the light curve
     for j in range(nphot):
         if inmcmc == 'n':
-            print('\nLightcurve number:',j)
+            if verbose: print('\nLightcurve ',j+1)
         tt = np.copy(tarr[indlist[j][0]]) # time values of lightcurve j
         ft = np.copy(farr[indlist[j][0]]) # flux values of lightcurve j
         ee = np.copy(earr[indlist[j][0]]) # error values of lightcurve j
@@ -269,8 +269,11 @@ def logprob_multi(p, *args):
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
                 print("Using George GP") if useGPphot[j]=='y' else print("Using Celerite GP")
-                # print(f"GP terms: {gp.get_parameter_names( include_frozen=True)}")
-                # print(f"GP vector: {gp.get_parameter_vector( include_frozen=True)}")
+                if debug:
+                    print("\nDEBUG: In logprob_multi_sinv4")
+                    print(f"GP terms: {gp.get_parameter_names()}")
+                    print(f"GP vector: {gp.get_parameter_vector()}")
+                    print(f"setting to params: {para}")
                 print('GP values used:',GPuse)
 
                 pred, pred_var = gp.predict(ft, t=pargp, return_var=True, args=argu) #gp+transit*baseline
@@ -315,7 +318,7 @@ def logprob_multi(p, *args):
                 fco_full = ft/bfunc_full    #detrended_data
  
                 outfile=name[:-4]+'_out_full.dat'
-                print(f"Writing init with gp to file: {outfile}")
+                if verbose: print(f"Writing output with gp to file: {outfile}")
                 of=open(outfile,'w')
                 of.write("%10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","gp*base","transit","det_flux"))
                 for k in range(len(tt)):
@@ -387,7 +390,7 @@ def logprob_multi(p, *args):
                 pred=mt0*bfunc_para
                 fco_full = ft/bfunc_para
                 outfile=name[:-4]+'_out_full.dat'
-                print(f"Writing init without gp to file: {outfile}")
+                if verbose: print(f"Writing output without gp to file: {outfile}")
                 of=open(outfile,'w')
                 of.write("%10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","base","transit","det_flux"))
                 for k in range(len(tt)):
@@ -408,7 +411,7 @@ def logprob_multi(p, *args):
         st = np.copy(sarr[indlist[j+nphot][0]])
         bt = np.copy(barr[indlist[j+nphot][0]])
         ct = np.copy(carr[indlist[j+nphot][0]])
-        name = names[j]
+        name = RVnames[j]
         
         argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,bvars,vcont,name,ee]
 
@@ -476,7 +479,7 @@ def logprob_multi(p, *args):
         #RVmod.get_value(tt,args=argu)
         
         if (jit_apply == 'y'):
-            jitterind = 8 + nddf+nocc + nfilt*4 + 1
+            jitterind = 8 + nddf+nocc + nfilt*4 + j*2 + 1
             jit = paraminRV[jitterind]
         
         else:

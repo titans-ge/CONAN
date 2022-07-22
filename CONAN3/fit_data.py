@@ -36,7 +36,7 @@ import multiprocessing as mp
 mp.set_start_method('fork')
 __all__ = ["fit_data"]
 
-def fit_data(lc, rv=None, mcmc=None, statistic = "max",
+def fit_data(lc, rv=None, mcmc=None, statistic = "median",
 verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     """
     function to fit the data using the light-curve object lc, rv_object rv and mcmc setup object mcmc.
@@ -130,12 +130,12 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             GPall[0,k]=True
 
             if DA_gp["WN"][j] == 'y' and useGPphot[i]=='ce':
-                GPphotWNstart[0] = -7.   
+                GPphotWNstart[0] = -8.   
                 GPphotWNstep[0] = 0.1 
                 GPphotWNprior[0] = 0.
                 GPphotWNpriorwid[0] = 0.
-                GPphotWNlimup[0] = -3
-                GPphotWNlimlo[0] = -21
+                GPphotWNlimup[0] = -5
+                GPphotWNlimlo[0] = -12
                 GPphotWN[0] = 'all'
 
             elif DA_gp["WN"][j] == 'y' and useGPphot[i]=='y':
@@ -170,12 +170,12 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             GPall[i,k]=False
 
             if DA_gp["WN"][j] == 'y' and useGPphot[i[0][0]] == 'ce':
-                GPphotWNstart[i[0][0]] = -7.
+                GPphotWNstart[i[0][0]] = -8.
                 GPphotWNstep[i[0][0]] = 0.1
                 GPphotWNprior[i[0][0]] = 0.
                 GPphotWNpriorwid[i[0][0]] = 0.
-                GPphotWNlimup[i[0][0]] = -3
-                GPphotWNlimlo[i[0][0]] = -21
+                GPphotWNlimup[i[0][0]] = -5
+                GPphotWNlimlo[i[0][0]] = -12
                 GPphotWN[i[0][0]] = DA_gp["WN"][j]
             elif DA_gp["WN"][j] == 'y' and useGPphot[i[0][0]] == 'y':
                 GPphotWNstart[i] = np.log((GPphotWNstartppm/1e6)**2) # in absolute
@@ -186,7 +186,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 GPphotWNlimlo[i] = -21.0
                 GPphotWN[i] = 'y'
             elif DA_gp["WN"][j] == 'n':
-                GPphotWN[j] = 'n'
+                GPphotWN[:] = 'n'
             else:
                 raise ValueError('For at least one GP an invalid White-Noise option input was provided. Set it to either y or n.')
 
@@ -416,23 +416,27 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             if verbose: print('Limb-darkening law: quadratic')
             v1=2.*c1_in[j,0]+c2_in[j,0] #transform c1 and c2
             v2=c1_in[j,0]-c2_in[j,0]
-            ev1=np.sqrt(4.*c1_in[j,1]**2+c2_in[j,1]**2)  #transform steps
-            ev2=np.sqrt(c1_in[j,1]**2+c2_in[j,1]**2)
-            lov1=np.sqrt(4.*c1_in[j,5]**2+c2_in[j,5]**2) #transform sig_los
-            lov2=np.sqrt(c1_in[j,5]**2+c2_in[j,5]**2)
-            hiv1=np.sqrt(4.*c1_in[j,6]**2+c2_in[j,6]**2) #transform sig_his
-            hiv2=np.sqrt(c1_in[j,6]**2+c2_in[j,6]**2)
-            lo_lim1 = 2.*c1_in[j,2]+c2_in[j,2]      #transform bound_lo
-            lo_lim2 = c1_in[j,2]-c2_in[j,3] 
-            hi_lim1 = 2.*c1_in[j,3]+c2_in[j,3]
-            hi_lim2 = c1_in[j,3]-c2_in[j,2]
+            # ev1=np.sqrt(4.*c1_in[j,1]**2+c2_in[j,1]**2)  #transform steps (not needed)
+            # ev2=np.sqrt(c1_in[j,1]**2+c2_in[j,1]**2)
+            lov1=np.sqrt(4.*c1_in[j,5]**2+c2_in[j,5]**2) if c1_in[j,5] else 0 #transform sig_los
+            lov2=np.sqrt(c1_in[j,5]**2+c2_in[j,5]**2)    if c2_in[j,5] else 0
+            hiv1=np.sqrt(4.*c1_in[j,6]**2+c2_in[j,6]**2) if c1_in[j,6] else 0 #transform sig_his
+            hiv2=np.sqrt(c1_in[j,6]**2+c2_in[j,6]**2)    if c2_in[j,6] else 0
+            lo_lim1 = 2.*c1_in[j,2]+c2_in[j,2]  if c1_in[j,2] else 0   #transform bound_lo
+            lo_lim2 = c1_in[j,2]-c2_in[j,3]     if c2_in[j,3] else 0
+            hi_lim1 = 2.*c1_in[j,3]+c2_in[j,3]  if c1_in[j,3] else 0
+            hi_lim2 = c1_in[j,3]-c2_in[j,2]     if c2_in[j,2] else 0
+            if debug:
+                print("\nDEBUG: In fit_data.py")
+                print(f"LD:\nuniform: c1 = ({lo_lim1},{v1},{hi_lim1})/{c1_in[j,1]}, c2 = ({lo_lim2},{v2},{hi_lim2})/{c2_in[j,1]}")
+                print(f"normal: c1=({v1},-{lov1}+{hiv1})/{c1_in[j,1]}, c2=({v2},-{lov2}+{hiv2})/{c2_in[j,1]}")
             #replace inputs LDs with transformations
             c1_in[j,0]=np.copy(v1)  #replace c1 and c2
             c2_in[j,0]=np.copy(v2)
             c1_in[j,4]=np.copy(v1)  #replace prior mean
             c2_in[j,4]=np.copy(v2)
-            c1_in[j,1]=np.copy(ev1) #replace steps
-            c2_in[j,1]=np.copy(ev2)
+            # c1_in[j,1]=np.copy(ev1) #replace steps (not needed)
+            # c2_in[j,1]=np.copy(ev2)
             c1_in[j,2]=np.copy(lo_lim1)  #replace bound_lo
             c2_in[j,2]=np.copy(lo_lim2)
             c1_in[j,3]=np.copy(hi_lim1)  #replace bound_hi
@@ -607,7 +611,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         if (jit_apply=='y'):
             print('does jitter work?')
             # print(nothing)
-            params=np.concatenate((params,[0.]), axis=0)
+            params=np.concatenate((params,[0.01]), axis=0)
             stepsize=np.concatenate((stepsize,[0.001]), axis=0)
             pmin=np.concatenate((pmin,[0.]), axis=0)
             pmax=np.concatenate((pmax,[100]), axis=0)
@@ -657,6 +661,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         pargp = np.vstack((t, xshift, yshift, airm, fwhm, sky, eti)).T  # the matrix with all the possible inputs to the GPs
 
         if (useGPphot[i]=='n'):
+            pargps.append([])   #Akin: to keep the indexes of the lists pargps and GPobjects index correct, append empty list if no gp
+            GPobjects.append([])
             A_in,B_in,C1_in,C2_in,D_in,E_in,G_in,H_in,nbc = basecoeff(bases[i])  # the baseline coefficients for this lightcurve; each is a 2D array
             nbc_tot = nbc_tot+nbc # add up the number of jumping baseline coeff
             njumpphot[i]=njumpphot[i]+nbc   # each LC has another jump pm
@@ -792,8 +798,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                     gp.freeze_parameter(GPparnames[ii])
                     frz.append(ii)
             if debug: 
-                print(f'GP frozen parameters:{GPparnames[frz]}')
-                print(f'GP parameters to fit: {gp.get_parameter_names()}')
+                print('\nDEBUG: In fit_data.py') 
+                print(f'GP frozen parameters:{np.array(GPparnames)[frz]}')
+                print(f'Model+GP parameters to fit: {gp.get_parameter_names()}')
                 print(f'with values: {gp.get_parameter_vector()}')
 
             gp.compute(pargp, err)
@@ -849,8 +856,13 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
             c_sigma=np.copy(np.log(GPphotpars1[i][0]))
             c_rho =np.copy(np.log(GPphotpars2[i][0]))
+            # #for celerite
+            # Q  = 1/np.sqrt(2)
+            # w0 = 2*np.pi/(np.exp(c_rho))
+            # S0 = np.exp(c_sigma)**2/(w0*Q)
             c_eps=0.001
-
+            if debug: print(f"DEBUG: In fit_data.py - kernel = {GPphotkerns[i,0]} ")
+            
             if GPphotWNstep[i]>1e-12:  #if the white nois is jumping
 
                 GPparams=np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   
@@ -866,19 +878,34 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 c_WN=np.copy(GPphotWNstart[i])
                 bounds_w = dict(log_sigma=(GPphotWNlimlo[i],GPphotWNlimup[i]))
                 k1 = terms.JitterTerm(log_sigma=c_WN, bounds=bounds_w)
-                bounds = dict(log_sigma=(GPphotlim1lo[i][0], GPphotlim1up[i][0]), log_rho=(GPphotlim2lo[i][0], GPphotlim2up[i][0]))
-                k2 = terms.Matern32Term(log_sigma=c_sigma, log_rho=c_rho, bounds=bounds)
+                if GPphotkerns[i,0] == "mat32":
+                    bounds = dict(log_sigma=(GPphotlim1lo[i][0], GPphotlim1up[i][0]), log_rho=(GPphotlim2lo[i][0], GPphotlim2up[i][0]))
+                    if debug: print(f"celerite gp bounds = {bounds}, starting: {c_sigma},{c_rho}")
+                    k2 = terms.Matern32Term(log_sigma=c_sigma, log_rho=c_rho, bounds=bounds)
+                # elif GPphotkerns[i,0] == "sho":
+                #     k2 = terms.SHOTerm(log_S0=np.log(S0), log_omega0=np.log(w0), log_Q = np.log(Q))
+                #     k2.freeze_parameter("log_Q")
+                # else: _raise(ValueError, f'Celerite kernel not recognized! Must be either "sho" or "mat32" but {GPphotkerns[i,0]} given')
+                #sho not working, problem with number of parameters (3 expected 2)
                 k3=k1 + k2
                 NparGP=3
 
             else:
-                bounds = dict(log_sigma=(GPphotlim1lo[0][0], GPphotlim1up[0][0]), log_rho=(GPphotlim2lo[0][0], GPphotlim2up[0][0]))
-                k3 = terms.Matern32Term(log_sigma=c_sigma, log_rho=c_rho, bounds=bounds)
+                bounds = dict(log_sigma=(GPphotlim1lo[i][0], GPphotlim1up[i][0]), log_rho=(GPphotlim2lo[i][0], GPphotlim2up[i][0]))
+                if debug: print(f"celerite gp bounds = {bounds}, starting: {c_sigma},{c_rho}")
+                if GPphotkerns[i,0] == "mat32": k3 = terms.Matern32Term(log_sigma=c_sigma, log_rho=c_rho, bounds=bounds)
+                # elif GPphotkerns[i,0] == "sho": 
+                #     k3 = terms.SHOTerm(log_S0=np.log(S0), log_omega0=np.log(w0), log_Q = np.log(Q))
+                #     k3.freeze_parameter("log_Q")
+                # else: _raise(ValueError, f'Celerite kernel not recognized! Must be either "sho" or "mat32" but {GPphotkerns[i,0]} given')
                 NparGP=2
 
 
             ii=0 
-            j=i           
+            if GPall[0,ii] == True:
+                j = 0
+            else:
+                j=i           
             GPparams=np.concatenate((GPparams,[c_sigma,c_rho]), axis=0)             
             if GPall[0,ii] == True and i == 0:         
                 GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
@@ -895,7 +922,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             GPcombined=np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
         
 
-            gp = clnGPnew(k3, mean=mean_model)#,log_white_noise=GPphotWNstart[i],fit_white_noise=True)
+            gp = clnGPnew(k3, mean=mean_model,fit_mean=True)#,log_white_noise=GPphotWNstart[i],fit_white_noise=True)
 
   
             # freeze the parameters that are not jumping!
@@ -903,15 +930,19 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             pindices = [0,1,2,3,4,5,6,8+k,8+nddf+k,8+nddf+nocc+k*4,8+nddf+nocc+k*4+1]
 
             GPparnames=gp.get_parameter_names(include_frozen=True)
+            if debug: print(f"pindices= {pindices}\nGPparnames={GPparnames}")
+
             frz=[]
             for ii in range(len(pindices)):
                 if (stepsize[pindices[ii]]==0.):
                     _ = gp.freeze_parameter(GPparnames[ii+NparGP])
-                    print(f"gppars from main: {GPparnames[ii+NparGP]}")
+                    # print(f"gppars from main: {GPparnames[ii+NparGP]}")
                     frz.append(ii+NparGP)
-            if debug: 
-                print(f'GP frozen parameters:{GPparnames[frz]}')
-                print(f'GP parameters to fit: {gp.get_parameter_names()}')
+            if debug:
+                print('\nDEBUG: In fit_data.py') 
+                print(f'frz={frz}')
+                print(f'GP frozen parameters:{np.array(GPparnames)[frz]}')
+                print(f'GP+Model parameters to fit: {gp.get_parameter_names()}')
                 print(f'with values: {gp.get_parameter_vector()}')
 
             gp.compute(pargp, err)
@@ -1108,7 +1139,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
                 jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined]
     
-    mval, merr,dump1,dump2 = logprob_multi(initial[jumping],*indparams)
+    mval, merr,dump1,dump2 = logprob_multi(initial[jumping],*indparams,verbose=True,debug=debug)
     if not os.path.exists("init"): os.mkdir("init")    #folder to put initial plots    
     mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'init/init_',initial,T0_in[0],per_in[0])
 
@@ -1133,6 +1164,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
     # put starting points for all walkers, i.e. chains
     p0 = np.random.rand(ndim * nchains).reshape((nchains, ndim))*np.asarray(steps[jumping])*2 + (np.asarray(initial[jumping])-np.asarray(steps[jumping]))
+    assert np.all([np.isfinite(logprob_multi(p0[i],*indparams)) for i in range(nchains)]),f'Range of start values of a(some) jump parameter(s) are outside the prior distribution'
 
     if walk == "demc": moves = emcee.moves.DEMove()
     elif walk == "snooker": moves = emcee.moves.DESnookerMove()
@@ -1154,7 +1186,16 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         for ch in range(burnin_chains.shape[2]):
             burnin_chains_dict[jnames[ch]] = burnin_chains[:,:,ch]
         pickle.dump(burnin_chains_dict,open("burnin_chains_dict.pkl","wb"))  
-        print("burn-in chain written to disk.")
+        print("burn-in chain written to disk")
+        matplotlib.use('Agg')
+        burn_result = load_chains()
+        try:
+            fig = burn_result.plot_burnin_chains()
+            fig.savefig("burnin_chains.png", bbox_inches="tight")
+            print("Burn-in chains plot saved as: burnin_chains.png")
+        except: 
+            print(f"burn-in chains not plotted (number of parameters ({ndim}) exceeds 20. use result.plot_burnin_chains()")
+        matplotlib.use(__default_backend__)
     sampler.reset()
 
     print("Running production...")
@@ -1221,7 +1262,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                           jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes,GPcombined]
 
     #median
-    mval, merr,T0_post,p_post = logprob_multi(medp[jumping],*indparams)
+    mval, merr,T0_post,p_post = logprob_multi(medp[jumping],*indparams,verbose=True)
     mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'med_',medp,T0_post,p_post)
 
     #max_posterior
@@ -1287,7 +1328,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     try:
         fig = result.plot_corner()
         fig.savefig("corner.png", bbox_inches="tight")
-    except: pass
+    except: 
+        print(f"\ncorner not plotted (number of parameters ({ndim}) exceeds 14. use result.plot_corner(force_plot=True)")
 
     matplotlib.use(__default_backend__)
 

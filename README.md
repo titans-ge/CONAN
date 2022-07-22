@@ -21,5 +21,5 @@ python setup.py develop
 
 ```
 
-See recent changes in change_log.dat
+See recent changes in change_log.rst
 

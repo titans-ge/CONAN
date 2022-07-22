@@ -18,12 +18,12 @@ def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,no
         ecc = 0.99
         if (params[6]/np.sqrt(ecc) < 1.):
             ome2 = np.arccos(params[6]/np.sqrt(ecc))
-            print(ome2)
+            # print(ome2)
         else:
             ome2 = 0   
             print('ome2 000')
         params[5] = np.sqrt(ecc)*np.sin(ome2)
-        print('here')
+        # print('here')
     
     if (ecc>0.00001):
         ome = np.arctan(np.abs(params[5]/params[6]))  #DA LIEGT DER HUND BEGRABEN!!! TANGENS IST KEIN ISOMORPHISMUS!!!
@@ -118,6 +118,7 @@ def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,no
     if (inmcmc == 'n'):
         outfile=RVnames[j][:-4]+'_out.dat'
         of=open(outfile,'w')
+        of.write("%10s %10s %10s %10s %10s %10s %10s\n" %("# time","RV","error","full_mod","base","Rvmodel","det_RV"))
         for k in range(len(tt)):
             of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], RVmes[k], RVerr[k], mod_RVbl[k],bfuncRV[k],mod_RV[k],RVmes[k]-bfuncRV[k])) 
 
