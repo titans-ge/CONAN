@@ -268,7 +268,7 @@ def logprob_multi(p, *args,verbose=False,debug=False):
             
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
-                print("Using George GP") if useGPphot[j]=='y' else print("Using Celerite GP")
+                if verbose: print("Using George GP") if useGPphot[j]=='y' else print("Using Celerite GP")
                 if debug:
                     print("\nDEBUG: In logprob_multi_sinv4")
                     print(f"GP terms: {gp.get_parameter_names()}")
@@ -319,10 +319,13 @@ def logprob_multi(p, *args,verbose=False,debug=False):
  
                 outfile=name[:-4]+'_out_full.dat'
                 if verbose: print(f"Writing output with gp to file: {outfile}")
+                #calculate phase
+                phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
+                if model_transit[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
                 of=open(outfile,'w')
-                of.write("%10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","gp*base","transit","det_flux"))
+                of.write("%10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","gp*base","transit","det_flux", "phase"))
                 for k in range(len(tt)):
-                    of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k],bfunc_full[k],model_transit[k],fco_full[k])) 
+                    of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k],bfunc_full[k],model_transit[k],fco_full[k],phases[k])) 
                 of.close() 
  
  
@@ -391,16 +394,19 @@ def logprob_multi(p, *args,verbose=False,debug=False):
                 fco_full = ft/bfunc_para
                 outfile=name[:-4]+'_out_full.dat'
                 if verbose: print(f"Writing output without gp to file: {outfile}")
+                #calculate phase
+                phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
+                if mt0[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
                 of=open(outfile,'w')
-                of.write("%10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","base","transit","det_flux"))
+                of.write("%10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","base","transit","det_flux","phase"))
                 for k in range(len(tt)):
-                    of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k], bfunc_para[k], mt0[k],fco_full[k])) 
+                    of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k], bfunc_para[k], mt0[k],fco_full[k], phases[k])) 
                 
                 of.close()      
     
     # now do the RVs and add their proba to the model
     for j in range(nRV):
-    
+        if verbose: print('\nRV ',j+1, " ...")
         tt = np.copy(tarr[indlist[j+nphot][0]]) # time values of lightcurve j
         ft = np.copy(farr[indlist[j+nphot][0]]) # flux values of lightcurve j
         ee = np.copy(earr[indlist[j+nphot][0]]) # error values of lightcurve j

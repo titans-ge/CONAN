@@ -1,3 +1,7 @@
+25-07-2022: version 3.0.4
+~~~~~~~~~~~~
+* added phases to the output files
+
 22-07-2022: version 3.0.3
 ~~~~~~~~~~~
 * Modified automatic steps assignment in setup_transit_rvs() function
