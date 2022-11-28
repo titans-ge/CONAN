@@ -10,3 +10,4 @@ lmfit
 batman-package
 mc3
 tqdm
+ldtk

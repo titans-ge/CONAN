@@ -21,7 +21,7 @@ def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,no
             # print(ome2)
         else:
             ome2 = 0   
-            print('ome2 000')
+            # print('ome2 000')
         params[5] = np.sqrt(ecc)*np.sin(ome2)
         # print('here')
     
@@ -120,6 +120,7 @@ def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,no
         phases = ((tt-params[0])/params[4]) - np.round( ((tt-params[0])/params[4])) 
         of=open(outfile,'w')
         of.write("%10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","RV","error","full_mod","base","Rvmodel","det_RV", "phase"))
+        print(f"gamma_kms = {params[gammaind]}")
         for k in range(len(tt)):
             of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], RVmes[k], RVerr[k], mod_RVbl[k],bfuncRV[k], +\
                 mod_RV[k]-params[gammaind],RVmes[k]-bfuncRV[k]-params[gammaind],phases[k])) 

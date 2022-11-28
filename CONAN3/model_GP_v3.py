@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import time
 import scipy
 import scipy.stats
+from scipy.interpolate import LSQUnivariateSpline
 
 from numpy import (array, size, argmin, abs, diag, log, median,  where, zeros, exp, pi, double)
 
@@ -48,6 +49,8 @@ class Transit_Model(Model):
         name          =  args[i] ; i+=1
         ee            =  args[i] ; i+=1
         bvar          =  args[i] ; i+=1
+        useSpline     =  args[i] ; i+=1
+
         #pmin, pmax        =  args[i], args[i+1] ; i+=2
         #c1_in, c2_in      = args[i], args[i+1] ; i+=2 
         #c3_in, c4_in      = args[i], args[i+1] ; i+=2 
@@ -194,26 +197,41 @@ class Transit_Model(Model):
         else:        
             coeff = np.copy(bases)  # the input coefficients 
 
-        bfunc=basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky)
+        bfunc,_ =basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky,ft/mm,useSpline)
         mod=mm*bfunc
         
         marr=np.copy(mod)
-        
+
         return marr
 
 
-def basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky):
+def basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky,res,useSpline):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
     bfunc=coeff[0]+coeff[1]*ts+coeff[2]*np.power(ts,2)+ coeff[3]*np.power(ts,3)+ coeff[4]*np.power(ts,4)+ +\
         coeff[5]*am+coeff[6]*np.power(am,2)+coeff[7]*cx+coeff[8]*np.power(cx,2)+coeff[9]*cy+coeff[10]*np.power(cy,2)+ +\
             coeff[11]*fwhm+coeff[12]*np.power(fwhm,2)+coeff[13]*sky+coeff[14]*np.power(sky,2)+coeff[15]*np.sin(ts*coeff[16]+coeff[17])
 
-    return bfunc
+    if np.all(bfunc==np.ones_like(ts)) or isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to ones
+        spl=np.ones_like(ts)
+    else:
+        kn, per = useSpline.knots, useSpline.period   #knot spacing and periodicity
+        knots = np.arange(min(am)+kn, max(am), kn )
+        srt = np.argsort(am)
+        x, y = am[srt], (res/bfunc)[srt]
+        if per > 0:
+            x = np.hstack([x-360,x,x+360])
+            y = np.hstack([y,y,y])
+            knots = np.hstack([knots-360,knots,knots+360])
+
+        splfunc = LSQUnivariateSpline(x, y, knots, ext="const")
+        spl = splfunc(am)
+        spl = spl/np.median(spl)  #center spline around 1 so as not to interfere with offset of baseline function
+    return bfunc*spl, spl
 
 def para_minfunc(icoeff, ivars, mm, ft, ts, am, cx, cy, fwhm, sky):
     icoeff_full = np.zeros(20)
     icoeff_full[ivars] = np.copy(icoeff)
-    bfunc = basefunc_noCNM(icoeff_full, ts, am, cx, cy, fwhm, sky)
+    bfunc,_ = basefunc_noCNM(icoeff_full, ts, am, cx, cy, fwhm, sky,0,False)
     fullmod = np.multiply(bfunc, mm)
 
     return (ft - fullmod)

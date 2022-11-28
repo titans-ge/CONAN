@@ -1,6 +1,13 @@
 25-07-2022: version 3.0.4
 ~~~~~~~~~~~~
 * added phases to the output files
+* fixed problem with RV jitter and gamma indexes when jit_apply = "n"
+* fixed RV filepath
+* added spline for roll-angle decorrelation (added roll and spline_fit columns to output file)
+* can obtain priors for limb darkening using ldtk
+* smooth sampled transit model in decorr plot
+* allow setting up lc object without any lc file.
+* create bin_data function in plots.py
 
 22-07-2022: version 3.0.3
 ~~~~~~~~~~~

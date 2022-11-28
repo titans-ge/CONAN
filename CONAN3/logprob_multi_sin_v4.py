@@ -16,7 +16,42 @@ from CONAN3.celeritenew import *
 from .RVmodel_v3 import *
 
 
-def logprob_multi(p, *args,verbose=False,debug=False):
+def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
+    """
+    calculate log probability and create output file of full model calculated using posterior parameters
+
+    Parameters
+    ----------
+    p : array
+        model parameters
+
+    *args : list 
+        contains various config parameters
+
+    make_out_file : bool, optional
+        whether to make the output  model file "out_full.dat". by default False
+
+    verbose : bool, optional
+        whether to print out information during function call, by default False
+
+    debug : bool, optional
+        see debug statements, by default False
+    
+    Returns
+    -------
+    model : array
+        model computed with parameter input `p`
+
+    model_err : array
+        model uncertainties
+    
+    T0 : float
+        mid transit time 
+
+    P0 : float
+        period
+
+    """
     
     # distribute out all the input arguments
     tarr = args[0]
@@ -77,6 +112,7 @@ def logprob_multi(p, *args,verbose=False,debug=False):
     jumping_GP = args[55]
     GPstepsizes = args[56]
     GPcombined = args[57]
+    useSpline = args[58]
     lnprob = 0.
     
     lc0_combinedGPs = np.where(GPcombined == 1.0)
@@ -224,7 +260,7 @@ def logprob_multi(p, *args,verbose=False,debug=False):
             kwargs = dict(**Parest)
             
             # and specify the correct arguments
-            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee,bvar]
+            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee,bvar,useSpline]
        
             mean_model = Transit_Model(T0=T0in, RpRs=RpRsin, b=bbin, dur=durin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in)
 
@@ -268,13 +304,15 @@ def logprob_multi(p, *args,verbose=False,debug=False):
             
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
-                if verbose: print("Using George GP") if useGPphot[j]=='y' else print("Using Celerite GP")
+                if verbose: 
+                    print("Using George GP") if useGPphot[j]=='y' else print("Using Celerite GP")
+                    print('GP values used:',GPuse)
                 if debug:
                     print("\nDEBUG: In logprob_multi_sinv4")
                     print(f"GP terms: {gp.get_parameter_names()}")
                     print(f"GP vector: {gp.get_parameter_vector()}")
                     print(f"setting to params: {para}")
-                print('GP values used:',GPuse)
+                
 
                 pred, pred_var = gp.predict(ft, t=pargp, return_var=True, args=argu) #gp+transit*baseline
                 
@@ -289,7 +327,7 @@ def logprob_multi(p, *args,verbose=False,debug=False):
                 # get the transit-only model with no parametric baselines
                 basesin_non = np.zeros(20)
                 basesin_non[0] = 1.
-                argu2 = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,'n',basesin_non,vcont,name,ee,bvar]
+                argu2 = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,'n',basesin_non,vcont,name,ee,bvar,useSpline]
                 mt0=mean_model.get_value(tt, argu2)  #transit only
 
                 bfunc = pred/mo     #gp_only 
@@ -302,7 +340,7 @@ def logprob_multi(p, *args,verbose=False,debug=False):
                 #ts=tt-T0_lc  
                 ts=tt-tt[0]
                 
-                bfunc_para = mo/mt0#basefunc_noCNM(basesin, ts, at, xt, yt, wt, st)
+                bfunc_para,spl_comp = basefunc_noCNM(basesin, ts, at, xt, yt, wt, st,ft/mt0,useSpline)#mo/mt0#
                 
                 #####ANDREAS: This is redunant... This file is only written when GPs are used but prints values without GPs
                 # outfile=name[:-4]+'_out.dat'
@@ -316,17 +354,18 @@ def logprob_multi(p, *args,verbose=False,debug=False):
                 bfunc_full = bfunc_para * bfunc_gp
                 model_transit = mo/bfunc_para
                 fco_full = ft/bfunc_full    #detrended_data
- 
-                outfile=name[:-4]+'_out_full.dat'
-                if verbose: print(f"Writing output with gp to file: {outfile}")
-                #calculate phase
-                phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
-                if model_transit[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
-                of=open(outfile,'w')
-                of.write("%10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","gp*base","transit","det_flux", "phase"))
-                for k in range(len(tt)):
-                    of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k],bfunc_full[k],model_transit[k],fco_full[k],phases[k])) 
-                of.close() 
+                
+                if make_out_file:
+                    outfile=name[:-4]+'_out_full.dat'
+                    if verbose: print(f"Writing output with gp to file: {outfile}")
+                    #calculate phase
+                    phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
+                    if model_transit[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
+                    of=open(outfile,'w')
+                    of.write("%14s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","gp*base","transit","det_flux","roll","spl_fit","phase"))
+                    for k in range(len(tt)):
+                        of.write('%14.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k],bfunc_full[k],model_transit[k],fco_full[k],at[k],spl_comp[k],phases[k])) 
+                    of.close() 
  
  
                 # ===== create and write out the DW model ===============
@@ -346,7 +385,7 @@ def logprob_multi(p, *args,verbose=False,debug=False):
             
         else:
 
-            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee,bvar]     
+            argu = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,ee,bvar,useSpline]     
 
 
             # #### MONIKA: let's call the transit model from "model_GP_v3.pro" to avoid inconsitencies #####
@@ -362,16 +401,17 @@ def logprob_multi(p, *args,verbose=False,debug=False):
             lnprob = lnprob + lnprob_thislc
             chisq = np.sum((mt-ft)**2/ee**2)
             
-            # get the transit-only model with no parametric baselines
-            basesin_non = np.zeros(20)
-            basesin_non[0] = 1.
-            argu2 = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,'n',basesin_non,vcont,name,ee,bvar]
-            mt0=tramod_call.get_value(tt, argu2)  #transit only
-            
+
             if inmcmc == 'n':
                 mod = np.concatenate((mod,mt))
                 emod = np.concatenate((emod,np.zeros(len(mt)))) 
 
+                # get the transit-only model with no parametric baselines
+                basesin_non = np.zeros(20)
+                basesin_non[0] = 1.
+                argu2 = [tt,ft,xt,yt,wt,at,st,bt,ct,isddf,rprs0,grprs_here,inmcmc,'n',basesin_non,vcont,name,ee,bvar,useSpline]
+                mt0=tramod_call.get_value(tt, argu2)  #transit only
+                
                 # #### Monika modificatons for outputs without GPs #####
                 #
                 # write out an output file in the same format as the GP output files. 
@@ -385,24 +425,26 @@ def logprob_multi(p, *args,verbose=False,debug=False):
                     icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mt0, ft, ts, at, xt, yt, wt, st))
                     coeff = np.copy(basesin)
                     coeff[bvar] = np.copy(icoeff)
-                    bfunc_para = basefunc_noCNM(coeff, ts, at, xt, yt, wt, st)
+                    bfunc_para,spl_comp = basefunc_noCNM(coeff, ts, at, xt, yt, wt, st,ft/mt0,useSpline)
                 else:
                     # print("Taking default straight-line baseline")
-                    bfunc_para = basefunc_noCNM(basesin, ts, at, xt, yt, wt, st)
+                    bfunc_para,spl_comp = basefunc_noCNM(basesin, ts, at, xt, yt, wt, st,ft/mt0,useSpline)
 
                 pred=mt0*bfunc_para
                 fco_full = ft/bfunc_para
-                outfile=name[:-4]+'_out_full.dat'
-                if verbose: print(f"Writing output without gp to file: {outfile}")
-                #calculate phase
-                phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
-                if mt0[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
-                of=open(outfile,'w')
-                of.write("%10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","base","transit","det_flux","phase"))
-                for k in range(len(tt)):
-                    of.write('%10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k], bfunc_para[k], mt0[k],fco_full[k], phases[k])) 
-                
-                of.close()      
+
+                if make_out_file:
+                    outfile=name[:-4]+'_out_full.dat' 
+                    if verbose: print(f"Writing output without gp to file: {outfile}")
+                    #calculate phase
+                    phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
+                    if mt0[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
+                    of=open(outfile,'w')
+                    of.write("%14s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","base","transit","det_flux","roll","spl_fit","phase"))
+                    for k in range(len(tt)):
+                        of.write('%14.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k], bfunc_para[k], mt0[k],fco_full[k],at[k],spl_comp[k],phases[k])) 
+                    
+                    of.close()      
     
     # now do the RVs and add their proba to the model
     for j in range(nRV):

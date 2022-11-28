@@ -13,5 +13,5 @@ setup(name='CONAN3',
       packages=['CONAN3'],
       install_requires=['numpy', 'scipy','pandas','lmfit',
                         'mc3', 'batman-package','celerite','corner',
-                        'matplotlib','emcee','george'],
+                        'matplotlib','emcee','george','ldtk','tqdm',],
 )

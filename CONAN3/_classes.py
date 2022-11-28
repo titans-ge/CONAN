@@ -1,3 +1,4 @@
+from typing import Type
 import numpy as np
 import matplotlib.pyplot as plt
 import corner
@@ -8,6 +9,10 @@ import matplotlib
 import pandas as pd
 from lmfit import minimize, Parameters, Parameter
 import batman
+from warnings import warn
+from ldtk import SVOFilter
+
+
 
 __all__ = ["load_lightcurves", "load_rvs", "setup_fit", "__default_backend__","load_result_array"]
 
@@ -32,7 +37,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
         plt.errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[0]}')
         if model_overplot:
             plt.plot(p1,model_overplot[0][0],"r",zorder=3,label="detrend_model")
-            plt.plot(p1,model_overplot[0][1],"c",zorder=3,label="tra/occ_model")
+            plt.plot(model_overplot[0][2],model_overplot[0][1],"c",zorder=3,label="tra/occ_model")
 
         if fit_order>0:
             pfit = np.polyfit(p1,p2,fit_order)
@@ -53,7 +58,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
             ax[i].errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[i]}')
             if model_overplot:
                 ax[i].plot(p1,model_overplot[i][0],"r",zorder=3,label="detrend_model")
-                ax[i].plot(p1,model_overplot[i][1],"c",zorder=3,label="tra/occ_model")
+                ax[i].plot(model_overplot[i][2],model_overplot[i][1],"c",zorder=3,label="tra/occ_model")
 
             if fit_order>0:
                 pfit = np.polyfit(p1,p2,fit_order)
@@ -143,11 +148,14 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
     if mask:
         print("masking transit/eclipse phases")
         for tp in ["T_0", "P", "dur"]:
-            assert isinstance(in_pars[tp], (float,int)),f"{tp} must be  float/int for masking transit/eclipses"
+            if isinstance(in_pars[tp], tuple):
+                if len(in_pars[tp])==2:   in_pars[tp]=in_pars[tp][0]
+                elif len(in_pars[tp])==3: in_pars[tp]=in_pars[tp][1]
+            # assert isinstance(in_pars[tp], (float,int)),f"{tp} must be  float/int for masking transit/eclipses"
         #use periodicity of 0.5*P to catch both transits and eclipses
-        E = np.round(( cols0_med - T_0)/(0.5*P) )
-        Tc = E*(0.5*P) + T_0
-        mask = abs(df["cols0"] - Tc) > 0.5*dur
+        E = np.round(( cols0_med - in_pars['T_0'])/(0.5*in_pars['P']) )
+        Tc = E*(0.5*in_pars['P']) + in_pars['T_0']
+        mask = abs(df["cols0"] - Tc) > 0.5*in_pars['dur']
         df = df[mask]
         
     for p in ["T_0", "P", "dur", "L","b","rp","q1","q2"]: tr_pars[p]= in_pars[p]    #transit/eclipse pars
@@ -181,7 +189,7 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
             tr_params.add(key, value=val, vary=False)
                 
     
-    def transit_occ_model(tr_params):
+    def transit_occ_model(tr_params,t=None):
         bt = batman.TransitParams()
 
         bt.per = tr_params["P"]
@@ -199,9 +207,10 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
         bt.ecc, bt.w = 0,90
 
         bt.t_secondary = bt.t0 + 0.5*bt.per
+        if t is None: t = df["cols0"].values
 
-        m_tra = batman.TransitModel(bt, df["cols0"].values,transittype="primary")
-        m_ecl = batman.TransitModel(bt, df["cols0"].values,transittype="secondary")
+        m_tra = batman.TransitModel(bt, t,transittype="primary")
+        m_ecl = batman.TransitModel(bt, t,transittype="secondary")
 
         f_tra = m_tra.light_curve(bt)
         f_occ = (m_ecl.light_curve(bt)-bt.fp)
@@ -231,7 +240,8 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
     
 
     if return_models:
-        return trend_model(params),transit_occ_model(tr_params)    
+        tsm = np.linspace(min(df["cols0"]),max(df["cols0"]),len(df["cols0"])*3)
+        return trend_model(params),transit_occ_model(tr_params,tsm),tsm    
     
     #perform fitting 
     def chisqr(fit_params):
@@ -254,12 +264,14 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
     out.time    = np.array(df["cols0"])
     out.flux    = np.array(df["cols1"])
     out.flux_err= np.array(df["cols2"])
+    out.rms     = np.std(out.flux - out.bestfit)
     out.ndata   = len(out.time)
     out.residual= out.residual[:out.ndata]
     out.nfree   = out.ndata - out.nvarys
     out.chisqr  = np.sum(out.residual**2)
     out.redchi  = out.chisqr/out.nfree
-    out.bic     = out.ndata*np.log(out.chisqr/out.ndata) + out.nvarys*np.log(out.ndata)
+    out.lnlike  = -0.5*np.sum(out.residual**2 + np.log(2*np.pi*out.flux_err**2))
+    out.bic    = out.chisqr + out.nvarys*np.log(out.ndata)
 
     return out
 
@@ -466,6 +478,24 @@ class _text_format:
    UNDERLINE = '\033[4m'
    END = '\033[0m'
 
+filter_shortcuts = dict(kepler='Kepler/Kepler.k',
+                    tess='TESS/TESS.Red',
+                    cheops='CHEOPS/CHEOPS.band',
+                    wfc3_g141='HST/WFC3_IR.G141',
+                    wfc3_g102='HST/WFC3_IR.G102',
+                    sp36='Spitzer/IRAC.I1',
+                    sp45='Spitzer/IRAC.I2',
+                    ug='Geneva/Geneva.U',
+                    b1='Geneva/Geneva.B1',
+                    b2='Geneva/Geneva.B2',
+                    bg='Geneva/Geneva.B',
+                    gg='Geneva/Geneva.G',
+                    v1='Geneva/Geneva.V2',
+                    vg='Geneva/Geneva.V',
+                    sdss_g='SLOAN/SDSS.g',
+                    sdss_r='SLOAN/SDSS.r',
+                    sdss_i='SLOAN/SDSS.i',
+                    sdss_z='SLOAN/SDSS.z')
 
 #========================================================================
 class load_lightcurves:
@@ -500,7 +530,7 @@ class load_lightcurves:
                  verbose=True, show_guide=False):
         self._obj_type = "lc_obj"
         self._fpath = os.getcwd()+'/' if data_filepath is None else data_filepath
-        self._names = [file_list] if isinstance(file_list, str) else file_list
+        self._names = [file_list] if isinstance(file_list, str) else [] if file_list is None else file_list
         for lc in self._names: assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
         
         assert filters is None or isinstance(filters, (list, str)), \
@@ -516,6 +546,7 @@ class load_lightcurves:
 
         self._filters = ["V"]*len(self._names) if filters is None else [f for f in filters]
         self._lamdas  = [6000.0]*len(self._names) if lamdas is None else [l for l in lamdas]
+        self._filter_shortcuts = filter_shortcuts
         
         assert len(self._names) == len(self._filters) == len(self._lamdas), \
             f"filters and lamdas must be a list with same length as file_list (={len(self._names)})"
@@ -526,8 +557,8 @@ class load_lightcurves:
             fdata = np.loadtxt(self._fpath+f)
             nrow,ncol = fdata.shape
             if ncol < 9:
-                print(f"writing zeros to the missing columns of file: {f}")
-                new_cols = np.zeros((nrow,9-ncol))
+                print(f"writing ones to the missing columns of file: {f}")
+                new_cols = np.ones((nrow,9-ncol))
                 ndata = np.hstack((fdata,new_cols))
                 np.savetxt(self._fpath+f,ndata,fmt='%.8f')
 
@@ -587,6 +618,11 @@ class load_lightcurves:
 
             use_result : Bool, optional;
                 whether to use result/input to setup the baseline model and transit/eclipse models. Default is True.
+        
+            Returns
+            -------
+            decorr_result: list of result object
+                list containing result object for each lc.
         """
         
         blpars = {"dt":[], "dphi":[],"dx":[], "dy":[], "dconta":[], "dsky":[],"gp":[]}  #inputs to lc_baseline method
@@ -660,22 +696,27 @@ class load_lightcurves:
             blpars["dy"].append( 2 if pps["B4"]!=0 else 1 if  pps["A4"]!=0 else 0)
             blpars["dconta"].append( 2 if pps["B6"]!=0 else 1 if  pps["A6"]!=0 else 0)
             blpars["dsky"].append( 2 if pps["B7"]!=0 else 1 if  pps["A7"]!=0 else 0)
+            blpars["gp"].append("n")
             if not cheops_flag[j]:
                 blpars["dphi"].append( 2 if pps["B5"]!=0 else 1 if  pps["A5"]!=0 else 0)
-                blpars["gp"].append("n")
             else:
                 blpars["dphi"].append(0)
-                blpars["gp"].append("y")  #for gp in roll-angle (mostly needed)
+                # blpars["gp"].append("y")  #for gp in roll-angle (mostly needed)
 
         if plot_model:
             _plot_data(self,plot_cols=(0,1,2),col_labels=("time","flux"),model_overplot=t_model)
+        
+        if np.any(cheops): 
+            print(_text_format.BOLD + f"\nSetting-up spline for roll-angle decorrelation."+ _text_format.END +\
+                    " Use `.add_spline(None)` method to remove")
+            self.add_spline()
 
         #prefill other light curve setup from the results here or inputs given here.
         if use_result:
             if verbose: print(_text_format.BOLD + "Setting-up baseline model from result" +_text_format.END)
             self.lc_baseline(**blpars, verbose=verbose)
-            print(_text_format.RED + f"\n Note: GP flag for each lc has been set to {self._useGPphot}. "+\
-                    "Use `._useGPphot` method to modify this list with 'y' or 'n' for each loaded lc\n" + _text_format.END)
+            # print(_text_format.RED + f"\n Note: GP flag for each lc has been set to {self._useGPphot}. "+\
+            #         "Use `._useGPphot` method to modify this list with 'y' or 'n' for each loaded lc\n" + _text_format.END)
 
             if isinstance(self._tra_occ_pars["L"], (list, tuple)):
                 if verbose: print(_text_format.BOLD + "\nSetting-up occultation pars from input values" +_text_format.END)
@@ -685,7 +726,7 @@ class load_lightcurves:
                 if verbose: print(_text_format.BOLD + "\nSetting-up transit pars from input values" +_text_format.END)
                 self.setup_transit_rv(RpRs=self._tra_occ_pars["rp"], Impact_para=self._tra_occ_pars["b"], T_0=self._tra_occ_pars["T_0"],
                                     Period=self._tra_occ_pars["P"], Duration=self._tra_occ_pars["dur"], verbose=verbose)
-
+        return self._decorr_result
 
     def lc_baseline(self, dt=None,  dphi=None, dx=None, dy=None, dconta=None, 
                  dsky=None, dsin=None, grp=None, grp_id=None, gp="n", verbose=True):
@@ -728,7 +769,7 @@ class load_lightcurves:
             if isinstance(dict_args[par], (int,str)): dict_args[par] = [dict_args[par]]*n_lc
             elif dict_args[par] is None: dict_args[par] = [0]*n_lc
 
-        dict_args["grp_id"] = list(np.arange(1,n_lc+1))
+        dict_args["grp_id"] = list(np.arange(1,n_lc+1)) if grp_id is None else grp_id
 
         self._bases = [ [dict_args["dt"][i], dict_args["dphi"][i], dict_args["dx"][i], dict_args["dy"][i],
                         dict_args["dconta"][i], dict_args["dsky"][i], dict_args["dsin"][i], 
@@ -741,20 +782,45 @@ class load_lightcurves:
 
         if verbose: _print_output(self,"lc_baseline")
 
-        if np.all(np.array(self._useGPphot) == "n"):        #if gp is "n" for all input lightcurves, run add_GP with None
+        if np.all(np.array(self._useGPphot) == "n") or self._useGPphot==[]:        #if gp is "n" for all input lightcurves, run add_GP with None
             self.add_GP(None, verbose=verbose)
             if self._show_guide: print("\nNo GPs required.\nNext: use method `setup_transit_rv` to configure transit an rv model parameters.")
         else: 
             if self._show_guide: print("\nNext: use method `add_GP` to include GPs for the specified lcs. Get names of lcs with GPs using `._gp_lcs` attribute of the lightcurve object.")
 
         #initialize other methods to empty incase they are not called/have not been called
+        if not hasattr(self,"_spline"):        self.add_spline(None, verbose=False)
         if not hasattr(self,"_config_par"):    self.setup_transit_rv(verbose=False)
         if not hasattr(self,"_ddfs"):          self.transit_depth_variation(verbose=False)
         if not hasattr(self,"_occ_dict"):      self.setup_occultation(verbose=False)
         if not hasattr(self,"_contfact_dict"): self.contamination_factors(verbose=False)
         if not hasattr(self,"_ld_dict"):       self.limb_darkening(verbose=False)
         if not hasattr(self,"_stellar_dict"):  self.stellar_parameters(verbose=False)
-   
+
+    def add_spline(self, par = "air", knots_every=45, periodicity=360,verbose=True):
+        """
+            add spline to fit correlation along a column. for now the spline only works on column5 to correct roll-angle trends.
+            This splits the data at the defined knots and fits a cubic spline to each section. A spline is used for all datasets.    
+
+            Parameters
+            ----------
+            par : str, optional
+                axis to which to fit the spline, by default "air" for roll-angle detrending
+
+            knots_every : int, optional
+                distance between knots of the spline, by default 15 degrees for cheops data roll-angle 
+
+            periodicity : int, optional
+                periodicity of the axis data. for cheops data in degress, the default is a periodicity is 360 degrees. set to zero if no periodicity.
+        """
+        assert par in ["air","",None],"add_spline: par must either be set to None or 'air'"
+        self._spline        = SimpleNamespace()
+        self._spline.use    = True if par else False
+        self._spline.knots  = knots_every
+        self._spline.period = periodicity
+        if verbose: 
+            print(f"Adding a spline to fit column5: knots = {knots_every}, periodicity={periodicity}\n") if par else print("No spline\n")
+
     def add_GP(self, lc_list=None, pars="time", kernels="mat32", WN="y", 
                log_scale=[(-25,-15.2,-5)], s_step=0.1,
                log_metric=[(-10,6.9,15)],  m_step=0.1,
@@ -882,7 +948,7 @@ class load_lightcurves:
 
         if self._show_guide: print("\nNext: use method `setup_transit_rv` to configure transit parameters.")
 
-    def setup_transit_rv(self, RpRs=0.1, Impact_para=0, Duration=0.1245, T_0=0, Period=3, 
+    def setup_transit_rv(self, RpRs=0., Impact_para=0, Duration=0, T_0=0, Period=0, 
                  Eccentricity=0, omega=90, K=0, verbose=True):
         """
             Define parameters an priors of model parameters.
@@ -913,7 +979,8 @@ class load_lightcurves:
             #fitting parameter
             if isinstance(DA[par], tuple):
                 #gaussian       
-                if len(DA[par]) == 2:        
+                if len(DA[par]) == 2:
+                    if par in ["T_0","Duration"]: up_lim = DA[par][0]+20*DA[par][1]    #uplim is mean+20*sigma   
                     DA[par] = _param_obj(["y", DA[par][0], 0.1*DA[par][1], "p", DA[par][0],
                                   DA[par][1], DA[par][1], 0, up_lim])
                 #uniform
@@ -1024,9 +1091,8 @@ class load_lightcurves:
                     _raise(ValueError, 'transit_depth_variation: you can not have CNMs active and do divide-white')
         
 
-        if (ddFs=='n' and np.max(self._grbases)>0):
-            print('no ddFs but groups? Not a good idea!')
-            print(base)
+        if len(self._names)>0: 
+            if (ddFs=='n' and np.max(self._grbases)>0): _raise(ValueError,'no ddFs but groups? Not a good idea!')
             
         if verbose: _print_output(self,"depth_variation")
                 
@@ -1142,10 +1208,80 @@ class load_lightcurves:
         self._occ_dict =  DA = DA2
         if verbose: _print_output(self,"occultations")
 
+    def get_LDs(self,Teff,logg,Z, filter_names, unc_mult=10, use_result=True, verbose=True):
+        """
+        get quadratic limb darkening parameters using ldtk (requires internet connection).
+
+        Parameters
+        ----------
+        Teff : tuple
+            (value, std) of stellar effective temperature
+
+        logg : tuple
+            (value, std) of stellar logg
+
+        Z : tuple
+            (value, std) of stellar metallicity
+
+        filter_names : list of str
+            SVO filter name such as 'Spitzer/IRAC.I1' or a name shortcut such as "TESS", "CHEOPS","kepler". 
+            use `lc_data._filter_shortcuts` to get list of filter shortcut names. Filter names can be obtained from http://svo2.cab.inta-csic.es/theory/fps/
+
+        unc_mult : int/float, optional
+            value by which to multiply ldtk uncertainties which are usually underestimated, by default 10
+
+        use_result : bool, optional
+            whether to use the result to setup limb darkening priors, by default True
+
+        Returns
+        -------
+        u1, u2 : arrays
+            each coefficient is an array of only values (no uncertainity) for each filter. 
+            These can be fed to the `limb_darkening` function to fix the coefficients
+        """
+
+        from ldtk import LDPSetCreator, BoxcarFilter
+        u1, u2 = [], []
+        
+        if isinstance(filter_names,list): 
+            assert len(filter_names)==len(self._filnames),\
+                f"get_LDs: number of unique filters in input lc_list = {len(self._filnames)} but trying to obtain LDs for {len(filter_names)} filters."
+        elif isinstance(filter_names, str): filter_names = [filter_names]
+        else: raise TypeError(f"get_LDs: filter_names must be str for a single filter or list of str but {type(filter_names)} given.")
+
+        for i,f in enumerate(filter_names):
+            if f.lower() in self._filter_shortcuts.keys(): ft = self._filter_shortcuts[f.lower()]
+            
+            flt = SVOFilter(ft)
+            ds  = 'visir' if np.any(flt.wavelength > 1200) else 'vis'
+
+            sc  = LDPSetCreator(teff=Teff, logg=logg, z=Z,    # spectra from the Husser et al.
+                                filters=[flt], dataset=ds)      # FTP server automatically.
+
+            ps = sc.create_profiles(100)                      # Create the limb darkening profiles\
+            ps.set_uncertainty_multiplier(unc_mult)
+            ps.resample_linear_z(300)
+
+            #calculate ld profiles
+            c, e = ps.coeffs_qd(do_mc=True, n_mc_samples=10000,mc_burn=1000) 
+            ld1 = (round(c[0][0],4),round(e[0][0],4))
+            ld2 = (round(c[0][1],4),round(e[0][1],4))
+            u1.append(ld1)
+            u2.append(ld2)
+            if verbose: print(f"{f:10s}({self._filters[i]}): u1={ld1}, u2={ld2}")
+
+        if use_result: 
+            if verbose: print(_text_format.BOLD + "\nSetting-up limb-darkening priors from LDTk result" +_text_format.END)
+            self.limb_darkening(u1,u2)
+        return u1,u2
+
+
+
     def limb_darkening(self, c1=0, c2 = 0,verbose=True):
         """
-            Setup quadratic limb darkening LD parameters (c1, c2) for transit light curves. 
-            Different LD parameters are required if observations of different filters are used.
+            Setup quadratic limb darkening LD coefficient (c1, c2) for transit light curves.
+            c1 and c2 stand for coefficient 1 and 2 (Note they are usually denoted u1 and u2 in literature) 
+            Different LD coefficients are required if observations of different filters are used.
 
             Parameters:
             ---------
@@ -1991,6 +2127,16 @@ class load_chains:
             self._burnin_chains = pickle.load(open(burnin_chain_file,"rb"))
 
         self._par_names = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
+        self.params_names = list(self._par_names)
+
+        try:
+            ind_para = pickle.load(open(".par_config.pkl","rb"))
+            stat_vals = pickle.load(open(".stat_vals.pkl","rb"))
+            self.params_median  = stat_vals["med"]
+            self.params_max     = stat_vals["max"]
+            self.params_bestfit = stat_vals["bf"]
+        except:
+            pass
         
     def __repr__(self):
         return f'Object containing chains (main or burn-in) from mcmc. \
@@ -2218,11 +2364,76 @@ class load_chains:
         return fig
 
 
+    def load_result_array(self):
+        """
+            Load result array from CONAN3 fit allowing for customised plots.
+            All files with '_out_full.dat' are loaded. 
+
+            Returns:
+            --------
+                results : dict;
+                    dictionary of holding the arrays for each output file.
+                
+            Examples
+            --------
+            >>> import CONAN3
+            >>> results = CONAN3.load_result_array()
+            >>> list(results.keys())
+            ['lc8det_out_full.dat', 'lc6bjd_out_full.dat']
+
+            >>> df1 = results['lc8det_out_full.dat']
+            >>> df1.keys()
+            ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
+
+            >>> #plot arrays
+            >>> plt.plot(df["time"], df["flux"],"b.")
+            >>> plt.plot(df["time"], df["gp*base"],"r")
+            >>> plt.plot(df["time"], df["transit"],"g")
+            
+        """
+        out_files_lc = sorted([ f  for f in os.listdir() if '_out_full.dat' in f])
+        out_files_rv = sorted([ f  for f in os.listdir() if '_out.dat' in f])
+        all_files = out_files_lc+out_files_rv
+        results = {}
+        for f in all_files:
+            df = pd.read_fwf(f, header=0)
+            df = df.rename(columns={'# time': 'time'})
+            results[f] = df
+        print(f"Output files loaded: {all_files} ")
+        return results
+
+    def make_output_file(self, stat="median"):
+        """
+        make output model file ("*_out_full.dat") from parameters obtained using different statistic on the posterior.
+        if a *_out_full.dat file already exists, it is overwritten (so be sure!!!).
+
+        Parameters
+        ----------
+        stat : str, optional
+            posterior summary statistic to use for model calculation, must be one of ["median","max","bestfit"], by default "median".
+            "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
+            is the parameter combination that gives the maximum joint posterior probability.
+
+        """
+        
+        from CONAN3.logprob_multi_sin_v4 import logprob_multi
+        from CONAN3.plots_v12 import mcmc_plots
+
+        assert stat in ["median","max","bestfit"],f'make_output_file: stat must be of ["median","max","bestfit"] but {stat} given'
+        if   stat == "median":  stat = "med"
+        elif stat == "bestfit": stat = "bf"
+
+        ind_para = pickle.load(open(".par_config.pkl","rb"))
+        stat_vals = pickle.load(open(".stat_vals.pkl","rb"))
+
+        mval2, merr2, T0_post, p_post = logprob_multi(stat_vals[stat],*ind_para,make_out_file=True, verbose=True)
+
+        return
 
 def load_result_array():
     """
         Load result array from CONAN3 fit allowing for customised plots.
-        All files with '_out_full.dat' are loaded. 
+        All files with '_out.dat' or '_out_full.dat' are loaded. 
 
         Returns:
         --------
@@ -2246,8 +2457,11 @@ def load_result_array():
         >>> plt.plot(df["time"], df["transit"],"g")
         
     """
-    out_files_lc = [ f  for f in os.listdir() if '_out_full.dat' in f]
-    out_files_rv = [ f  for f in os.listdir() if '_out.dat' in f]
+    warn('This function call is deprecated. Use `res=CONAN3.load_chains()` and then `res.load_result_array()`,\
+        or directly from the returned result object of the fit.', DeprecationWarning, stacklevel=2)
+
+    out_files_lc = sorted([ f  for f in os.listdir() if '_out_full.dat' in f])
+    out_files_rv = sorted([ f  for f in os.listdir() if '_out.dat' in f])
     all_files = out_files_lc+out_files_rv
     results = {}
     for f in all_files:

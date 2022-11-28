@@ -14,6 +14,18 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
     flux_phasefold = np.empty(0) #array containig baseline corrected flux of each data point
     model_phasefold = np.empty(0) #array containg baseline corrected model of each data point
 
+    def bin_data(t,f,err=None,statistic="mean",nbins=20):
+        y_bin, y_binedges, _ = binned_statistic(t, f, statistic=statistic, bins=nbins)
+        bin_width = y_binedges[2] - y_binedges[1]
+        t_bin = y_binedges[:-1] + bin_width/2.
+        nans = np.isnan(y_bin)
+
+        if err is not None:
+            err_bin, _, _= binned_statistic(time, err, statistic = lambda x: 1/np.sqrt(np.sum(1/x**2)), bins=nbins)
+            return t_bin[~nans], y_bin[~nans], err_bin[~nans]
+
+        return t_bin[~nans], y_bin[~nans]
+        
     for j in range(nphot):
         mod=yval[indlist[j][0]]
         time=tarr[indlist[j][0]]
@@ -51,24 +63,32 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         # bin the lightcurve data
         binsize=10./(24.*60.)
         nbin = int((np.max(tt)-np.min(tt))/binsize)  # number of bins
-        binlims=np.zeros(nbin+1)
-        tbin=np.zeros(nbin)
-        binnps=np.zeros(nbin)  #number of points per bin
-        binlims[0]=min(tt)
-        binind=[]
-        for k in range(1,nbin+1):
-            binlims[k]=binlims[k-1]+binsize
-            for k in range(nbin):
-                tbin[k]=binlims[k]+0.5*binsize
-                binnps[k]=len(tt[(tt>binlims[k]) & (tt<binlims[k+1])])
+        # binlims=np.zeros(nbin+1)
+        # tbin=np.zeros(nbin)
+        # binnps=np.zeros(nbin)  #number of points per bin
+        # binlims[0]=min(tt)
+        # binind=[]
+        # for k in range(1,nbin+1):
+        #     binlims[k]=binlims[k-1]+binsize
+        #     for k in range(nbin):
+        #         tbin[k]=binlims[k]+0.5*binsize
+        #         binnps[k]=len(tt[(tt>binlims[k]) & (tt<binlims[k+1])])
         
-        ftbin, dump, dump2 = binned_statistic(tt,ft,statistic='mean',bins=binlims)
-        mtbin, dump, dump2 = binned_statistic(tt,mt,statistic='mean',bins=binlims)
-        fcobin, dump, dump2 = binned_statistic(tt,fco,statistic='mean',bins=binlims)
-        mmbin, dump, dump2 = binned_statistic(tt,mm,statistic='mean',bins=binlims)
-        resbin, dump, dump2 = binned_statistic(tt,ft - mt,statistic='mean',bins=binlims)
-        etbin, dump, dump2 = binned_statistic(tt,et,statistic='mean',bins=binlims)        
-        etbin = etbin/np.sqrt(binnps)
+        # ftbin, dump, dump2 = binned_statistic(tt,ft,statistic='mean',bins=binlims)
+        # mtbin, dump, dump2 = binned_statistic(tt,mt,statistic='mean',bins=binlims)
+        # fcobin, dump, dump2 = binned_statistic(tt,fco,statistic='mean',bins=binlims)
+        # mmbin, dump, dump2 = binned_statistic(tt,mm,statistic='mean',bins=binlims)
+        # resbin, dump, dump2 = binned_statistic(tt,ft - mt,statistic='mean',bins=binlims)
+        # etbin, dump, dump2 = binned_statistic(tt,et,statistic='mean',bins=binlims)        
+        # etbin = etbin/np.sqrt(binnps)
+
+        tbin, ftbin, etbin = bin_data(tt,ft,et,statistic='mean',nbins=nbin)
+        _, mtbin = bin_data(tt,mt,statistic='mean',nbins=nbin)
+        _,fcobin = bin_data(tt,fco,statistic='mean',nbins=nbin)
+        _,mmbin = bin_data(tt,mm,statistic='mean',nbins=nbin)
+        _,resbin = bin_data(tt,ft - mt,statistic='mean',nbins=nbin)
+
+
         
         ########## Plot and save lightcurve with fit ########
         tit='Fit for lightcurve '+names[j][:-4]
@@ -249,18 +269,18 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
     n, bins, patches = plt.hist(vals, num_bins, facecolor='green', alpha=0.5)
     plt.xlabel(pname)
     plt.ylabel('N samples')
-    l=plt.axvline(x=mv, color='r')    
+    l=plt.axvline(x=mv, color='r', label="med")    
     l=plt.axvline(x=mv+s1v[0], color='b')
     l=plt.axvline(x=mv+s1v[1], color='b')
     l=plt.axvline(x=mv+s3v[0], color='y')
     l=plt.axvline(x=mv+s3v[1], color='y')
 
-    l=plt.axvline(x=mav, color='r', linestyle='dashed')    
+    l=plt.axvline(x=mav, color='r', linestyle='dashed',label="max")    
     l=plt.axvline(x=mav+s1m[0], color='b', linestyle='dashed')
     l=plt.axvline(x=mav+s1m[1], color='b', linestyle='dashed')
     l=plt.axvline(x=mav+s3m[0], color='y', linestyle='dashed')
     l=plt.axvline(x=mav+s3m[1], color='y', linestyle='dashed')
-    
+    plt.legend()
     # Tweak spacing to prevent clipping of ylabel
     plt.subplots_adjust(left=0.15)
     if not os.path.exists("histograms"): os.mkdir("histograms")
@@ -299,22 +319,22 @@ def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm):
     n, bins, patches = plt.hist(vals, num_bins, facecolor='green', alpha=0.5)
     plt.xlabel(pname)
     plt.ylabel('N samples')
-    l=plt.axvline(x=mv, color='r', linestyle='dotted')    
+    l=plt.axvline(x=mv, color='r', linestyle='dotted',label="med")    
     l=plt.axvline(x=mv+s1v[0], color='b', linestyle='dotted')
     l=plt.axvline(x=mv+s1v[1], color='b', linestyle='dotted')
     l=plt.axvline(x=mv+s3v[0], color='y', linestyle='dotted')
     l=plt.axvline(x=mv+s3v[1], color='y', linestyle='dotted')
 
-    l=plt.axvline(x=mav, color='r', linestyle='dashed')    
+    l=plt.axvline(x=mav, color='r', linestyle='dashed',label="max")    
     l=plt.axvline(x=mav+s1m[0], color='b', linestyle='dashed')
     l=plt.axvline(x=mav+s1m[1], color='b', linestyle='dashed')
     l=plt.axvline(x=mav+s3m[0], color='y', linestyle='dashed')
     l=plt.axvline(x=mav+s3m[1], color='y', linestyle='dashed')
 
-    l=plt.axvline(x=bpm, color='r')    
+    l=plt.axvline(x=bpm, color='r',label="bf")    
  #   l=plt.axvline(x=bpm+s1bpm[0], color='g', linestyle='dashed')
  #   l=plt.axvline(x=bpm+s1bpm[1], color='g', linestyle='dashed')
-    
+    plt.legend()
     # Tweak spacing to prevent clipping of ylabel
     plt.subplots_adjust(left=0.15)
     if not os.path.exists("histograms"): os.mkdir("histograms")
