@@ -16,7 +16,7 @@ from CONAN3.celeritenew import *
 from .RVmodel_v3 import *
 
 
-def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
+def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False,get_model=False):
     """
     calculate log probability and create output file of full model calculated using posterior parameters
 
@@ -36,6 +36,9 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
 
     debug : bool, optional
         see debug statements, by default False
+
+    get_model: bool, optional
+        flag to output dictionary of model results (phot and RV) for specific input parameters.
     
     Returns
     -------
@@ -118,6 +121,7 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
     lc0_combinedGPs = np.where(GPcombined == 1.0)
     
     mod, emod = [], [] # output arrays in case we're not in the mcmc
+    if get_model: model_outputs = {}
     
     # restrict the parameters to those of the light curve
     for j in range(nphot):
@@ -147,7 +151,7 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
             
         # identify the filter index of this LC
         k = np.where(filnames == filters[j])  # k is the index of the LC in the filnames array
-        k = np.asscalar(k[0])
+        k = k[0]  #changed 23/08, previously np.asscalar(k[0]) which is now deprecated in numpy
         vcont = cont[k,0]
 
         occind = 8+nddf+k   # index in params of the occultation depth value
@@ -365,9 +369,13 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
                     of.write("%14s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","flux","error","full_mod","gp*base","transit","det_flux","roll","spl_fit","phase"))
                     for k in range(len(tt)):
                         of.write('%14.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k],bfunc_full[k],model_transit[k],fco_full[k],at[k],spl_comp[k],phases[k])) 
-                    of.close() 
- 
- 
+                    of.close()
+                if get_model: 
+                    #calculate phase
+                    phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
+                    if model_transit[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
+                    model_outputs[name[:-4]] = {"# time":tt,"flux":ft, "error":ee, "full_mod":pred,"gp*base":bfunc_full,"transit":model_transit,"det_flux":fco_full,"roll":at, "spl_fit":spl_comp,"phase": phases}                     
+
                 # ===== create and write out the DW model ===============
                 
                 ####ANDREAS: There's no use for this, just increases the number of files produced
@@ -444,7 +452,15 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
                     for k in range(len(tt)):
                         of.write('%14.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n' % (tt[k], ft[k], ee[k], pred[k], bfunc_para[k], mt0[k],fco_full[k],at[k],spl_comp[k],phases[k])) 
                     
-                    of.close()      
+                    of.close() 
+                if get_model:
+                    #calculate phase
+                    phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
+                    if mt0[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
+                    model_outputs[name[:-4]] = {"# time":tt  ,"flux":ft, "error":ee, "full_mod":pred  ,"base":bfunc_para,"transit":mt0,"det_flux":fco_full,"roll":at, "spl_fit":spl_comp,"phase": phases}                     
+
+                    if nRV < 1:
+                        return model_outputs     
     
     # now do the RVs and add their proba to the model
     for j in range(nRV):
@@ -521,8 +537,10 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
         nGPjump = len(p) - len(jupind)
         paraminRV[jupind] = p[0:-nGPjump] if nGPjump > 0 else p
         gammaind = 8 + nddf + nocc+ nfilt*4 + j*2   #pass the right gamma for each lc (Akin)
-        RVmod = get_RVmod(paraminRV,tt,ft,ee,bt,wt,ct,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV,gammaind)
+        RVmod,out_RVmodel = get_RVmod(paraminRV,tt,ft,ee,bt,wt,ct,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV,gammaind,get_model)
         
+        if get_model:
+            model_outputs[RVnames[j][:-4]] = out_RVmodel
         #RV_Model(T0=T0in, RpRs=RpRsin, b=bbin, dur=durin, per=perin, eos=eosin, eoc=eocin, K=Kin, gamma=gammain)
         #RVmod.get_value(tt,args=argu)
         
@@ -566,7 +584,7 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False):
 
         return lnprob
     else:      
-        return mod, emod, T0in, perin
+        return mod, emod, T0in, perin if not get_model else model_outputs
 
 def norm_prior(value,center,sigma):
     lpri = np.log(1./(2. * np.pi * sigma**2)) - ((value-center)**2/(2. * sigma**2))

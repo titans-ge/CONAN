@@ -977,6 +977,8 @@ class load_lightcurves:
             else: up_lim = 10000
 
             #fitting parameter
+            #_param_obj([to_fit, start_value, step_size,prior, prior_mean,pr_width_lo, 
+            #                                      prior_width_hi, bounds_lo, bounds_hi])
             if isinstance(DA[par], tuple):
                 #gaussian       
                 if len(DA[par]) == 2:
@@ -992,7 +994,7 @@ class load_lightcurves:
             #fixing parameter
             elif isinstance(DA[par], (int, float)):
                 DA[par] = _param_obj(["n", DA[par], 0.00, "n", DA[par],
-                                       0,  0, 0, up_lim])
+                                       0,  0, 0, 1.1*DA[par]])
 
             else: _raise(TypeError, f"setup_transit_rv: {par} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par])}")
 
@@ -1251,7 +1253,7 @@ class load_lightcurves:
 
         for i,f in enumerate(filter_names):
             if f.lower() in self._filter_shortcuts.keys(): ft = self._filter_shortcuts[f.lower()]
-            
+            else: flt=f
             flt = SVOFilter(ft)
             ds  = 'visir' if np.any(flt.wavelength > 1200) else 'vis'
 
@@ -2209,6 +2211,7 @@ class load_chains:
                 to discard first couple of steps within the chains. 
         
         """
+        self._par_names = self._burnin_chains.keys()
         assert pars is None or isinstance(pars, list) or pars == "all", \
              f'pars must be None, "all", or list of relevant parameters.'
         if pars is None or pars == "all": pars = [p for p in self._par_names]

@@ -6,7 +6,7 @@ import scipy
 
 #plt.ion()
 
-def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV, gammaind):
+def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV, gammaind,get_model=False):
 
     #RVmes = np.copy(farr[indlist[nphot+j][0]])
     #RVerr = np.copy(earr[indlist[nphot+j][0]])
@@ -126,8 +126,10 @@ def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,no
                 mod_RV[k]-params[gammaind],RVmes[k]-bfuncRV[k]-params[gammaind],phases[k])) 
 
         of.close()
+    if get_model:
+        out_RVmodel = {"# time":tt,"RV":RVmes,"error":RVerr,"full_mod":mod_RVbl,"base":bfuncRV,"Rvmodel":mod_RV-params[gammaind],"det_RV":RVmes-bfuncRV[k]-params[gammaind],"phase":phases}
 
-    return mod_RVbl
+    return mod_RVbl,out_RVmodel if get_model else mod_RVbl, None
 
 
 

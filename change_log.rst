@@ -1,3 +1,9 @@
+28-12-2022: version 3.0.5
+~~~~~~~~~~~~
+* fixed bug in fit_data.py when dt is set for RV
+* from Andreas: removed function call to grweights in fit_data.py, caused errors for TDVs
+* from Andreas: added some attributes (TO,P,dur) to the result object
+
 25-07-2022: version 3.0.4
 ~~~~~~~~~~~~
 * added phases to the output files

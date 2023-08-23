@@ -1108,8 +1108,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
         rvstep = np.where(stepsize[blind]!=0.)
         if rvstep[0]: 
-            temp.append(rvstep)
-            temp=np.concatenate(([temp],[rvstep]),axis=0)
+            # temp.append(rvstep)
+            temp=np.concatenate((temp,rvstep[0]),axis=0)
         
         RVjump.append(temp)
     # print(f"RVjump:{RVjump}")
@@ -1146,7 +1146,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         indices_A = [fullist.index(x) for x in both]
         pindices.append(indices_A)
 
-    ewarr=grweights(earr,indlist,grnames,groups,ngroup,nphot)
+    ewarr=np.nan#grweights(earr,indlist,grnames,groups,ngroup,nphot)
 
 
     ############################## Initial guess ##################################
@@ -1330,6 +1330,16 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             if verbose: print((earr[indlist[i][0]]))
 
     of.close()
+
+    T0_out = maxp[np.where(pnames_all=='T_0')]  if statistic != "median" else medp[np.where(pnames_all=='T_0')]
+    # T0_out_err = sig1[np.where(jnames=='T_0')]
+
+    Period_out = maxp[np.where(pnames_all=='Period_[d]')] if statistic != "median" else medp[np.where(pnames_all=='T_0')]
+    # Period_out_err = sig1[np.where(jnames=='Period_[d]')]
+
+    dur_out = maxp[np.where(pnames_all=='dur_[d]')] if statistic != "median" else medp[np.where(pnames_all=='T_0')]
+    # dur_out_err = sig1[np.where(jnames=='dur_[d]')]
+
     
         # ==== corner plot ================
 
@@ -1352,6 +1362,13 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     #     fig.savefig("chains.png", bbox_inches="tight")
 
     result = load_chains()
+
+    result.T0 = T0_out
+    # result.T0_err = T0_out_err
+    result.P = Period_out
+    # result.P_err = Period_out_err
+    result.dur = dur_out
+    # result.dur_err = dur_out_err
 
     matplotlib.use('Agg')
     try:

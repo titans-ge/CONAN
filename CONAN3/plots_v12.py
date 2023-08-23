@@ -119,8 +119,8 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         ax[0].errorbar(tbin, fcobin, yerr=etbin, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
         ax[1].plot(tbin, resbin,'o', c='midnightblue', ms=5, zorder=3)
 
-        ax[0].set_ylim([np.min(fco) - 0.1 *np.abs((1.0 - np.min(fco))),np.max(fco) + 0.1 * np.abs((np.max(fco)-1.0))])
-        ax[1].set_ylim([np.min(ft-mt) - 0.1 * np.min(ft-mt),np.max(ft-mt) + 0.1 * np.max(ft-mt)])
+        ax[0].set_ylim([np.nanmin(fco) - 0.1 *np.abs((1.0 - np.nanmin(fco))),np.nanmax(fco) + 0.1 * np.abs((np.nanmax(fco)-1.0))])
+        ax[1].set_ylim([np.nanmin(ft-mt) - 0.1 * np.nanmin(ft-mt),np.nanmax(ft-mt) + 0.1 * np.nanmax(ft-mt)])
 
         ax[0].set_title(tit)
         ax[1].set_xlabel('BJD')

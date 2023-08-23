@@ -186,4 +186,4 @@ cython_debug/
 # End of https://www.toptal.com/developers/gitignore/api/fortran,python
 
 .DS_Store
-.vscode/settings.json
+.vscode/
