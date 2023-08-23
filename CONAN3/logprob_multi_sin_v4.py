@@ -458,9 +458,7 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False,get_mod
                     phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
                     if mt0[np.argmin(phases)] < 1: phases[phases>0.5] = phases[phases>0.5]-1
                     model_outputs[name[:-4]] = {"# time":tt  ,"flux":ft, "error":ee, "full_mod":pred  ,"base":bfunc_para,"transit":mt0,"det_flux":fco_full,"roll":at, "spl_fit":spl_comp,"phase": phases}                     
-
-                    if nRV < 1:
-                        return model_outputs     
+  
     
     # now do the RVs and add their proba to the model
     for j in range(nRV):
@@ -584,7 +582,7 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False,get_mod
 
         return lnprob
     else:      
-        return mod, emod, T0in, perin if not get_model else model_outputs
+        return (mod, emod, T0in, perin) if not get_model else model_outputs
 
 def norm_prior(value,center,sigma):
     lpri = np.log(1./(2. * np.pi * sigma**2)) - ((value-center)**2/(2. * sigma**2))
