@@ -26,7 +26,7 @@ def basecoeff(ibase):
    
     # A coeff => time:  A[0] + A[1]*t + A[2]*t^2 + A[3]*t^3 + A[4]*t^4
     
-    A_in=np.zeros((4,5), dtype=np.float)
+    A_in=np.zeros((4,5), dtype=float)
     
     if ibase[6] > 0:                          # if we have a CNM
         A_in[:,0]=[0.00,0.0001,-2.,2.1]       # set the starting value and limits of the 0th-order start at 0
@@ -52,7 +52,7 @@ def basecoeff(ibase):
         nbc = nbc+1      
         
     # B coeff => AM:    B[0]*AM + B[1]*AM^2  
-    B_in=np.zeros((4,2), dtype=np.float)
+    B_in=np.zeros((4,2), dtype=float)
     if ibase[1] > 0:
         B_in[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order B_in
         nbc = nbc+1
@@ -62,7 +62,7 @@ def basecoeff(ibase):
         nbc = nbc+1
      
     #  C1 coeff => lam:    C1[0]*lam + C1[1]*lam^2 
-    C1_in=np.zeros((4,2), dtype=np.float)
+    C1_in=np.zeros((4,2), dtype=float)
     if ibase[2] > 0:
         C1_in[:,0]=[0.,0.0001,-1.e7,1.e7]  # set the starting value and limits of the first-order C1_in
         nbc = nbc+1
@@ -72,7 +72,7 @@ def basecoeff(ibase):
         nbc = nbc+1
              
     #  C2 coeff => lam:    C2[0]*y + C2[1]*y^2 
-    C2_in=np.zeros((4,2), dtype=np.float)
+    C2_in=np.zeros((4,2), dtype=float)
     if ibase[3] > 0:
         C2_in[:,0]=[0.,0.0001,-1.e7,1.e7]  # set the starting value and limits of the first-order C1_in
         nbc = nbc+1
@@ -82,7 +82,7 @@ def basecoeff(ibase):
         nbc = nbc+1
     
     # D coeff => fwhm:  D[0]*fwhm + D[1]*fwhm^2
-    D_in=np.zeros((4,2), dtype=np.float)
+    D_in=np.zeros((4,2), dtype=float)
     if ibase[4] > 0:
         D_in[:,0]=[0.,0.1,-1.e7,1.e7]  # set the starting value and limits of the first-order D_in
         nbc = nbc+1
@@ -92,7 +92,7 @@ def basecoeff(ibase):
         nbc = nbc+1
         
     # E coeff => sky:   E[0]*sky + E[1]*sky^2    
-    E_in=np.zeros((4,2), dtype=np.float)
+    E_in=np.zeros((4,2), dtype=float)
     if ibase[5] > 0:
         E_in[:,0]=[0.,0.00001,-1.e8,1.e8]    # set the starting value and limits of the first-order E_in
         nbc = nbc+1
@@ -103,7 +103,7 @@ def basecoeff(ibase):
     # E coeff => sky:   E[0]*sky + E[1]*sky^2    
 
     #       G coeff => sin:   G[0]*np.sin(G[1]*ts+G[2])
-    G_in=np.zeros((4,3), dtype=np.float)
+    G_in=np.zeros((4,3), dtype=float)
     if ibase[6] > 0:
         G_in[:,0]=[0.0001,0.0001,0,1]  # set the starting value and limits of the sinus amplitude
         G_in[:,1]=[50.,0.1,2.5,333]  # set the starting value and limits of the sinus frequency (between 30 min and 10h)
@@ -111,7 +111,7 @@ def basecoeff(ibase):
         nbc = nbc+3
                     
     # H coeff => CNM                
-    H_in=np.zeros((4,2), dtype=np.float)
+    H_in=np.zeros((4,2), dtype=float)
     if ibase[7] > 0:
         H_in[:,0]=[1.,0.001,0,1.e8]  # set the starting value and limits of the first-order H_in
         nbc = nbc+1
@@ -145,7 +145,7 @@ def basecoeffRV(ibaseRV,Pin):
    
     # W coeff => time:  W[0]*t + W[1]*t^2 
     
-    W_in=np.zeros((4,2), dtype=np.float)
+    W_in=np.zeros((4,2), dtype=float)
 
     if ibaseRV[0] > 0:
         W_in[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order W_in
@@ -156,7 +156,7 @@ def basecoeffRV(ibaseRV,Pin):
         nbcRV = nbcRV+1
     
     # V coeff => bisector : V[0]*bis + B[1]*bis^2 
-    V_in=np.zeros((4,2), dtype=np.float)
+    V_in=np.zeros((4,2), dtype=float)
     
     if ibaseRV[1] > 0:
         V_in[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order V_in
@@ -167,7 +167,7 @@ def basecoeffRV(ibaseRV,Pin):
         nbcRV = nbcRV+1
      
     #  U coeff => fwhm:     U[0]*fwhm + U[1]*fwhm^2 
-    U_in=np.zeros((4,2), dtype=np.float)
+    U_in=np.zeros((4,2), dtype=float)
     
     if ibaseRV[2] > 0:
         U_in[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order U_in
@@ -178,7 +178,7 @@ def basecoeffRV(ibaseRV,Pin):
         nbcRV = nbcRV+1
     
     # S coeff => contrast:  S[0]*cont + S[1]*cont^2
-    S_in=np.zeros((4,2), dtype=np.float)
+    S_in=np.zeros((4,2), dtype=float)
     if ibaseRV[3] > 0:
         S_in[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order S_in
         nbcRV = nbcRV+1
@@ -188,7 +188,7 @@ def basecoeffRV(ibaseRV,Pin):
         nbcRV = nbcRV+1
 
     # P coeff => sin:   P[0]*np.sin(P[1]*ts+P[2])
-    P_in=np.zeros((4,4), dtype=np.float)
+    P_in=np.zeros((4,4), dtype=float)
     if ibaseRV[4] > 0:
         P_in[:,0]=[0.01,0.001,0,1]  # set the starting value and limits of the sinus amplitude
         P_in[:,1]=[Pin,0.,0.1,100]  # set the starting value and limits of the sinus frequency

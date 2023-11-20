@@ -11,7 +11,7 @@ from lmfit import minimize, Parameters, Parameter
 import batman
 from warnings import warn
 from ldtk import SVOFilter
-
+from scipy.signal import medfilt
 
 
 __all__ = ["load_lightcurves", "load_rvs", "setup_fit", "__default_backend__","load_result_array"]
@@ -91,7 +91,7 @@ def _reversed_dict(d):
 def _raise(exception_type, msg):
     raise exception_type(msg)
 
-def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
+def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0, omega=90, q1=0, q2=0,
                  mask=False, decorr_bound=(-1,1),
                 offset=None, A0=None, B0=None, A3=None, B3=None,
                 A4=None, B4=None, A5=None, B5=None,
@@ -107,7 +107,7 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
     file : str;
         path to data file with columns 0 to 8 (col0-col8).
     
-    T_0, P, dur, L, b, rp : floats, None;
+    T_0, P, dur, L, b, rp, eccentricity, omega : floats, None;
         transit/eclipse parameters of the planet. T_0, P, and dur must be in same units as the time axis (cols0) in the data file.
         if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
         
@@ -158,9 +158,9 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
         mask = abs(df["cols0"] - Tc) > 0.5*in_pars['dur']
         df = df[mask]
         
-    for p in ["T_0", "P", "dur", "L","b","rp","q1","q2"]: tr_pars[p]= in_pars[p]    #transit/eclipse pars
+    for p in ["T_0", "P", "dur", "L","b","rp", "eccentricity", "omega", "q1","q2"]: tr_pars[p]= in_pars[p]    #transit/eclipse pars
     #remove non-decorr variables    
-    _ = [in_pars.pop(item) for item in ["T_0", "P", "dur", "L","b","rp","q1","q2",
+    _ = [in_pars.pop(item) for item in ["T_0", "P", "dur", "L","b","rp", "eccentricity", "omega","q1","q2",
                                         "mask","cheops", "return_models","decorr_bound"]]
 
     #decorr params
@@ -198,15 +198,23 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, q1=0, q2=0,
         bt.rp  = tr_params["rp"]
         b      = tr_params["b"]
         dur    = tr_params["dur"]
+        bt.ecc = tr_params["eccentricity"]
+        bt.w = tr_params["omega"]
         bt.a   = np.sqrt( (1+bt.rp)**2 - b**2)/(np.pi*dur/bt.per)
-        bt.inc = np.rad2deg(np.arccos(b/bt.a))
+                                                
+        ecc_factor=(1-bt.ecc**2)/(1+bt.ecc*np.sin(np.deg2rad(bt.w)))  
+        
+        bt.inc = np.rad2deg(np.arccos(b/(bt.a * ecc_factor)))
         bt.limb_dark = "quadratic"
-        u1 = 2 *tr_params["q1"]**0.5 *tr_params["q2"]  #convert back to quadratic lds
-        u2 = tr_params["q1"]**0.5*(1-2*tr_params["q2"])
+        
+        u1 = tr_params["q1"]
+        u2 = tr_params["q2"]
+        # u1 = 2 *tr_params["q1"]**0.5 *tr_params["q2"]  #convert back to quadratic lds
+        # u2 = tr_params["q1"]**0.5*(1-2*tr_params["q2"])
         bt.u   = [u1,u2]
-        bt.ecc, bt.w = 0,90
 
-        bt.t_secondary = bt.t0 + 0.5*bt.per
+
+        bt.t_secondary = bt.t0 + 0.5*bt.per*(1 + 4/np.pi * bt.ecc * np.cos(np.deg2rad(bt.w))) #eqn 33 (http://arxiv.org/abs/1001.2010)
         if t is None: t = df["cols0"].values
 
         m_tra = batman.TransitModel(bt, t,transittype="primary")
@@ -289,13 +297,15 @@ def _print_output(self, section: str, file=None):
     if self._obj_type == "mcmc_obj":
         assert section == "mcmc",  f"The only valid section for an mcmc object is 'mcmc' but {section} given."
 
-    if section == "lc_baseline":    
+    if section == "lc_baseline":
+        max_name_len = max([len(n) for n in self._names]+[len("name")])  
+        max_filt_len = max([len(n) for n in self._filters]+[len("filter")])  
         _print_lc_baseline = f"""#--------------------------------------------- \n# Input lightcurves filters baseline function--------------""" +\
-                            f""" \n{"name":15s}\t{"fil":3s}\t {"lamda":5s}\t {"time":4s}\t {"roll":3s}\t x\t y\t {"conta":5s}\t sky\t sin\t group\t id\t GP"""
+                            f""" \n{"name":{max_name_len}s}\t{"filter":{max_filt_len}s}\t {"lamda":8s}\t {"time":4s}\t {"roll":4s}\t x\t y\t {"conta":5s}\t sky\t sin\t group\t id\t GP"""
         #define print out format
-        txtfmt = "\n{0:15s}\t{1:3s}\t{2:5.1f}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
+        txtfmt = "\n{0}\t{1}\t{2:8s}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
         for i in range(len(self._names)):
-            t = txtfmt.format(self._names[i], self._filters[i], self._lamdas[i], *self._bases[i], self._groups[i], self._useGPphot[i])
+            t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), *self._bases[i], self._groups[i], self._useGPphot[i])
             _print_lc_baseline += t
         print(_print_lc_baseline, file=file)   
 
@@ -319,10 +329,10 @@ def _print_output(self, section: str, file=None):
     if section == "transit_rv_pars":
         DA = self._config_par
         _print_transit_rv_pars = f"""#=========== jump parameters (Jump0value step lower_limit upper_limit priors) ====================== """+\
-                                  f"""\n{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\tvalue\tsig_lo\tsig_hi"""
+                                  f"""\n{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\t{"value   ":8s}\tsig_lo\tsig_hi"""
 
         #define print out format
-        txtfmt = "\n{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6}\t{7:.5f}\t{8:4.1e}\t{9:4.1e} "        
+        txtfmt = "\n{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6:5s}\t{7:8.5f}\t{8:6.1e}\t{9:6.1e} "        
         for i,p in enumerate(self._parnames):
             t = txtfmt.format(  p, DA[p].to_fit, DA[p].start_value,
                                 DA[p].step_size, DA[p].bounds_lo, 
@@ -567,12 +577,13 @@ class load_lightcurves:
             print(f"Order of unique filters: {list(self._filnames)}")
 
         self._show_guide = show_guide
+        self._clipped_data = False
         self.lc_baseline(verbose=False)
 
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def get_decorr(self, T_0=None, P=None, dur=None, L=0, b=0, rp=1e-5,q1=0, q2=0, mask=False, delta_BIC=-1, decorr_bound =(-1,1),
+    def get_decorr(self, T_0=None, P=None, dur=None, L=0, b=0, rp=1e-5,eccentricity=0, omega=90, q1=0, q2=0, mask=False, delta_BIC=-1, decorr_bound =(-1,1),
                      cheops=False, verbose=True, show_steps=False, plot_model=True, use_result=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
@@ -584,7 +595,7 @@ class load_lightcurves:
 
             Parameters:
             -----------
-            T_0, P, dur, L, b, rp : floats, None;
+            T_0, P, dur, L, b, rp, eccentricity, omega: floats, None;
                 transit/eclipse parameters of the planet. T_0, P, and dur must be in same units as the time axis (cols0) in the data file.
                 if float/int, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
                 
@@ -627,7 +638,7 @@ class load_lightcurves:
         
         blpars = {"dt":[], "dphi":[],"dx":[], "dy":[], "dconta":[], "dsky":[],"gp":[]}  #inputs to lc_baseline method
         self._decorr_result = []   #list of decorr result for each lc
-        self._tra_occ_pars = dict(T_0=T_0, P=P, dur=dur, L=L, b=b, rp=rp, q1=q1,q2=q2)  #transit/occultation parameters
+        self._tra_occ_pars = dict(T_0=T_0, P=P, dur=dur, L=L, b=b, rp=rp, eccentricity=eccentricity, omega=omega, q1=q1,q2=q2)  #transit/occultation parameters
         
 
         #check cheops input
@@ -722,12 +733,237 @@ class load_lightcurves:
                 if verbose: print(_text_format.BOLD + "\nSetting-up occultation pars from input values" +_text_format.END)
                 self.setup_occultation("all",start_depth=tuple(self._tra_occ_pars["L"]), verbose=verbose)
             
-            if all([p in self._tra_occ_pars for p in["P","dur","b","rp","T_0"]]):
+            if all([p in self._tra_occ_pars for p in["P","dur","b","rp","eccentricity", "omega", "T_0"]]):
                 if verbose: print(_text_format.BOLD + "\nSetting-up transit pars from input values" +_text_format.END)
                 self.setup_transit_rv(RpRs=self._tra_occ_pars["rp"], Impact_para=self._tra_occ_pars["b"], T_0=self._tra_occ_pars["T_0"],
-                                    Period=self._tra_occ_pars["P"], Duration=self._tra_occ_pars["dur"], verbose=verbose)
+                                    Period=self._tra_occ_pars["P"], Duration=self._tra_occ_pars["dur"], 
+                                    Eccentricity=self._tra_occ_pars["eccentricity"], omega=self._tra_occ_pars["omega"], verbose=verbose)
         return self._decorr_result
+    
+    
+    def clip_outliers(self, lc_list="all", clip=5, width=15, return_clipped_indices = False, create_new_file = True, verbose=True):
 
+        """
+        First divide the data by its median to normalise it.
+        Then remove outliers using a running median method. Points > clip*M.A.D are removed
+        where M.A.D is the mean absolute deviation from the median in each window
+
+        Parameters:
+        ----------
+        lc_list: list of string, None, 'all';
+            list of lightcurve filenames on which perform outlier clipping. Default is 'all' which clips all lightcurves in the object.
+        
+        clip: float;
+            cut off value above the median. Default is 5
+
+        width: int;
+            Number of points in window to use when computing the running median. Must be odd. Default is 15
+        
+        verbose: bool;
+            Prints number of points that have been cut. Default is True
+        
+        return_clipped_indices: bool;
+            Whether to return an array that indicates which points have been clipped. Default is False
+            
+        create_new_file: bool;
+            Whether to replace the original file or create a new one without the clipped points. Default behaviour is True. \
+                If set to True, the original file is kept in its folder, while a new folder and file with the clipped data is created. 'clp' is appended to the new folder and file names.
+
+        Returns:
+        --------
+        Nothing by default.
+        if return_clipped_indices is True, returns a list containing array of indices of the points removed for each given lc.
+
+        """
+        if self._clipped_data:
+            print("Data has already been clipped. run `load_lightcurves()` again to reset.")
+            return None
+
+        clipped_indices = []
+        if lc_list == None: 
+            print("lc_list is None: No lightcurve to clip outliers.")
+            return None
+        if isinstance(lc_list, str) and (lc_list != 'all'): lc_list = [lc_list]
+        if lc_list == "all": lc_list = self._names
+        
+        if width%2 == 0:    #if width is even, make it odd
+            width += 1
+
+        if create_new_file:     # create new path with _clp/ appended if it does not exist
+            new_fpath = self._fpath[:-1]+"_clp/"
+            if not os.path.exists(new_fpath): os.mkdir(new_fpath)
+            new_fnames = []
+        
+        for j,file in enumerate(self._names):
+            if file in lc_list:
+                data = np.loadtxt(self._fpath+file)
+                
+                y = data[:,1]
+                dd  = abs(medfilt(y-1, width)+1 - y)   #medfilt pads with zero, so filtering at edge is better if flux level is taken to zero(y-1)
+                mad = dd.mean()
+                ok  = dd < clip * mad
+                
+                data[:,1:3] = data[:,1:3]/np.median(data[:,1])
+                
+                clipped_data = data[ok]
+            
+                if verbose:
+                    print(f'\n{file}: Rejected {sum(~ok)} points more than {clip:0.1f} x MAD from the median')
+
+                clipped_filename = os.path.splitext(file)
+                clipped_filename = clipped_filename[0] + "_clp" + clipped_filename[1]
+            else:
+                data = np.loadtxt(self._fpath+file)
+                clipped_data = data
+                clipped_filename = file
+                ok = data[:,0] == data[:,0]
+
+            new_fnames.append(clipped_filename)
+
+            if create_new_file:
+                np.savetxt(new_fpath+clipped_filename,clipped_data,fmt='%.8f')
+                print(f'\n{"" if file in lc_list else "un"}Clipped data saved in file: {new_fpath+clipped_filename}')
+            else:
+                np.savetxt(self._fpath+file,clipped_data,fmt='%.8f')
+                print(f'\nrOriginal data file replaced by {"" if file in lc_list else "un"}clipped data file: {file}')
+                
+            
+            fig = plt.figure(figsize=(15,3))
+            plt.title(f"{file} --> {clipped_filename}")
+            plt.plot(data[:,0][ok], data[:,1][ok], '.b')
+            plt.plot(data[:,0][~ok], data[:,1][~ok], '.r')
+            plt.show()
+            
+            clipped_indices.append(~ok)
+            
+        if create_new_file: 
+            self._fpath = new_fpath
+            self._names = new_fnames
+
+        self._clipped_data = True
+
+        if return_clipped_indices:
+            return clipped_indices
+           
+    
+    def split_transits(self, filename=None, P=None, t_ref=None, baseline_amount=0.3, input_t0s=None, show_plot=True, save_separate=False):
+    
+        """
+        Function to split the transits in the data into individual transits and save them in separate files or to remove a certain amount of data points around the transits while keeping them in the original file.
+        Recommended to set show_plot=True to visually ensure that transits are well separated.
+
+        Parameters:
+        -----------
+
+        filename: string;
+                name of the lightcurve file to clip. Default is None
+
+        P : float;
+            Orbital period in same unit as t.
+
+        t_ref : float;
+            reference time of transit - T0 from literature or visual estimate of a mid-transit time in the data 
+            Used to calculate expected time of transits in the data assuming linear ephemerides.
+
+        baseline_amount: float between 0.05 and 0.5 times the period P;
+            amount of baseline data to keep before and after each transit. Default is 0.3*P, has to be between 0.05P and 0.5P.
+            
+        input_t0s: array, list, (optional);
+            split transit using these mid-transit times
+            
+        show_plot: bool;
+            set true to plot the data and show split points.
+            
+        save_separate: bool;
+            set True to separately save each transit and its baseline_amount around it in a new file.
+        """
+
+        if filename==None: 
+            print("No lightcurve filename given.")
+            return None
+        
+        data = np.loadtxt(self._fpath+filename)
+        
+        t = data.transpose()[0]
+        flux = data.transpose()[1]
+        
+        if baseline_amount < 0.05 :
+            baseline_amount = 0.05
+            print("Baseline amount defaulted to minimum 0.05")
+        elif baseline_amount > 0.5 :
+            baseline_amount = 0.5
+            print("Baseline amount defaulted to maximum 0.5")
+            
+        
+        if input_t0s is not None:
+            t0s = list(input_t0s)
+
+        else:
+            tref = t_ref
+            if t_ref < t.min() or t.max() < t_ref:        #if reference time t0 is not within this timeseries
+                #find transit time that falls around middle of the data
+                ntrans = int((np.median(t) - tref)/P)   
+                tref = t_ref + ntrans*P
+
+            nt = int( (tref-t.min())/P )                            #how many transits behind tref is the first transit
+            tr_first = tref - nt*P                                    #time of first transit in data
+            tr_last = tr_first + int((t.max() - tr_first)/P)*P        #time of last transit in data
+
+            n_tot_tr = int((tr_last - tr_first)/P)                  #total nmumber of transits in data_range
+            t0s = [tr_first + P*n for n in range(n_tot_tr+1) ]        #expected tmid of transits in data (if no TTV)
+            #remove tmid without sufficient transit data around it
+            t0s = list(filter(lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>0, t0s))
+
+
+        #split data into individual transits. taking points around each tmid    
+        tr_times= []
+        fluxes= []
+        indz = []
+        for i in range(len(t0s)):
+            higher_than = t>(t0s[i]-baseline_amount*P)
+            lower_than = t<(t0s[i]+baseline_amount*P)
+            if i==0: 
+                tr_times.append(t[higher_than & lower_than])
+                indz.append( np.argwhere(higher_than & lower_than).reshape(-1) )
+            elif i == len(t0s)-1: 
+                tr_times.append(t[higher_than & lower_than])
+                indz.append( np.argwhere(higher_than & lower_than).reshape(-1) )
+            else: 
+                tr_times.append(t[higher_than & lower_than])
+                indz.append( np.argwhere(higher_than & lower_than).reshape(-1))
+            fluxes.append(flux[indz[i]])
+            
+        tr_edges = [(tr_t[0], tr_t[-1]) for tr_t in tr_times]    #take last time in each timebin as breakpts
+        
+        tr_times = np.concatenate(tr_times)
+        fluxes = np.concatenate(fluxes)
+            
+        if show_plot:
+            assert fluxes is not None, f"plotting requires input flux"
+            plt.figure(figsize=(15,3))
+            plt.plot(tr_times,fluxes,".")
+            for edg in tr_edges:
+                plt.axvline(edg[0], ls="dashed", c="k", alpha=0.3)
+                plt.axvline(edg[1], ls="dashed", c="k", alpha=0.3)
+            plt.plot(t0s, (0.997*np.min(flux))*np.ones_like(t0s),"k^")
+            plt.xlabel("Time (days)", fontsize=14)
+            plt.title("Using t_ref: dashed vertical lines = transit splitting times;  triangles = identified transits");
+
+        if save_separate:
+            self._names.remove(filename)
+
+            for i in range(len(t0s)):
+                
+                tr_data = data[indz[i]]
+                
+                tr_filename = os.path.splitext(filename)
+                tr_filename = tr_filename[0] + "_tr" + str(i) + tr_filename[1]
+            
+                np.savetxt(self._fpath+tr_filename,tr_data,fmt='%.8f')
+                self._names.append(tr_filename)
+                print("Saved " + self._fpath + tr_filename)
+
+            
     def lc_baseline(self, dt=None,  dphi=None, dx=None, dy=None, dconta=None, 
                  dsky=None, dsin=None, grp=None, grp_id=None, gp="n", verbose=True):
         """

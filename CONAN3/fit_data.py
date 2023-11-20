@@ -360,7 +360,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         for i in range(ngroup):   # read fixed dwCNMs for each group
             tdwCNM, dwCNM = np.loadtxt(lc._fpath + dwfiles[i], usecols=(0,1), unpack = True)
             dwCNMarr      = np.concatenate((dwCNMarr,dwCNM), axis=0)
-            dwind         = np.concatenate((dwind,np.zeros(len(dwCNM),dtype=np.int)+i), axis=0)
+            dwind         = np.concatenate((dwind,np.zeros(len(dwCNM),dtype=int)+i), axis=0)
             indices       = np.where(dwind==i)
             dwCNMind.append(indices)        
 

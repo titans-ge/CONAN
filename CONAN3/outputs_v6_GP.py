@@ -546,8 +546,8 @@ def get_AIC_emcee(npar,ndat,chi2):
 def get_PDF_Gauss(cen,sig1,sig2,dim):
     
     sig = (sig1 + sig2)/2.
-    npoints = np.int(dim[0])  # number of samples needed
-    val_PDF = np.random.normal(cen, sig, np.int(npoints))
+    npoints = int(dim[0])  # number of samples needed
+    val_PDF = np.random.normal(cen, sig, int(npoints))
    
     return val_PDF
 
