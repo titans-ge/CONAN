@@ -1,3 +1,8 @@
+20-11-2023: version 3.0.5
+~~~~~~~~~~~~
+* added functions clip_outliers() and split_transits to the lc object.
+* get_decorr() now uses same planet parameter names ["Period", "Duration","Impact_para","RpRs",...]
+
 28-12-2022: version 3.0.5
 ~~~~~~~~~~~~
 * fixed bug in fit_data.py when dt is set for RV

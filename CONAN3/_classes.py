@@ -91,8 +91,8 @@ def _reversed_dict(d):
 def _raise(exception_type, msg):
     raise exception_type(msg)
 
-def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0, omega=90, q1=0, q2=0,
-                 mask=False, decorr_bound=(-1,1),
+def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=None, Eccentricity=0, omega=90, u1=0, u2=0,
+                mask=False, decorr_bound=(-1,1),
                 offset=None, A0=None, B0=None, A3=None, B3=None,
                 A4=None, B4=None, A5=None, B5=None,
                 A6=None, B6=None, A7=None, B7=None,
@@ -107,12 +107,12 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0,
     file : str;
         path to data file with columns 0 to 8 (col0-col8).
     
-    T_0, P, dur, L, b, rp, eccentricity, omega : floats, None;
+    T_0, Period, Duration, L, Impact_para, RpRs, Eccentricity, omega : floats, None;
         transit/eclipse parameters of the planet. T_0, P, and dur must be in same units as the time axis (cols0) in the data file.
         if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
         
-    q1,q2 : float  (optional);
-        quadratic limb darkening parameters according to kipping 2013. values are in the range (0,1).
+    u1,u2 : float  (optional);
+        standard quadratic limb darkening parameters.
 
     mask : bool ;
         if True, transits and eclipses are masked using T_0, P and dur which must be float/int.                    
@@ -147,20 +147,21 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0,
                           
     if mask:
         print("masking transit/eclipse phases")
-        for tp in ["T_0", "P", "dur"]:
+        for tp in ["T_0", "Period", "Duration"]:
             if isinstance(in_pars[tp], tuple):
                 if len(in_pars[tp])==2:   in_pars[tp]=in_pars[tp][0]
                 elif len(in_pars[tp])==3: in_pars[tp]=in_pars[tp][1]
             # assert isinstance(in_pars[tp], (float,int)),f"{tp} must be  float/int for masking transit/eclipses"
         #use periodicity of 0.5*P to catch both transits and eclipses
-        E = np.round(( cols0_med - in_pars['T_0'])/(0.5*in_pars['P']) )
-        Tc = E*(0.5*in_pars['P']) + in_pars['T_0']
-        mask = abs(df["cols0"] - Tc) > 0.5*in_pars['dur']
+        E = np.round(( cols0_med - in_pars['T_0'])/(0.5*in_pars["Period"]) )
+        Tc = E*(0.5*in_pars["Period"]) + in_pars['T_0']
+        mask = abs(df["cols0"] - Tc) > 0.5*in_pars["Duration"]
         df = df[mask]
         
-    for p in ["T_0", "P", "dur", "L","b","rp", "eccentricity", "omega", "q1","q2"]: tr_pars[p]= in_pars[p]    #transit/eclipse pars
+    for p in ["T_0", "Period", "Duration", "L", "Impact_para","RpRs", "Eccentricity", "omega", "u1","u2"]: 
+        tr_pars[p]= in_pars[p]    #transit/eclipse pars
     #remove non-decorr variables    
-    _ = [in_pars.pop(item) for item in ["T_0", "P", "dur", "L","b","rp", "eccentricity", "omega","q1","q2",
+    _ = [in_pars.pop(item) for item in ["T_0", "Period", "Duration", "L","Impact_para","RpRs", "Eccentricity", "omega","u1","u2",
                                         "mask","cheops", "return_models","decorr_bound"]]
 
     #decorr params
@@ -185,20 +186,20 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0,
         if isinstance(tr_pars[key], (float,int)):
             tr_params.add(key, value=tr_pars[key], vary=False)
         if tr_pars[key] == None:
-            val = 1e-10 if key in ["rp","P","dur"] else 0 #allows to obtain transit/eclipse with zero depth
+            val = 1e-10 if key in ["RpRs","Period","Duration"] else 0 #allows to obtain transit/eclipse with zero depth
             tr_params.add(key, value=val, vary=False)
                 
     
     def transit_occ_model(tr_params,t=None):
         bt = batman.TransitParams()
 
-        bt.per = tr_params["P"]
+        bt.per = tr_params["Period"]
         bt.t0  = tr_params["T_0"]
         bt.fp  = tr_params["L"]
-        bt.rp  = tr_params["rp"]
-        b      = tr_params["b"]
-        dur    = tr_params["dur"]
-        bt.ecc = tr_params["eccentricity"]
+        bt.rp  = tr_params["RpRs"]
+        b      = tr_params["Impact_para"]
+        dur    = tr_params["Duration"]
+        bt.ecc = tr_params["Eccentricity"]
         bt.w = tr_params["omega"]
         bt.a   = np.sqrt( (1+bt.rp)**2 - b**2)/(np.pi*dur/bt.per)
                                                 
@@ -207,12 +208,9 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0,
         bt.inc = np.rad2deg(np.arccos(b/(bt.a * ecc_factor)))
         bt.limb_dark = "quadratic"
         
-        u1 = tr_params["q1"]
-        u2 = tr_params["q2"]
-        # u1 = 2 *tr_params["q1"]**0.5 *tr_params["q2"]  #convert back to quadratic lds
-        # u2 = tr_params["q1"]**0.5*(1-2*tr_params["q2"])
+        u1 = tr_params["u1"]
+        u2 = tr_params["u2"]
         bt.u   = [u1,u2]
-
 
         bt.t_secondary = bt.t0 + 0.5*bt.per*(1 + 4/np.pi * bt.ecc * np.cos(np.deg2rad(bt.w))) #eqn 33 (http://arxiv.org/abs/1001.2010)
         if t is None: t = df["cols0"].values
@@ -237,7 +235,7 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0,
         if cheops is False:
             trend += params["A5"]*df["cols5"]  + params["B5"]*df["cols5"]**2 
         else: #roll
-            sin_col5,  cos_col5  = np.sin(np.deg2rad(df["cols5"])), np.cos(np.rad2deg(df["cols5"]))
+            sin_col5,  cos_col5  = np.sin(np.deg2rad(df["cols5"])),   np.cos(np.rad2deg(df["cols5"]))
             sin_2col5, cos_2col5 = np.sin(2*np.deg2rad(df["cols5"])), np.cos(2*np.rad2deg(df["cols5"]))
             sin_3col5, cos_3col5 = np.sin(3*np.deg2rad(df["cols5"])), np.cos(3*np.rad2deg(df["cols5"]))
 
@@ -259,7 +257,7 @@ def _decorr(file, T_0=None, P=None, dur=None, L=0, b=0, rp=None, eccentricity=0,
             u = fit_params[p].user_data  #obtain tuple specifying the normal prior if defined
             if u:  #modify residual to account for how far the value is from mean of prior
                 res = np.append(res, (u[0]-fit_params[p].value)/u[1] )
-#         print(f"chi-square:{np.sum(res**2)}")
+        # print(f"chi-square:{np.sum(res**2)}")
         return res
     
     fit_params = params+tr_params
@@ -303,7 +301,7 @@ def _print_output(self, section: str, file=None):
         _print_lc_baseline = f"""#--------------------------------------------- \n# Input lightcurves filters baseline function--------------""" +\
                             f""" \n{"name":{max_name_len}s}\t{"filter":{max_filt_len}s}\t {"lamda":8s}\t {"time":4s}\t {"roll":4s}\t x\t y\t {"conta":5s}\t sky\t sin\t group\t id\t GP"""
         #define print out format
-        txtfmt = "\n{0}\t{1}\t{2:8s}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
+        txtfmt = f"\n{{0:{max_name_len}s}}\t{{1:{max_filt_len}s}}"+"\t{2:8s}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
         for i in range(len(self._names)):
             t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), *self._bases[i], self._groups[i], self._useGPphot[i])
             _print_lc_baseline += t
@@ -583,7 +581,7 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def get_decorr(self, T_0=None, P=None, dur=None, L=0, b=0, rp=1e-5,eccentricity=0, omega=90, q1=0, q2=0, mask=False, delta_BIC=-1, decorr_bound =(-1,1),
+    def get_decorr(self, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, u1=0, u2=0, mask=False, delta_BIC=-1, decorr_bound =(-1,1),
                      cheops=False, verbose=True, show_steps=False, plot_model=True, use_result=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
@@ -595,12 +593,12 @@ class load_lightcurves:
 
             Parameters:
             -----------
-            T_0, P, dur, L, b, rp, eccentricity, omega: floats, None;
-                transit/eclipse parameters of the planet. T_0, P, and dur must be in same units as the time axis (cols0) in the data file.
+            T_0, Period, Duration, L, Impact_para, RpRs, Eccentricity, omega: floats,tuple, None;
+                transit/eclipse parameters of the planet. T_0, Period, and Duration must be in same units as the time axis (cols0) in the data file.
                 if float/int, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
                 
-            q1,q2 : float  (optional);
-                quadratic limb darkening parameters according to kipping 2013. values are in the range (0,1).
+            u1,u2 : float,tuple  (optional);
+                standard quadratic limb darkening parameters. if float, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
     
             delta_BIC : float (negative);
                 BIC improvement a parameter needs to provide in order to be considered relevant for decorrelation. + \
@@ -635,10 +633,12 @@ class load_lightcurves:
             decorr_result: list of result object
                 list containing result object for each lc.
         """
+        #TODO: LDs priors/values can be different for each filter. implement.
         
         blpars = {"dt":[], "dphi":[],"dx":[], "dy":[], "dconta":[], "dsky":[],"gp":[]}  #inputs to lc_baseline method
         self._decorr_result = []   #list of decorr result for each lc
-        self._tra_occ_pars = dict(T_0=T_0, P=P, dur=dur, L=L, b=b, rp=rp, eccentricity=eccentricity, omega=omega, q1=q1,q2=q2)  #transit/occultation parameters
+        self._tra_occ_pars = dict(T_0=T_0, Period=Period, Duration=Duration, L=L, Impact_para=Impact_para, \
+            RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, u1=u1,u2=u2)  #transit/occultation parameters
         
 
         #check cheops input
@@ -733,11 +733,11 @@ class load_lightcurves:
                 if verbose: print(_text_format.BOLD + "\nSetting-up occultation pars from input values" +_text_format.END)
                 self.setup_occultation("all",start_depth=tuple(self._tra_occ_pars["L"]), verbose=verbose)
             
-            if all([p in self._tra_occ_pars for p in["P","dur","b","rp","eccentricity", "omega", "T_0"]]):
+            if all([p in self._tra_occ_pars for p in["Period","Duration","Impact_para","RpRs","Eccentricity", "omega", "T_0"]]):
                 if verbose: print(_text_format.BOLD + "\nSetting-up transit pars from input values" +_text_format.END)
-                self.setup_transit_rv(RpRs=self._tra_occ_pars["rp"], Impact_para=self._tra_occ_pars["b"], T_0=self._tra_occ_pars["T_0"],
-                                    Period=self._tra_occ_pars["P"], Duration=self._tra_occ_pars["dur"], 
-                                    Eccentricity=self._tra_occ_pars["eccentricity"], omega=self._tra_occ_pars["omega"], verbose=verbose)
+                self.setup_transit_rv(RpRs=self._tra_occ_pars["RpRs"], Impact_para=self._tra_occ_pars["Impact_para"], T_0=self._tra_occ_pars["T_0"],
+                                    Period=self._tra_occ_pars["Period"], Duration=self._tra_occ_pars["Duration"], 
+                                    Eccentricity=self._tra_occ_pars["Eccentricity"], omega=self._tra_occ_pars["omega"], verbose=verbose)
         return self._decorr_result
     
     
@@ -881,6 +881,7 @@ class load_lightcurves:
         if filename==None: 
             print("No lightcurve filename given.")
             return None
+        assert filename in self._names, f"split_transits(): filename {filename} not in loaded lightcurves."
         
         data = np.loadtxt(self._fpath+filename)
         
@@ -950,7 +951,13 @@ class load_lightcurves:
             plt.title("Using t_ref: dashed vertical lines = transit splitting times;  triangles = identified transits");
 
         if save_separate:
+            #replace filter names
+            _flt = self._filters[self._names.index(filename)]
+            _lbd = self._lamdas[self._names.index(filename)]
+            self._filters.remove(_flt)
+            self._lamdas.remove(_lbd)
             self._names.remove(filename)
+
 
             for i in range(len(t0s)):
                 
@@ -960,8 +967,11 @@ class load_lightcurves:
                 tr_filename = tr_filename[0] + "_tr" + str(i) + tr_filename[1]
             
                 np.savetxt(self._fpath+tr_filename,tr_data,fmt='%.8f')
-                self._names.append(tr_filename)
                 print("Saved " + self._fpath + tr_filename)
+
+                self._names.append(tr_filename)
+                self._filters.append(_flt+str(i))
+                self._lamdas.append(_lbd)
 
             
     def lc_baseline(self, dt=None,  dphi=None, dx=None, dy=None, dconta=None, 
