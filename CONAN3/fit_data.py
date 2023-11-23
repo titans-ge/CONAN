@@ -120,35 +120,35 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
  #============GP Setup=============================
     #from load_lightcurves.add_GP()
-    GPchoices = ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"]
-    ndimGP = len(GPchoices)
+    GPchoices          = ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"]
+    ndimGP             = len(GPchoices)
 
-    GPphotlc = np.zeros((nphot,ndimGP))
-    GPphotvars = np.zeros((nphot,ndimGP))
-    GPphotkerns = np.zeros((nphot,ndimGP),dtype=object)
-    GPphotWN = np.zeros((nphot,1),dtype=object)
-    GPphotWNstartppm = 50      # start at 50 ppm 
-    GPphotWNstart = -50*np.ones((nphot,1)) # set WN very low in case WN is not used
-    GPphotWNstep = np.zeros((nphot,1))
-    GPphotWNprior = np.zeros((nphot,1))
-    GPphotWNpriorwid = np.zeros((nphot,1))
-    GPphotWNlimup = np.zeros((nphot,1))
-    GPphotWNlimlo = np.zeros((nphot,1))
-    GPphotpars1 = np.zeros((nphot,ndimGP))
-    GPphotstep1 = np.zeros((nphot,ndimGP))
-    GPphotprior1 = np.zeros((nphot,ndimGP))
-    GPphotpriorwid1 = np.zeros((nphot,ndimGP))
-    GPphotlim1up = np.zeros((nphot,ndimGP))
-    GPphotlim1lo = np.zeros((nphot,ndimGP))
-    GPphotpars2 = np.zeros((nphot,ndimGP))
-    GPphotstep2 = np.zeros((nphot,ndimGP))
-    GPphotprior2 = np.zeros((nphot,ndimGP))
-    GPphotpriorwid2 = np.zeros((nphot,ndimGP))
-    GPphotlim2up = np.zeros((nphot,ndimGP))
-    GPphotlim2lo = np.zeros((nphot,ndimGP))
-    GPncomponent = np.zeros((nphot,ndimGP))           # number of components in the kernel
-    GPjumping = np.zeros((nphot,ndimGP),dtype=bool)
-    GPall = np.zeros((nphot,ndimGP),dtype=bool) #Joint hyperparameters
+    GPphotlc           = np.zeros((nphot, ndimGP))
+    GPphotvars         = np.zeros((nphot, ndimGP))
+    GPphotkerns        = np.zeros((nphot, ndimGP), dtype=object)
+    GPphotWN           = np.zeros((nphot, 1), dtype=object)
+    GPphotWNstartppm   = 50      # start at 50 ppm 
+    GPphotWNstart      = -50 * np.ones((nphot, 1)) # set WN very low in case WN is not used
+    GPphotWNstep       = np.zeros((nphot, 1))
+    GPphotWNprior      = np.zeros((nphot, 1))
+    GPphotWNpriorwid   = np.zeros((nphot, 1))
+    GPphotWNlimup      = np.zeros((nphot, 1))
+    GPphotWNlimlo      = np.zeros((nphot, 1))
+    GPphotpars1        = np.zeros((nphot, ndimGP))
+    GPphotstep1        = np.zeros((nphot, ndimGP))
+    GPphotprior1       = np.zeros((nphot, ndimGP))
+    GPphotpriorwid1    = np.zeros((nphot, ndimGP))
+    GPphotlim1up       = np.zeros((nphot, ndimGP))
+    GPphotlim1lo       = np.zeros((nphot, ndimGP))
+    GPphotpars2        = np.zeros((nphot, ndimGP))
+    GPphotstep2        = np.zeros((nphot, ndimGP))
+    GPphotprior2       = np.zeros((nphot, ndimGP))
+    GPphotpriorwid2    = np.zeros((nphot, ndimGP))
+    GPphotlim2up       = np.zeros((nphot, ndimGP))
+    GPphotlim2lo       = np.zeros((nphot, ndimGP))
+    GPncomponent       = np.zeros((nphot, ndimGP))           # number of components in the kernel
+    GPjumping          = np.zeros((nphot, ndimGP), dtype=bool)
+    GPall              = np.zeros((nphot, ndimGP), dtype=bool) # Joint hyperparameters
 
     DA_gp = lc._GP_dict         #load input gp parameters from dict
 

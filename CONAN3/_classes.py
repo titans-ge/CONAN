@@ -695,7 +695,7 @@ class load_lightcurves:
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
             if cheops_flag[j]: all_par += ["A5_2","B5_2","A5_3","B5_3"]
 
-            out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filnames[j]],u2=ld_u2[self._filnames[j]], mask=mask,
+            out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filters[j]],u2=ld_u2[self._filters[j]], mask=mask,
                             offset=0,cheops=cheops_flag[j], decorr_bound=decorr_bound)    #no trend, only offset
             best_bic = out.bic
             best_pars = {"offset":0}                      #parameter salways included
@@ -711,7 +711,7 @@ class load_lightcurves:
                 for p in all_par:
                     dtmp = best_pars.copy()   #always include offset
                     dtmp[p] = 0
-                    out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filnames[j]],u2=ld_u2[self._filnames[j]],**dtmp,
+                    out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filters[j]],u2=ld_u2[self._filters[j]],**dtmp,
                                     cheops=cheops_flag[j], decorr_bound=decorr_bound)
                     if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                     pars_bic[p] = out.bic
@@ -729,7 +729,7 @@ class load_lightcurves:
                     best_bic = par_in_bic
                     all_par.remove(par_in)            
                       
-            result = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filnames[j]],u2=ld_u2[self._filnames[j]],
+            result = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filters[j]],u2=ld_u2[self._filters[j]],
                                 **best_pars, cheops=cheops_flag[j], decorr_bound=decorr_bound)
             self._decorr_result.append(result)
             print(f"BEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
