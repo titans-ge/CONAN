@@ -161,8 +161,8 @@ class Transit_Model(Model):
         ph_transit = np.where((y >= 0))
         npo_transit = len(z[ph_transit])
 
-        delta = np.round(np.divide((tt[0]-self.T0),self.per))
-        T0_lc=self.T0+delta*self.per  
+        # delta = np.round(np.divide((tt[0]-self.T0),self.per))
+        # T0_lc=self.T0+delta*self.per  
         ts=tt-tt[0]
         
         # adapt the RpRs value used in the LC creation to any ddfs
@@ -178,8 +178,8 @@ class Transit_Model(Model):
         ph_occultation = np.where((y < 0))
         npo_occultation = len(z[ph_occultation])
 
-        delta = np.round(np.divide((tt[0]-self.T0),self.per)) + 0.5   # offset by half a period
-        T0_lc=self.T0+delta*self.per  
+        # delta = np.round(np.divide((tt[0]-self.T0),self.per)) + 0.5   # offset by half a period
+        # T0_lc=self.T0+delta*self.per  
         RR=np.sqrt(self.occ)    # the occultation depth converted into a radius ratio
         u1, u2 = 0., 0.         # no limb darkening
 

@@ -37,7 +37,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
         fwhm=warr[indlist[j][0]]
         sky=sarr[indlist[j][0]]
         
-        infile=names[j][:-4]+'_out_full.dat'
+        infile=prefix.split("/")[0] + "/" + names[j][:-4]+'_out_full.dat'
         tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
         
         #CLIP
@@ -248,7 +248,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
 
     matplotlib.use(__default_backend__)
 
-def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
+def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
     
     # this needs to be written. Just make a histogram plot of the parameter (values vals), label it (pname), and indicate the 1- and 3- sigma limits (s1, s3)
 
@@ -283,8 +283,8 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
     plt.legend()
     # Tweak spacing to prevent clipping of ylabel
     plt.subplots_adjust(left=0.15)
-    if not os.path.exists("histograms"): os.mkdir("histograms")
-    outname="histograms/hist_"+pname+".png"
+    if not os.path.exists(out_folder+"/histograms"): os.mkdir(out_folder+"/histograms")
+    outname=out_folder+"/histograms/hist_"+pname+".png"
     plt.savefig(outname)
 
     matplotlib.use(__default_backend__)
@@ -298,7 +298,7 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
 #    of.close()
 
 
-def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm):
+def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm,out_folder):
     
     # this needs to be written. Just make a histogram plot of the parameter (values vals), label it (pname), and indicate the 1- and 3- sigma limits (s1, s3)
 
@@ -337,8 +337,8 @@ def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm):
     plt.legend()
     # Tweak spacing to prevent clipping of ylabel
     plt.subplots_adjust(left=0.15)
-    if not os.path.exists("histograms"): os.mkdir("histograms")
-    outname="histograms/hist_"+pname+".png"
+    if not os.path.exists(out_folder+"/histograms"): os.mkdir(out_folder+"/histograms")
+    outname=out_folder+"/histograms/hist_"+pname+".png"
     plt.savefig(outname)
 
     matplotlib.use(__default_backend__)
@@ -352,7 +352,7 @@ def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm):
 
 #    of.close()
 
-def plot_traspec(dRpRsres, edRpRsres, ulamdas):
+def plot_traspec(dRpRsres, edRpRsres, ulamdas,out_folder):
     
     import numpy as np
     import matplotlib
@@ -362,7 +362,7 @@ def plot_traspec(dRpRsres, edRpRsres, ulamdas):
     import matplotlib.pyplot as plt
 #    import plotly.plotly as py  # tools to communicate with Plotly's server
     
-    outname='transpec.png'
+    outname=out_folder+'/transpec.png'
     fig = plt.figure()
     plt.errorbar(ulamdas, dRpRsres, yerr=edRpRsres, fmt=".b")
     plt.xlabel("Wavelength [A]")
@@ -373,6 +373,7 @@ def plot_traspec(dRpRsres, edRpRsres, ulamdas):
 
     
 def plot_phasecurve(params, filename):
+    #TODO: look at phase curve plot
 
     import lightkurve as lk
     import numpy as np
@@ -447,3 +448,4 @@ def plot_phasecurve(params, filename):
 
     fig.savefig(filename+"_PC.pdf")
     matplotlib.use(__default_backend__)
+#TODO backend issue causes timeout 

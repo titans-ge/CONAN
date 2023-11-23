@@ -10,7 +10,7 @@ import scipy.interpolate as si
 from .credibleregion_ML import *
 
 
-def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, nfilt, filnames, howstellar, extinpars, extins, extind_PDF):
+def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, nfilt, filnames, howstellar, extinpars, extins, extind_PDF,out_folder):
    
      npoint,npara=posterior.shape
      
@@ -168,9 +168,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
 
    
    # =============== write out the medians, best values and distributions of the jump parameters =================
-     outfile='results_med.dat'
-     outfile2='results_max.dat'
-     outfile3='results_bf.dat'
+     outfile=out_folder+"/"+'results_med.dat'
+     outfile2=out_folder+"/"+'results_max.dat'
+     outfile3=out_folder+"/"+'results_bf.dat'
 
      of=open(outfile,'w')
      of2=open(outfile2,'w')
@@ -294,7 +294,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
          sig3m[i,0] = np.amin(xpdf[pdf>HPDmin]) - maxvals[i]
          sig3m[i,1] = np.amax(xpdf[pdf>HPDmin]) - maxvals[i]      
          of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (jnames[i], maxvals[i],sig1m[i,0],sig1m[i,1], sig3m[i,0], sig3m[i,1])) 
-         param_histbp(vals,jnames[i],medvals[i],sig1[i],sig3[i],maxvals[i],sig1m[i],sig3m[i],bp[ijnames[0][i]],s1bps)
+         param_histbp(vals,jnames[i],medvals[i],sig1[i],sig3[i],maxvals[i],sig1m[i],sig3m[i],bp[ijnames[0][i]],s1bps,out_folder)
 
      of2.write('====================================================================================================\n')
      of2.write('Additional input parameters: \n')
@@ -308,7 +308,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
      sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
      of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-     param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms)
+     param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
      vals=Ms_PDF
      pdf, xpdf, HPDmin, iHDP = credregionML(vals)
      maxval = xpdf[iHDP]
@@ -318,7 +318,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
      sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
      of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-     param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms)
+     param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
 
      for i in range(len(extinpars)):
          vals = extind_PDF[:,i]
@@ -362,7 +362,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
                  sig3md[i,1] = 0.
              
          of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (derived_pnames[i], maxvalsd[i], sig1md[i,0],sig1md[i,1], sig3md[i,0], sig3md[i,1])) 
-         param_hist(vals,derived_pnames[i],medvalsd[i],sig1d[i],sig3d[i],maxvalsd[i],sig1md[i],sig3md[i])
+         param_hist(vals,derived_pnames[i],medvalsd[i],sig1d[i],sig3d[i],maxvalsd[i],sig1md[i],sig3md[i],out_folder=out_folder)
      
      of2.write('====================================================================================================\n')
      of2.write('Fixed parameters: \n')
@@ -409,7 +409,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
      sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
      of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-     param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms)
+     param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
      vals=Ms_PDF
      pdf, xpdf, HPDmin, iHDP = credregionML(vals)
      maxval = xpdf[iHDP]
@@ -419,7 +419,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
      sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
      of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-     param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms)
+     param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
      for i in range(len(extinpars)):
          vals = extind_PDF[:,i]
          pdf, xpdf, HPDmin, iHDP = credregionML(vals)
@@ -475,15 +475,15 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
              edRpRsres= np.concatenate((edRpRsres, [sig1[i,1]]))
      
      if len(dRpRsres)>0:
-         plot_traspec(dRpRsres, edRpRsres, ulamdas)
+         plot_traspec(dRpRsres, edRpRsres, ulamdas,out_folder)
 
      
      return medvals, maxvals
  
  
-def gr_print(jnames,GRvals):
+def gr_print(jnames,GRvals, out_folder):
     
-    outfile='GRvals.dat'
+    outfile=out_folder+'/GRvals.dat'
     of=open(outfile,'w')
     npara=len(jnames)
     for i in range(npara):
@@ -497,7 +497,7 @@ def get_BIC(npar,ndat):
     BIC = chi2 + npar * np.log(ndat)
     RCHI = chi2 /(ndat-npar)
     
-    outfile='BIC.dat'
+    outfile=out_folder+'/BIC.dat'
     of=open(outfile,'w')
     of.write('data points: ')
     of.write('%10.0f \n' % (ndat))
@@ -510,12 +510,12 @@ def get_BIC(npar,ndat):
     return BIC
 
 
-def get_BIC_emcee(npar,ndat,chi2):
+def get_BIC_emcee(npar,ndat,chi2,out_folder):
     
     BIC = chi2 + npar * np.log(ndat)
     RCHI = chi2 /(ndat-npar)
     
-    outfile='BIC.dat'
+    outfile=out_folder+'/BIC.dat'
     of=open(outfile,'w')
     of.write('data points: ')
     of.write('%10.0f \n' % (ndat))
@@ -527,11 +527,11 @@ def get_BIC_emcee(npar,ndat,chi2):
     
     return BIC
 
-def get_AIC_emcee(npar,ndat,chi2):
+def get_AIC_emcee(npar,ndat,chi2,out_folder):
     
     AIC = chi2 + npar * ndat *2. / (ndat - npar -1.)
     
-    outfile='AIC.dat'
+    outfile=out_folder+'/AIC.dat'
     of=open(outfile,'w')
     of.write('data points: ')
     of.write('%10.0f \n' % (ndat))

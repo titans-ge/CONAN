@@ -1,7 +1,10 @@
-20-11-2023: version 3.0.5
+20-11-2023: version 3.0.5(dev)
 ~~~~~~~~~~~~
 * added functions clip_outliers() and split_transits to the lc object.
 * get_decorr() now uses same planet parameter names ["Period", "Duration","Impact_para","RpRs",...]
+* get_decorr() also allows to exclude some columns from the decorrelation analysis while enforcing others
+* load_chain() has been renamed as load_result() which contains all the results from the MCMC run.
+* use can now specify output directory for the results using the "out_folder" argument of CONAN.fit_data().
 
 28-12-2022: version 3.0.5
 ~~~~~~~~~~~~

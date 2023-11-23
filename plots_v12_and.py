@@ -478,7 +478,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
 
 
 
-def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
+def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
 
     
 
@@ -550,7 +550,7 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m):
 
     if not os.path.exists("histograms"): os.mkdir("histograms")
 
-    outname="histograms/hist_"+pname+".png"
+    outname=out_folder+"/histograms/hist_"+pname+".png"
 
     plt.savefig(outname)
 

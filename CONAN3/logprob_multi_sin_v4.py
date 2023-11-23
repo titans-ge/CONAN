@@ -16,7 +16,7 @@ from CONAN3.celeritenew import *
 from .RVmodel_v3 import *
 
 
-def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False,get_model=False):
+def logprob_multi(p, *args,time=None,make_out_file=False,verbose=False,debug=False,get_model=False,out_folder=""):
     """
     calculate log probability and create output file of full model calculated using posterior parameters
 
@@ -360,7 +360,7 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False,get_mod
                 fco_full = ft/bfunc_full    #detrended_data
                 
                 if make_out_file:
-                    outfile=name[:-4]+'_out_full.dat'
+                    outfile=out_folder+"/"+name[:-4]+'_out_full.dat'
                     if verbose: print(f"Writing output with gp to file: {outfile}")
                     #calculate phase
                     phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]
@@ -442,7 +442,7 @@ def logprob_multi(p, *args,make_out_file=False,verbose=False,debug=False,get_mod
                 fco_full = ft/bfunc_para
 
                 if make_out_file:
-                    outfile=name[:-4]+'_out_full.dat' 
+                    outfile=out_folder+"/"+name[:-4]+'_out_full.dat' 
                     if verbose: print(f"Writing output without gp to file: {outfile}")
                     #calculate phase
                     phases = np.modf(np.modf( (tt-T0in)/perin)[0]+1)[0]

@@ -1,6 +1,7 @@
 import numpy as np
 
 def ecc_om_par(ecc_in, omega_in):
+    # This function calculates the prior values and limits for the eccentricity and omega parameters
 
     sesino=np.sqrt(ecc_in[0])*np.sin(omega_in[0])     # starting value
     sesinolo=-1.   # lower limit
@@ -22,7 +23,7 @@ def ecc_om_par(ecc_in, omega_in):
         eup=0.
         elo=0.
 
-    if (omega_in[5]!=0.):   # if an eccentricity prior is set
+    if (omega_in[5]!=0.):   # if an omega prior is set
         odump=np.copy(omega_in[4])
         oup=np.copy(omega_in[5])
         olo=np.copy(omega_in[6])

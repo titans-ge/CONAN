@@ -29,7 +29,7 @@ from celerite import terms
 from .celeritenew import GPnew as clnGPnew
 
 
-from ._classes import _raise, mcmc_setup, __default_backend__, load_chains
+from ._classes import _raise, mcmc_setup, __default_backend__, load_result
 import matplotlib
 matplotlib.use(__default_backend__)
 
@@ -37,18 +37,45 @@ import multiprocessing as mp
 mp.set_start_method('fork')
 __all__ = ["fit_data"]
 
-def fit_data(lc, rv=None, mcmc=None, statistic = "median",
+def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output",
 verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     """
     function to fit the data using the light-curve object lc, rv_object rv and mcmc setup object mcmc.
 
     Parameters
     ----------
+    lc : lightcurve object;
+        object containing lightcurve data and setup parameters. 
+        see CONAN3.load_lightcurves() for more details.
+
+    rv : rv object
+        object containing radial velocity data and setup parameters. 
+        see CONAN3.load_rvs() for more details.
+
+    mcmc : mcmc_setup object;
+        object containing mcmc setup parameters. 
+        see CONAN3.mcmc_setup() for more details.
+
     statistic : str;
         statistic to run on posteriors to obtain model parameters and create model output file ".._out_full.dat".
         must be one of ["median", "max", "bestfit"], default is "median". 
         "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
             is the parameter combination that gives the maximum joint posterior probability.
+
+    out_folder : str;
+        path to output folder, default is "output".
+
+    verbose : bool;
+        if True, print out additional information, default is False.
+
+    debug : bool;
+        if True, print out additional debugging information, default is False.
+
+    save_burnin_chains : bool;
+        if True, save burn-in chains to file, default is True.
+
+    **kwargs : dict;
+        other parameters sent to emcee.EnsembleSampler.run_mcmc() function
 
     Returns:
     --------
@@ -56,9 +83,18 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         Object that contains methods to plot the chains, corner, and histogram of parameters.
         e.g result.plot_chains(), result.plot_burnin_chains(), result.plot_corner, result.plot_posterior("T_0")
 
-    **kwargs: other parameters sent to emcee.EnsembleSampler.run_mcmc() function
     """
+    if os.path.exists(f'{out_folder}/chains_dict.pkl'):
+        print(f'Fit results already exist in this folder: {out_folder}.\n Loading results...')
+        result = load_result(out_folder)
+        return result
+        
+    if not os.path.exists(out_folder):
+        os.mkdir(out_folder)
+
     print('CONAN3 launched!!!\n') 
+
+        
     #begin loading data from the 3 objects and calling the methods
     assert statistic in ["median", "max", "bestfit"], 'statistic can only be either median, max or bestfit'
 
@@ -1160,11 +1196,11 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined,useSpline]
     
     debug_t1 = time.time()
-    mval, merr,dump1,dump2 = logprob_multi(initial[jumping],*indparams,make_out_file=True,verbose=True,debug=debug)
+    mval, merr,dump1,dump2 = logprob_multi(initial[jumping],*indparams,make_out_file=True,verbose=True,debug=debug,out_folder=out_folder)
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
-    if not os.path.exists("init"): os.mkdir("init")    #folder to put initial plots    
+    if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'init/init_',initial,T0_in[0],per_in[0])
+    mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',initial,T0_in[0],per_in[0])
     if debug: print(f'finished mcmc_plots, took {(time.time() - debug_t2)} secs')
 
 
@@ -1209,20 +1245,21 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         burnin_chains_dict =  {}
         for ch in range(burnin_chains.shape[2]):
             burnin_chains_dict[jnames[ch]] = burnin_chains[:,:,ch]
-        pickle.dump(burnin_chains_dict,open("burnin_chains_dict.pkl","wb"))  
+        pickle.dump(burnin_chains_dict,open(out_folder+"/"+"burnin_chains_dict.pkl","wb"))  
         print("burn-in chain written to disk")
         matplotlib.use('Agg')
-        burn_result = load_chains()
+        burn_result = load_result(out_folder)
         try:
             fig = burn_result.plot_burnin_chains()
-            fig.savefig("burnin_chains.png", bbox_inches="tight")
-            print("Burn-in chains plot saved as: burnin_chains.png")
+            fig.savefig(out_folder+"/"+"burnin_chains.png", bbox_inches="tight")
+            print(f"Burn-in chains plot saved as: {out_folder}/burnin_chains.png")
         except: 
             print(f"full burn-in chains not plotted (number of parameters ({ndim}) exceeds 20. use result.plot_burnin_chains()")
             print(f"saving burn-in chain plot for the first 20 parameters")
             pl_pars = list(burn_result._par_names)[:20]
             fig = burn_result.plot_burnin_chains(pl_pars)
-            fig.savefig("burnin_chains.png", bbox_inches="tight")  
+            fig.savefig(out_folder+"/"+"burnin_chains.png", bbox_inches="tight") 
+        #TODO save more than one plot if there are more than 20 parameters
 
         matplotlib.use(__default_backend__)
     sampler.reset()
@@ -1237,7 +1274,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     print(("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction))))
     GRvals = grtest_emcee(chains)
 
-    gr_print(jnames,GRvals)
+    gr_print(jnames,GRvals,out_folder)
 
     nijnames = np.where(steps == 0.)
     njnames = pnames_all[[nijnames][0]]  # njnames are the names of the fixed parameters
@@ -1250,8 +1287,35 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     chains_dict =  {}
     for ch in range(chains.shape[2]):
         chains_dict[jnames[ch]] = chains[:,:,ch]
-    pickle.dump(chains_dict,open("chains_dict.pkl","wb"))
-    print("Production chain written to disk as `chains_dict.pkl`. Run `result=CONAN3.load_chains()` to load it.")  
+    pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
+    print(f"Production chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.")  
+
+
+    # ==== chain and corner plot ================
+    result = load_result(out_folder)
+
+    matplotlib.use('Agg')
+    try:
+        fig = result.plot_chains()
+        fig.savefig(out_folder+"/chains.png", bbox_inches="tight")
+    except:
+        print(f"\nfull chains not plotted (number of parameters ({ndim}) exceeds 20. use result.plot_burnin_chains()")
+        print(f"saving chain plot for the first 20 parameters")
+        pl_pars = list(result._par_names)[:20]
+        fig = result.plot_chains(pl_pars)
+        fig.savefig(out_folder+"/chains.png", bbox_inches="tight")  
+
+    try:
+        fig = result.plot_corner()
+        fig.savefig(out_folder+"/corner.png", bbox_inches="tight")
+    except: 
+        print(f"\ncorner not plotted (number of parameters ({ndim}) exceeds 14. use result.plot_corner(force_plot=True)")
+        print("saving corner plot for the first 14 parameters")
+        pl_pars = list(result._par_names)[:14]
+        fig = result.plot_corner(pl_pars,force_plot=True)
+        fig.savefig(out_folder+"/corner.png", bbox_inches="tight")
+    #TODO: save more than one plot if there are more than 14 parameters
+    matplotlib.use(__default_backend__)
 
     dim=posterior.shape
     # calculate PDFs of the stellar parameters given 
@@ -1267,7 +1331,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     bpfull = np.copy(initial)
     bpfull[[ijnames][0]] = bp
 
-    medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, nfilt, filnames, howstellar, extinpars, extins, extind_PDF)
+    medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, nfilt, filnames, howstellar, extinpars, extins, extind_PDF,out_folder)
 
     npar=len(jnames)
     if (baseLSQ == "y"):
@@ -1292,33 +1356,31 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     
     #AKIN: save config parameters indparams and summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
-    pickle.dump(indparams, open(".par_config.pkl","wb"))
+    pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
     stat_vals = dict(med = medp[jumping], max=maxp[jumping], bf = bpfull[jumping])
-    pickle.dump(stat_vals, open(".stat_vals.pkl","wb"))
-    
+    pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
+
     #median
-    mval, merr,T0_post,p_post = logprob_multi(medp[jumping],*indparams,make_out_file=(statistic=="median"), verbose=True,)
-    mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'med_',medp,T0_post,p_post)
+    mval, merr,T0_post,p_post = logprob_multi(medp[jumping],*indparams,make_out_file=(statistic=="median"), verbose=True,out_folder=out_folder)
+    mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',medp,T0_post,p_post)
 
     #max_posterior
     mval2, merr2, T0_post, p_post = logprob_multi(maxp[jumping],*indparams,make_out_file=(statistic=="max"),verbose=False)
-    mcmc_plots(mval2,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, 'max_',maxp, T0_post,p_post)
+    mcmc_plots(mval2,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',maxp, T0_post,p_post)
 
 
     maxresiduals = farr - mval2 if statistic != "median" else farr - mval  #Akin allow statistics to be based on median of posterior
     chisq = np.sum(maxresiduals**2/earr**2)
 
     ndat = len(tarr)
-    bic=get_BIC_emcee(npar,ndat,chisq)
-    aic=get_AIC_emcee(npar,ndat,chisq)
-
+    bic=get_BIC_emcee(npar,ndat,chisq,out_folder)
+    aic=get_AIC_emcee(npar,ndat,chisq,out_folder)
 
     rarr=farr-mval2  if statistic != "median" else farr - mval  # the full residuals
     bw, br, brt, cf, cfn = corfac(rarr, tarr, earr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
 
-    outfile='CF.dat'
 
-    of=open(outfile,'w')
+    of=open(out_folder+"/CF.dat",'w')
     for i in range(nphot):   #adapt the error values
     # print(earr[indlist[i][0]])
         of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
@@ -1331,66 +1393,10 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
     of.close()
 
-    T0_out = maxp[np.where(pnames_all=='T_0')]  if statistic != "median" else medp[np.where(pnames_all=='T_0')]
-    # T0_out_err = sig1[np.where(jnames=='T_0')]
-
-    Period_out = maxp[np.where(pnames_all=='Period_[d]')] if statistic != "median" else medp[np.where(pnames_all=='T_0')]
-    # Period_out_err = sig1[np.where(jnames=='Period_[d]')]
-
-    dur_out = maxp[np.where(pnames_all=='dur_[d]')] if statistic != "median" else medp[np.where(pnames_all=='T_0')]
-    # dur_out_err = sig1[np.where(jnames=='dur_[d]')]
-
+    result = load_result(out_folder)
+    # result.T0   = maxp[np.where(pnames_all=='T_0')]        if statistic != "median" else medp[np.where(pnames_all=='T_0')]
+    # result.P    = maxp[np.where(pnames_all=='Period_[d]')] if statistic != "median" else medp[np.where(pnames_all=='Period_[d]')]
+    # result.dur  = maxp[np.where(pnames_all=='dur_[d]')]    if statistic != "median" else medp[np.where(pnames_all=='dur_[d]')]
+    # result.RpRs  = maxp[np.where(pnames_all=='RpRs')]    if statistic != "median" else medp[np.where(pnames_all=='RpRs')]
     
-        # ==== corner plot ================
-
-    #### corner plot only if few parameters
-    # if len(jnames) <=12:
-    #     c=corner.corner(sampler.flatchain, labels=jnames)
-    #     c.savefig("corner_GP.png", bbox_inches='tight')
-    #     plt.close()
-        
-    #     ndim, nwalkers = sampler.chain.shape[2], sampler.chain.shape[0]
-    #     fig = plt.figure(figsize=(12,15))
-    #     for j in range(ndim):
-    #         plt.subplot(ndim,1,j+1)
-    #         # plt.ylabel(jnames[j])
-    #         plt.autoscale(enable=True, axis='x', tight=True)
-    #         for i in range(0,nwalkers-1): 
-    #             plt.plot(sampler.chain[i,:, j],"k",alpha=0.05, label=f"{jnames[j]}")
-    #             if i==0: plt.legend(loc='upper left')
-    #         plt.subplots_adjust(hspace=0.01,bottom=0.1, top=0.9)
-    #     fig.savefig("chains.png", bbox_inches="tight")
-
-    result = load_chains()
-
-    result.T0 = T0_out
-    # result.T0_err = T0_out_err
-    result.P = Period_out
-    # result.P_err = Period_out_err
-    result.dur = dur_out
-    # result.dur_err = dur_out_err
-
-    matplotlib.use('Agg')
-    try:
-        fig = result.plot_chains()
-        fig.savefig("chains.png", bbox_inches="tight")
-    except:
-        print(f"\nfull chains not plotted (number of parameters ({ndim}) exceeds 20. use result.plot_burnin_chains()")
-        print(f"saving chain plot for the first 20 parameters")
-        pl_pars = list(result._par_names)[:20]
-        fig = result.plot_chains(pl_pars)
-        fig.savefig("chains.png", bbox_inches="tight")  
-
-    try:
-        fig = result.plot_corner()
-        fig.savefig("corner.png", bbox_inches="tight")
-    except: 
-        print(f"\ncorner not plotted (number of parameters ({ndim}) exceeds 14. use result.plot_corner(force_plot=True)")
-        print("saving corner plot for the first 14 parameters")
-        pl_pars = list(result._par_names)[:14]
-        fig = result.plot_corner(pl_pars,force_plot=True)
-        fig.savefig("corner.png", bbox_inches="tight")
-
-    matplotlib.use(__default_backend__)
-
     return result

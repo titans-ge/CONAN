@@ -27,6 +27,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
     """
 
     n_data = len(obj._names)
+    tsm= True if plot_cols[0]==0 else False
     cols = plot_cols+(1,) if len(plot_cols)==2 else plot_cols
 
     if n_data == 1:
@@ -37,7 +38,9 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
         plt.errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[0]}')
         if model_overplot:
             plt.plot(p1,model_overplot[0][0],"r",zorder=3,label="detrend_model")
-            plt.plot(model_overplot[0][2],model_overplot[0][1],"c",zorder=3,label="tra/occ_model")
+            if tsm: plt.plot(model_overplot[0][2],model_overplot[0][3],"c",zorder=3,label="tra/occ_model")   #smooth model plot if time on x axis
+            else: plt.plot(p1,model_overplot[0][1],"c",zorder=3,label="tra/occ_model")
+
 
         if fit_order>0:
             pfit = np.polyfit(p1,p2,fit_order)
@@ -58,7 +61,8 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
             ax[i].errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[i]}')
             if model_overplot:
                 ax[i].plot(p1,model_overplot[i][0],"r",zorder=3,label="detrend_model")
-                ax[i].plot(model_overplot[i][2],model_overplot[i][1],"c",zorder=3,label="tra/occ_model")
+                if tsm: ax[i].plot(model_overplot[i][2],model_overplot[i][3],"c",zorder=3,label="tra/occ_model")
+                else: ax[i].plot(p1,model_overplot[i][1],"c",zorder=3,label="tra/occ_model")
 
             if fit_order>0:
                 pfit = np.polyfit(p1,p2,fit_order)
@@ -247,7 +251,7 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
 
     if return_models:
         tsm = np.linspace(min(df["cols0"]),max(df["cols0"]),len(df["cols0"])*3)
-        return trend_model(params),transit_occ_model(tr_params,tsm),tsm    
+        return trend_model(params),transit_occ_model(tr_params),tsm,transit_occ_model(tr_params,tsm)   
     
     #perform fitting 
     def chisqr(fit_params):
@@ -270,6 +274,7 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
     out.time    = np.array(df["cols0"])
     out.flux    = np.array(df["cols1"])
     out.flux_err= np.array(df["cols2"])
+    out.data    = df
     out.rms     = np.std(out.flux - out.bestfit)
     out.ndata   = len(out.time)
     out.residual= out.residual[:out.ndata]
@@ -582,7 +587,7 @@ class load_lightcurves:
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
     def get_decorr(self, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, u1=0, u2=0, mask=False, delta_BIC=-1, decorr_bound =(-1,1),
-                     cheops=False, verbose=True, show_steps=False, plot_model=True, use_result=True):
+                     cheops=False, exclude=[],enforce=[],verbose=True, show_steps=False, plot_model=True, use_result=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
             It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
@@ -597,8 +602,9 @@ class load_lightcurves:
                 transit/eclipse parameters of the planet. T_0, Period, and Duration must be in same units as the time axis (cols0) in the data file.
                 if float/int, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
                 
-            u1,u2 : float,tuple  (optional);
+            u1,u2 : float,tuple, list  (optional);
                 standard quadratic limb darkening parameters. if float, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
+                give list of values for assign value to each unique filter in the data, or one value to be used for all filtets. Default is 0 for all filters.
     
             delta_BIC : float (negative);
                 BIC improvement a parameter needs to provide in order to be considered relevant for decorrelation. + \
@@ -615,6 +621,9 @@ class load_lightcurves:
                     fourier model (sin and cos) up to 3rd harmonic in roll-angle is used for col5.
                 If Bool is given, the same is used for all input lc, else a list specifying bool for each lc is required.
                 Default is False.
+
+            exclude : list of int;
+                list of column numbers to exclude from decorrelation. Default is [].
 
             verbose : Bool, optional;
                 Whether to show the table of baseline model obtained. Defaults to True.
@@ -634,37 +643,65 @@ class load_lightcurves:
                 list containing result object for each lc.
         """
         #TODO: LDs priors/values can be different for each filter. implement.
-        
+        assert isinstance(exclude, list), f"get_decorr: exclude must be a list of column numbers to exclude from decorrelation but {exclude} given."
+        for c in exclude: assert isinstance(c, int), f"get_decorr: column number to exclude from decorrelation must be an integer but {c} given in exclude."
+
+        nfilt = len(self._filnames)
+        if isinstance(u1, np.ndarray): u1 = list(u1)
+        if isinstance(u1, list): assert len(u1) == nfilt, f"get_decorr(): u2 must be a list of same length as number of unique filters {nfilt} but {len(u1)} given." 
+        else: u1=[u1]*nfilt
+        if isinstance(u2, np.ndarray): u2 = list(u2)
+        if isinstance(u2, list): assert len(u2) == nfilt, f"get_decorr(): u2 must be a list of same length as number of unique filters {nfilt} but {len(u2)} given." 
+        else: u2=[u2]*nfilt
+
         blpars = {"dt":[], "dphi":[],"dx":[], "dy":[], "dconta":[], "dsky":[],"gp":[]}  #inputs to lc_baseline method
-        self._decorr_result = []   #list of decorr result for each lc
+        self._decorr_result = []   #list of decorr result for each lc. #TODO: consider storing as a dictionary with file as key
         self._tra_occ_pars = dict(T_0=T_0, Period=Period, Duration=Duration, L=L, Impact_para=Impact_para, \
-            RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, u1=u1,u2=u2)  #transit/occultation parameters
+            RpRs=RpRs, Eccentricity=Eccentricity, omega=omega)#, u1=u1,u2=u2)  #transit/occultation parameters
+        ld_u1, ld_u2 = {},{}
+        for i,fil in enumerate(self._filnames):
+            ld_u1[fil] = u1[i]
+            ld_u2[fil] = u2[i]
+            #check that ld values give realistic profiles for each filter, folling kipping2013 triangular test
+            u1_ = u1[i] if isinstance(u1[i], (int,float)) else u1[i][1] if len(u1[i])==3 else u1[i][0]
+            u2_ = u2[i] if isinstance(u2[i], (int,float)) else u2[i][1] if len(u2[i])==3 else u2[i][0]
+            q1 = (u1_ + u2_)**2
+            q2 = u1_/(2*(u1_+u2_))
+            if (0<q1<1) and (0<=q2<1): pass
+            else: print(f"get_decorr(): Warning!!! converting u1,u2={u1_:.3f},{u2_:.3f} to Kipping parameterization q1,q2={q1:.3f},{q2:.3f} for filter {fil}. The conditions 0<q1<1, 0<=q2<1 are not met.")
+
         
 
         #check cheops input
-        assert delta_BIC<0,f'get_decorr: delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
+        assert delta_BIC<0,f'get_decorr(): delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
         if isinstance(cheops, bool): cheops_flag = [cheops]*len(self._names)
         elif isinstance(cheops, list):
             assert len(cheops) == len(self._names),f"list given for cheops must have same +\
                 length as number of input lcs but {len(cheops)} given."
             for flag in cheops:
-                assert isinstance(flag, bool), f"get_decorr: all elements in cheops list must be bool: +\
+                assert isinstance(flag, bool), f"get_decorr(): all elements in cheops list must be bool: +\
                      True or False, but {flag} given"
             cheops_flag = cheops
-        else: _raise(TypeError, f"get_decorr: `cheops` must be bool or list of bool with same length as +\
+        else: _raise(TypeError, f"get_decorr(): `cheops` must be bool or list of bool with same length as +\
             number of input files but type{cheops} given.")
 
 
-        t_model = []  #list to hold determined trendmodel for each lc
+        self._tmodel = []  #list to hold determined trendmodel for each lc
+        decorr_cols = [0,3,4,5,6,7]
+        for c in exclude: assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude." 
+        _ = [decorr_cols.remove(c) for c in exclude]  #remove excluded columns from decorr_cols
         for j,file in enumerate(self._names):
             if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for lc: {file} (cheops={cheops_flag[j]})" + _text_format.END)
-            all_par = [f"{L}{i}" for i in [0,3,4,5,6,7] for L in ["A","B"]] 
+            all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
             if cheops_flag[j]: all_par += ["A5_2","B5_2","A5_3","B5_3"]
 
-            out = _decorr(self._fpath+file, **self._tra_occ_pars, mask=mask,
+            out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filnames[j]],u2=ld_u2[self._filnames[j]], mask=mask,
                             offset=0,cheops=cheops_flag[j], decorr_bound=decorr_bound)    #no trend, only offset
             best_bic = out.bic
-            best_pars = {"offset":0}
+            best_pars = {"offset":0}                      #parameter salways included
+            for cp in enforce: best_pars[cp]=0            #add enforced parameters
+            _ = [all_par.remove(cp) for cp in enforce if cp in all_par]    #remove enforced parameters from all_par
+
             if show_steps: print(f"{'Param':7s} : {'BIC':6s} N_pars \n---------------------------")
 
             del_BIC = -np.inf # bic_ratio = 0 # bf = np.inf
@@ -674,7 +711,7 @@ class load_lightcurves:
                 for p in all_par:
                     dtmp = best_pars.copy()   #always include offset
                     dtmp[p] = 0
-                    out = _decorr(self._fpath+file, **self._tra_occ_pars,**dtmp,
+                    out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filnames[j]],u2=ld_u2[self._filnames[j]],**dtmp,
                                     cheops=cheops_flag[j], decorr_bound=decorr_bound)
                     if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                     pars_bic[p] = out.bic
@@ -692,14 +729,14 @@ class load_lightcurves:
                     best_bic = par_in_bic
                     all_par.remove(par_in)            
                       
-            result = _decorr(self._fpath+file, **self._tra_occ_pars,
+            result = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filnames[j]],u2=ld_u2[self._filnames[j]],
                                 **best_pars, cheops=cheops_flag[j], decorr_bound=decorr_bound)
             self._decorr_result.append(result)
             print(f"BEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
             
             #calculate determined trend and tra/occ model over all data(no mask)
             pps = result.params.valuesdict()
-            t_model.append(_decorr(self._fpath+file,**pps, cheops=cheops_flag[j], return_models=True))
+            self._tmodel.append(_decorr(self._fpath+file,**pps, cheops=cheops_flag[j], return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dt"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -715,7 +752,7 @@ class load_lightcurves:
                 # blpars["gp"].append("y")  #for gp in roll-angle (mostly needed)
 
         if plot_model:
-            _plot_data(self,plot_cols=(0,1,2),col_labels=("time","flux"),model_overplot=t_model)
+            _plot_data(self,plot_cols=(0,1,2),col_labels=("time","flux"),model_overplot=self._tmodel)
         
         if np.any(cheops): 
             print(_text_format.BOLD + f"\nSetting-up spline for roll-angle decorrelation."+ _text_format.END +\
@@ -731,13 +768,21 @@ class load_lightcurves:
 
             if isinstance(self._tra_occ_pars["L"], (list, tuple)):
                 if verbose: print(_text_format.BOLD + "\nSetting-up occultation pars from input values" +_text_format.END)
-                self.setup_occultation("all",start_depth=tuple(self._tra_occ_pars["L"]), verbose=verbose)
+                self.setup_occultation("all",start_depth=self._tra_occ_pars["L"], verbose=verbose)
+            else:
+                self.setup_occultation(verbose=False)
             
             if all([p in self._tra_occ_pars for p in["Period","Duration","Impact_para","RpRs","Eccentricity", "omega", "T_0"]]):
                 if verbose: print(_text_format.BOLD + "\nSetting-up transit pars from input values" +_text_format.END)
                 self.setup_transit_rv(RpRs=self._tra_occ_pars["RpRs"], Impact_para=self._tra_occ_pars["Impact_para"], T_0=self._tra_occ_pars["T_0"],
                                     Period=self._tra_occ_pars["Period"], Duration=self._tra_occ_pars["Duration"], 
                                     Eccentricity=self._tra_occ_pars["Eccentricity"], omega=self._tra_occ_pars["omega"], verbose=verbose)
+            
+            # if all([p in self._tra_occ_pars for p in ["u1","u2"]]):
+            if verbose: print(_text_format.BOLD + "\nSetting-up Limb darkening pars from input values" +_text_format.END)
+            self.limb_darkening(c1=u1, c2=u2, verbose=verbose)
+
+
         return self._decorr_result
     
     
@@ -846,7 +891,7 @@ class load_lightcurves:
             return clipped_indices
            
     
-    def split_transits(self, filename=None, P=None, t_ref=None, baseline_amount=0.3, input_t0s=None, show_plot=True, save_separate=False):
+    def split_transits(self, filename=None, P=None, t_ref=None, baseline_amount=0.3, input_t0s=None, show_plot=True, save_separate=True, same_filter=True):
     
         """
         Function to split the transits in the data into individual transits and save them in separate files or to remove a certain amount of data points around the transits while keeping them in the original file.
@@ -875,7 +920,10 @@ class load_lightcurves:
             set true to plot the data and show split points.
             
         save_separate: bool;
-            set True to separately save each transit and its baseline_amount around it in a new file.
+            set True to separately save each transit and its baseline_amount around it in a new file. Default is True.
+
+        same_filter: bool; 
+            set True to save the split transits in the same filter as the original file. Default is True.
         """
 
         if filename==None: 
@@ -958,7 +1006,6 @@ class load_lightcurves:
             self._lamdas.remove(_lbd)
             self._names.remove(filename)
 
-
             for i in range(len(t0s)):
                 
                 tr_data = data[indz[i]]
@@ -970,12 +1017,16 @@ class load_lightcurves:
                 print("Saved " + self._fpath + tr_filename)
 
                 self._names.append(tr_filename)
-                self._filters.append(_flt+str(i))
+                if same_filter: self._filters.append(_flt)
+                else: self._filters.append(_flt+str(i))
+                # self._filnames   = np.array(list(sorted(set(self._filters),key=self._filters.index)))
+
                 self._lamdas.append(_lbd)
+        self.lc_baseline(re_init=True,verbose=False)
 
             
     def lc_baseline(self, dt=None,  dphi=None, dx=None, dy=None, dconta=None, 
-                 dsky=None, dsin=None, grp=None, grp_id=None, gp="n", verbose=True):
+                 dsky=None, dsin=None, grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
         """
             Define lightcurve baseline model parameters to fit.
             Each baseline decorrelation parameter should be a list of integers specifying the polynomial order for each light curve.
@@ -999,10 +1050,14 @@ class load_lightcurves:
             gp : list (same length as file_list); 
                 list containing 'y', 'n', or 'ce' to specify if a gp will be fitted to a light curve. +\
                     'ce' indicates that the celerite package will be used for the gp. 
+            
+            re_init : bool;
+                if True, re-initialize all other methods to empty. Default is False.
 
         """
         dict_args = locals().copy()     #get a dictionary of the input arguments for easy manipulation
         _ = dict_args.pop("self")            #remove self from dictionary
+        _ = dict_args.pop("re_init")            #remove self from dictionary
         _ = dict_args.pop("verbose")
 
         n_lc = len(self._names)
@@ -1035,13 +1090,13 @@ class load_lightcurves:
             if self._show_guide: print("\nNext: use method `add_GP` to include GPs for the specified lcs. Get names of lcs with GPs using `._gp_lcs` attribute of the lightcurve object.")
 
         #initialize other methods to empty incase they are not called/have not been called
-        if not hasattr(self,"_spline"):        self.add_spline(None, verbose=False)
-        if not hasattr(self,"_config_par"):    self.setup_transit_rv(verbose=False)
-        if not hasattr(self,"_ddfs"):          self.transit_depth_variation(verbose=False)
-        if not hasattr(self,"_occ_dict"):      self.setup_occultation(verbose=False)
-        if not hasattr(self,"_contfact_dict"): self.contamination_factors(verbose=False)
-        if not hasattr(self,"_ld_dict"):       self.limb_darkening(verbose=False)
-        if not hasattr(self,"_stellar_dict"):  self.stellar_parameters(verbose=False)
+        if not hasattr(self,"_spline") or re_init:        self.add_spline(None, verbose=False)
+        if not hasattr(self,"_config_par") or re_init:    self.setup_transit_rv(verbose=False)
+        if not hasattr(self,"_ddfs") or re_init:          self.transit_depth_variation(verbose=False)
+        if not hasattr(self,"_occ_dict") or re_init:      self.setup_occultation(verbose=False)
+        if not hasattr(self,"_contfact_dict") or re_init: self.contamination_factors(verbose=False)
+        if not hasattr(self,"_ld_dict") or re_init:       self.limb_darkening(verbose=False)
+        if not hasattr(self,"_stellar_dict") or re_init:  self.stellar_parameters(verbose=False)
 
     def add_spline(self, par = "air", knots_every=45, periodicity=360,verbose=True):
         """
@@ -1300,10 +1355,10 @@ class load_lightcurves:
         depth_per_group     = [d[0] for d in transit_depth_per_group]
         depth_err_per_group = [d[1] for d in transit_depth_per_group]
 
-        assert isinstance(prior_width, tuple),f"transit_depth_variation: prior_width must be tuple with lower and upper widths."
+        assert isinstance(prior_width, tuple),f"transit_depth_variation(): prior_width must be tuple with lower and upper widths."
         prior_width_lo, prior_width_hi = prior_width
 
-        assert isinstance(bounds, tuple),f"transit_depth_variation: bounds must be tuple with lower and upper values."
+        assert isinstance(bounds, tuple),f"transit_depth_variation(): bounds must be tuple with lower and upper values."
         bounds_lo, bounds_hi = bounds
 
 
@@ -1320,7 +1375,7 @@ class load_lightcurves:
 
         
         assert len(depth_per_group)== len(depth_err_per_group)== ngroup, \
-            f"transit_depth_variation: length of depth_per_group and depth_err_per_group must be equal to the number of unique groups (={ngroup}) defined in `lc_baseline`"
+            f"transit_depth_variation(): length of depth_per_group and depth_err_per_group must be equal to the number of unique groups (={ngroup}) defined in `lc_baseline`"
         
         nphot      = len(self._names)             # the number of photometry input files
 
@@ -1332,11 +1387,11 @@ class load_lightcurves:
         self._ddfs.prior_width_lo      = prior_width_lo
         self._ddfs.prior_width_hi      = prior_width_hi
         if divwhite=="y":
-            assert ddFs=='n', 'transit_depth_variation: you can not do divide-white and not fit ddfs!'
+            assert ddFs=='n', 'transit_depth_variation(): you can not do divide-white and not fit ddfs!'
             
             for i in range(nphot):
                 if (self._bases[i][6]>0):
-                    _raise(ValueError, 'transit_depth_variation: you can not have CNMs active and do divide-white')
+                    _raise(ValueError, 'transit_depth_variation(): you can not have CNMs active and do divide-white')
         
 
         if len(self._names)>0: 
@@ -1376,7 +1431,7 @@ class load_lightcurves:
             else: filters_occ= [filters_occ]
         if filters_occ is None: filters_occ = []
 
-        assert isinstance(start_depth,(int,float,tuple,list)), f"setup_occulation:start depth must be list of tuple/float for depth in each filter or tuple/float for same in all filters."
+        assert isinstance(start_depth,(int,float,tuple,list)), f"setup_occulation():start depth must be list of tuple/float for depth in each filter or tuple/float for same in all filters."
         if isinstance(start_depth, (int,float,tuple)): start_depth= [start_depth]
         # unpack start_depth input
         start_value, prior, prior_mean, prior_width_hi, prior_width_lo, bounds_hi, bounds_lo = [],[],[],[],[],[],[]
@@ -1408,7 +1463,7 @@ class load_lightcurves:
                 bounds_lo.append(dp[0])
                 bounds_hi.append(dp[2])
 
-            else: _raise(TypeError, f"setup_occultation: float or tuple (of len 2 or 3) was expected but got the value {dp} in start_depth.")
+            else: _raise(TypeError, f"setup_occultation(): float or tuple (of len 2 or 3) was expected but got the value {dp} in start_depth.")
 
 
         DA = _reversed_dict(locals().copy())
@@ -1428,12 +1483,12 @@ class load_lightcurves:
 
         if filters_occ != []:
             for f in filters_occ: assert f in self._filnames, \
-                f"setup_occultation: {f} is not in list of defined filters"
+                f"setup_occultation(): {f} is not in list of defined filters"
             
             for par in DA.keys():
                 assert isinstance(DA[par], (int,float,str)) or \
                     (isinstance(DA[par], list) and ( (len(DA[par]) == nocc) or (len(DA[par]) == 1))), \
-                    f"setup_occultation: length of input {par} must be equal to the length of filters_occ (={nocc}) or float or None."
+                    f"setup_occultation(): length of input {par} must be equal to the length of filters_occ (={nocc}) or float or None."
 
                 if (isinstance(DA[par], list) and len(DA[par]) == 1):  DA[par] = DA[par]*nocc
                 if isinstance(DA[par], (int,float,str)):             DA[par] = [DA[par]]*nocc
@@ -1685,7 +1740,7 @@ class load_lightcurves:
                 section must be one of {possible_sections}."
             _print_output(self, section)
 
-    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, return_fig=False):
+    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, show_decorr_model=False, return_fig=False):
         """
             visualize data
 
@@ -1706,6 +1761,9 @@ class load_lightcurves:
 
             fit_order : int;
                 order of polynomial to fit to the plotted data columns to visualize correlation.
+
+            show_decorr_model : bool;
+                show decorrelation model if decorrelation has been done.
             
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
@@ -1720,12 +1778,18 @@ class load_lightcurves:
             f"plot: col_labels must be tuple of length 2, but is {type(col_labels)} and length of {len(col_labels)}."
         
         assert isinstance(fit_order,int),f'fit_order must be an integer'
+
+        if show_decorr_model:
+            if not hasattr(self,"_tmodel"): 
+                print("cannot show decorr model since decorrelation has not been done. First, use `lc_data.get_decorr()` to launch decorrelation.")
+                show_decorr_model = False
         
         if col_labels is None:
             col_labels = ("time", "flux") if plot_cols[:2] == (0,1) else (f"column[{plot_cols[0]}]",f"column[{plot_cols[1]}]")
         
         if self._names != []:
-            fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, figsize=figsize, fit_order=fit_order)
+            fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, figsize=figsize, fit_order=fit_order,
+                            model_overplot=self._tmodel if show_decorr_model else None)
             if return_fig: return fig
         else: print("No data to plot")
     
@@ -2365,31 +2429,44 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
 
 
 
-class load_chains:
-    def __init__(self,chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl"):
-        assert os.path.exists(chain_file) or os.path.exists(burnin_chain_file) , f"file {chain_file} or {burnin_chain_file}  does not exist in this directory"
+class load_result:
+    def __init__(self, folder="output",chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl"):
+        chain_file        = folder+"/"+chain_file
+        burnin_chain_file = folder+"/"+burnin_chain_file
+        self._folder = folder
+        assert os.path.exists(chain_file) or os.path.exists(burnin_chain_file) , f"file {chain_file} or {burnin_chain_file}  does not exist in the given directory"
 
         if os.path.exists(chain_file):
             self._chains = pickle.load(open(chain_file,"rb"))
         if os.path.exists(burnin_chain_file):
             self._burnin_chains = pickle.load(open(burnin_chain_file,"rb"))
 
-        self._par_names = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
-        self.params_names = list(self._par_names)
+        self._par_names     = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
+        self.params_names   = list(self._par_names)
 
+        #reconstruct posterior from dictionary of chains
+        if hasattr(self,"_chains"):
+            posterior = np.array([ch for k,ch in self._chains.items()])
+            posterior = np.moveaxis(posterior,0,-1)
+            s = posterior.shape
+
+            #FLATTEN posterior
+            self.flat_posterior = posterior.reshape((s[0]*s[1],s[2]))
+
+        #retrieve summary statistics of the fit
         try:
-            ind_para = pickle.load(open(".par_config.pkl","rb"))
-            stat_vals = pickle.load(open(".stat_vals.pkl","rb"))
-            self.params_median  = stat_vals["med"]
-            self.params_max     = stat_vals["max"]
-            self.params_bestfit = stat_vals["bf"]
+            self._ind_para      = pickle.load(open(folder+"/.par_config.pkl","rb"))
+            self._stat_vals     = pickle.load(open(folder+"/.stat_vals.pkl","rb"))
+            self.params_median  = self._stat_vals["med"]
+            self.params_max     = self._stat_vals["max"]
+            self.params_bestfit = self._stat_vals["bf"]
         except:
             pass
         
     def __repr__(self):
         return f'Object containing chains (main or burn-in) from mcmc. \
-                \nParameters in chain are:\n\t {self._par_names} \
-                \n\nuse `plot_chains`, `plot_burnin_chains`, `plot_corner` or `plot_posterior` methods on selected parameters to visualize results.'
+                \nParameters in chain are:\n\t {self.params_names} \
+                \n\nuse `plot_chains()`, `plot_burnin_chains()`, `plot_corner()` or `plot_posterior()` methods on selected parameters to visualize results.'
         
     def plot_chains(self, pars=None, figsize = None, thin=1, discard=0, alpha=0.05,
                     color=None, label_size=12, force_plot = False):
@@ -2400,12 +2477,29 @@ class load_chains:
             ----------
             pars: list of str;
                 parameter names to plot. Plot less than 20 parameters at a time for clarity.
+
+            figsize: tuple of length 2;
+                Figure size. If None, optimally determined.
         
             thin : int;
                 factor by which to thin the chains in order to reduce correlation.
 
             discard : int;
                 to discard first couple of steps within the chains. 
+
+            alpha : float;
+                transparency of the lines in the plot.
+
+            color : str;
+                color of the lines in the plot.
+
+            label_size : int;
+                size of the labels in the plot.
+
+            force_plot : bool;
+                if True, plot more than 20 parameters at a time.
+
+            
             
         """
         assert pars is None or isinstance(pars, list) or pars == "all", \
@@ -2626,7 +2720,8 @@ class load_chains:
             Examples
             --------
             >>> import CONAN3
-            >>> results = CONAN3.load_result_array()
+            >>> res=CONAN3.load_result()
+            >>> results = res.load_result_array()
             >>> list(results.keys())
             ['lc8det_out_full.dat', 'lc6bjd_out_full.dat']
 
@@ -2640,12 +2735,12 @@ class load_chains:
             >>> plt.plot(df["time"], df["transit"],"g")
             
         """
-        out_files_lc = sorted([ f  for f in os.listdir() if '_out_full.dat' in f])
-        out_files_rv = sorted([ f  for f in os.listdir() if '_out.dat' in f])
+        out_files_lc = sorted([ f  for f in os.listdir(self._folder) if '_out_full.dat' in f])
+        out_files_rv = sorted([ f  for f in os.listdir(self._folder) if '_out.dat' in f])
         all_files = out_files_lc+out_files_rv
         results = {}
         for f in all_files:
-            df = pd.read_fwf(f, header=0)
+            df = pd.read_fwf(self._folder+"/"+f, header=0)
             df = df.rename(columns={'# time': 'time'})
             results[f] = df
         print(f"Output files loaded: {all_files} ")
@@ -2653,8 +2748,8 @@ class load_chains:
 
     def make_output_file(self, stat="median"):
         """
-        make output model file ("*_out_full.dat") from parameters obtained using different statistic on the posterior.
-        if a *_out_full.dat file already exists, it is overwritten (so be sure!!!).
+        make output model file ("*_out_full.dat") from parameters obtained using different summary statistic on the posterior.
+        if a *_out_full.dat fi""le already exists, it is overwritten (so be sure!!!).
 
         Parameters
         ----------
@@ -2662,7 +2757,6 @@ class load_chains:
             posterior summary statistic to use for model calculation, must be one of ["median","max","bestfit"], by default "median".
             "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
             is the parameter combination that gives the maximum joint posterior probability.
-
         """
         
         from CONAN3.logprob_multi_sin_v4 import logprob_multi
@@ -2672,50 +2766,60 @@ class load_chains:
         if   stat == "median":  stat = "med"
         elif stat == "bestfit": stat = "bf"
 
-        ind_para = pickle.load(open(".par_config.pkl","rb"))
-        stat_vals = pickle.load(open(".stat_vals.pkl","rb"))
-
-        mval2, merr2, T0_post, p_post = logprob_multi(stat_vals[stat],*ind_para,make_out_file=True, verbose=True)
+        mval2, merr2, T0_post, p_post = logprob_multi(self._stat_vals[stat],*self._ind_para,make_out_file=True, verbose=True)
 
         return
+    
+    def get_model(self, params=None, make_output_file=False):
+        """
+        Get model from CONAN3 fit using specified parameters. 
+        The median posterior parameters from the fit are used if params is None
+        If make_output_file is True, the output file ("*_out_full.dat") is also created.
+        """
+        from CONAN3.logprob_multi_sin_v4 import logprob_multi
 
-def load_result_array():
-    """
-        Load result array from CONAN3 fit allowing for customised plots.
-        All files with '_out.dat' or '_out_full.dat' are loaded. 
+        if params is None: params = self.params_median
+        mod = logprob_multi(params,*self._ind_para,make_out_file=make_output_file,get_model=True)
+        return mod
 
-        Returns:
-        --------
-            results : dict;
-                dictionary of holding the arrays for each output file.
+
+# def load_result_array():
+#     """
+#         Load result array from CONAN3 fit allowing for customised plots.
+#         All files with '_out.dat' or '_out_full.dat' are loaded. 
+
+#         Returns:
+#         --------
+#             results : dict;
+#                 dictionary of holding the arrays for each output file.
             
-        Examples
-        --------
-        >>> import CONAN3
-        >>> results = CONAN3.load_result_array()
-        >>> list(results.keys())
-        ['lc8det_out_full.dat', 'lc6bjd_out_full.dat']
+#         Examples
+#         --------
+#         >>> import CONAN3
+#         >>> results = CONAN3.load_result_array()
+#         >>> list(results.keys())
+#         ['lc8det_out_full.dat', 'lc6bjd_out_full.dat']
 
-        >>> df1 = results['lc8det_out_full.dat']
-        >>> df1.keys()
-        ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
+#         >>> df1 = results['lc8det_out_full.dat']
+#         >>> df1.keys()
+#         ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
 
-        >>> #plot arrays
-        >>> plt.plot(df["time"], df["flux"],"b.")
-        >>> plt.plot(df["time"], df["gp*base"],"r")
-        >>> plt.plot(df["time"], df["transit"],"g")
+#         >>> #plot arrays
+#         >>> plt.plot(df["time"], df["flux"],"b.")
+#         >>> plt.plot(df["time"], df["gp*base"],"r")
+#         >>> plt.plot(df["time"], df["transit"],"g")
         
-    """
-    warn('This function call is deprecated. Use `res=CONAN3.load_chains()` and then `res.load_result_array()`,\
-        or directly from the returned result object of the fit.', DeprecationWarning, stacklevel=2)
+#     """
+#     warn('This function call is deprecated. Use `res=CONAN3.load_result()` and then `res.load_result_array()`,\
+#         or directly from the returned result object of the fit.', DeprecationWarning, stacklevel=2)
 
-    out_files_lc = sorted([ f  for f in os.listdir() if '_out_full.dat' in f])
-    out_files_rv = sorted([ f  for f in os.listdir() if '_out.dat' in f])
-    all_files = out_files_lc+out_files_rv
-    results = {}
-    for f in all_files:
-        df = pd.read_fwf(f, header=0)
-        df = df.rename(columns={'# time': 'time'})
-        results[f] = df
-    print(f"Output files loaded: {all_files} ")
-    return results
+#     out_files_lc = sorted([ f  for f in os.listdir() if '_out_full.dat' in f])
+#     out_files_rv = sorted([ f  for f in os.listdir() if '_out.dat' in f])
+#     all_files = out_files_lc+out_files_rv
+#     results = {}
+#     for f in all_files:
+#         df = pd.read_fwf(f, header=0)
+#         df = df.rename(columns={'# time': 'time'})
+#         results[f] = df
+#     print(f"Output files loaded: {all_files} ")
+#     return results

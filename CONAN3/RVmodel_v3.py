@@ -6,7 +6,7 @@ import scipy
 
 #plt.ion()
 
-def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV, gammaind,get_model=False):
+def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,nocc,nRV,nphot,j,RVnames,bvarsRV, gammaind,get_model=False,out_folder=""):
 
     #RVmes = np.copy(farr[indlist[nphot+j][0]])
     #RVerr = np.copy(earr[indlist[nphot+j][0]])
@@ -116,7 +116,7 @@ def get_RVmod(params,tt,RVmes,RVerr,bis,fwhm,contra,nfilt,baseLSQ,inmcmc,nddf,no
 
 # write the RVcurve and the model to file if we're not inside the MCMC
     if (inmcmc == 'n'):
-        outfile=RVnames[j][:-4]+'_out.dat'
+        outfile=out_folder+"/"+RVnames[j][:-4]+'_out.dat'
         phases = ((tt-params[0])/params[4]) - np.round( ((tt-params[0])/params[4])) 
         of=open(outfile,'w')
         of.write("%10s %10s %10s %10s %10s %10s %10s %10s\n" %("# time","RV","error","full_mod","base","Rvmodel","det_RV", "phase"))
