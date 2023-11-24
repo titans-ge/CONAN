@@ -234,7 +234,7 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
         trend += params["A3"]*df["cols3"]  + params["B3"]*df["cols3"]**2 #x
         trend += params["A4"]*df["cols4"]  + params["B4"]*df["cols4"]**2 #y
         trend += params["A6"]*df["cols6"]  + params["B6"]*df["cols6"]**2 #bg
-        trend += params["A7"]*df["cols7"] + params["B7"]*df["cols7"]**2 #conta
+        trend += params["A7"]*df["cols7"]  + params["B7"]*df["cols7"]**2 #conta
         
         if cheops is False:
             trend += params["A5"]*df["cols5"]  + params["B5"]*df["cols5"]**2 
@@ -295,18 +295,18 @@ def _print_output(self, section: str, file=None):
     if self._obj_type == "lc_obj":
         assert section in lc_possible_sections, f"{section} not a valid section of `lc_data`. \
             section must be one of {lc_possible_sections}."
+        max_name_len = max([len(n) for n in self._names]+[len("name")])      #max length of lc filename
+        max_filt_len = max([len(n) for n in self._filters]+[len("filter")])  #max length of lc filter name
     if self._obj_type == "rv_obj":
         assert section == "rv_baseline", f"The only valid section for an RV data object is 'rv_baseline' but {section} given."
     if self._obj_type == "mcmc_obj":
         assert section == "mcmc",  f"The only valid section for an mcmc object is 'mcmc' but {section} given."
 
     if section == "lc_baseline":
-        max_name_len = max([len(n) for n in self._names]+[len("name")])  
-        max_filt_len = max([len(n) for n in self._filters]+[len("filter")])  
         _print_lc_baseline = f"""#--------------------------------------------- \n# Input lightcurves filters baseline function--------------""" +\
-                            f""" \n{"name":{max_name_len}s}\t{"filter":{max_filt_len}s}\t {"lamda":8s}\t {"time":4s}\t {"roll":4s}\t x\t y\t {"conta":5s}\t sky\t sin\t group\t id\t GP"""
+                            f""" \n{"name":{max_name_len}s}  {"filter":{max_filt_len}s}\t {"lamda":8s} {"col1":4s}\t {"col3":4s}  {"col4":4s}  {"col5":4s}  {"col6":4s}  {"col7":4s}\t {"sin":3s}\t {"group":5s}\t {"id":2s}\t {"GP":2s}"""
         #define print out format
-        txtfmt = f"\n{{0:{max_name_len}s}}\t{{1:{max_filt_len}s}}"+"\t{2:8s}\t {3:4d}\t {4:3d}\t {5}\t {6}\t {7:5d}\t {8:3d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
+        txtfmt = f"\n{{0:{max_name_len}s}}  {{1:{max_filt_len}s}}"+"\t{2:8s} {3:4d}\t {4:4d}  {5:4d}  {6:4d}  {7:4d}  {8:4d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
         for i in range(len(self._names)):
             t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), *self._bases[i], self._groups[i], self._useGPphot[i])
             _print_lc_baseline += t
@@ -315,11 +315,11 @@ def _print_output(self, section: str, file=None):
     if section == "gp":
         DA = self._GP_dict
         _print_gp = f"""# -------- photometry GP input properties: komplex kernel -> several lines -------------- """+\
-                     f"""\n{'name':13s} {'para':5s} kernel WN {'scale':7s} s_step {'s_pri':5s} s_pri_wid {'s_up':5s} """+\
-                         f"""{'s_lo':5s} {'metric':7s} m_step {'m_pri':6s} m_pri_wid {'m_up':4s} {'m_lo':4s}"""
+                     f"""\n{"name":{max_name_len}s} {'para':4s} {"kernel":6s} {"WN":2s} {'scale':7s} {"s_step":6s} {'s_pri':5s} {"s_pri_wid":9s} {'s_up':5s} """+\
+                         f"""{'s_lo':5s} {'metric':7s} {"m_step":6s} {'m_pri':6s} {"m_pri_wid":9s} {'m_up':4s} {'m_lo':4s}"""
         #define gp print out format
         if DA["lc_list"] != []:
-            txtfmt = "\n{0:13s} {1:5s} {2:6s} {3:2s} {4:5.1e} {5:6.4f} {6:5.1f} {7:9.2e} {8:4.1f} {9:4.1f} {10:5.1e} {11:6.4f} {12:5.2f} {13:9.2e} {14:4.1f} {15:4.1f}"        
+            txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:4s} {2:6s} {3:2s} {4:7.1e} {5:6.4f} {6:5.1f} {7:9.2e} {8:5.1f} {9:5.1f} {10:6.1e} {11:6.4f} {12:6.2f} {13:9.2e} {14:4.1f} {15:4.1f}"        
             for i in range(len(DA["lc_list"])):
                 t = txtfmt.format(DA["lc_list"][i], DA["pars"][i],DA["kernels"][i],
                                     DA["WN"][i], DA["scale"][i], DA["s_step"][i], 
@@ -586,14 +586,14 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def get_decorr(self, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, u1=0, u2=0, mask=False, delta_BIC=-1, decorr_bound =(-1,1),
+    def get_decorr(self, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, u1=0, u2=0, mask=False, delta_BIC=-3, decorr_bound =(-1,1),
                      cheops=False, exclude=[],enforce=[],verbose=True, show_steps=False, plot_model=True, use_result=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
             It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
             It uses columns 0,3,4,5,6,7 to construct the polynomial trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order in column i.
-            If cheops is True, A5, B5 are the sin and cos of the roll-angle while A5_i, B5_i are the corresponding harmonics with i=2,3. If these are significant, a gp in roll-angle will be needed.
-            Decorrelation parameters that reduces the BIC by 1(i.e delta_BIC = -1) are iteratively selected.
+            If cheops is True, A5, B5 are the sin and cos of the roll-angle while A5_i, B5_i are the corresponding harmonics with i=2,3. If these are significant, a gp or spline in roll-angle will be needed.
+            Decorrelation parameters that reduces the BIC by 3(i.e delta_BIC = -3) are iteratively selected.
             The result can then be used to populate the `lc_baseline` method, if use_result is set to True.
 
             Parameters:
@@ -608,7 +608,7 @@ class load_lightcurves:
     
             delta_BIC : float (negative);
                 BIC improvement a parameter needs to provide in order to be considered relevant for decorrelation. + \
-                    Default is conservative and set to -1 i.e, parameters needs to lower the BIC by 1 to be included as decorrelation parameter.
+                    Default is conservative and set to -3 i.e, parameters needs to lower the BIC by 3 to be included as decorrelation parameter.
 
             mask : bool ;
                 If True, transits and eclipses are masked using T_0, P and dur which must be float/int.
@@ -618,12 +618,15 @@ class load_lightcurves:
 
             cheops : Bool or list of Bool;
                 Flag to specify if data is from CHEOPS with col5 being the roll-angle. if True, a linear + \
-                    fourier model (sin and cos) up to 3rd harmonic in roll-angle is used for col5.
+                fourier model (sin and cos) up to 3rd harmonic in roll-angle is used for col5.
                 If Bool is given, the same is used for all input lc, else a list specifying bool for each lc is required.
                 Default is False.
 
             exclude : list of int;
-                list of column numbers to exclude from decorrelation. Default is [].
+                list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is [].
+
+            enforce : list of int;
+                list of decorr params (e.g. ['B3', 'A5']) to enforce in decorrelation. Default is [].
 
             verbose : Bool, optional;
                 Whether to show the table of baseline model obtained. Defaults to True.
@@ -642,7 +645,6 @@ class load_lightcurves:
             decorr_result: list of result object
                 list containing result object for each lc.
         """
-        #TODO: LDs priors/values can be different for each filter. implement.
         assert isinstance(exclude, list), f"get_decorr: exclude must be a list of column numbers to exclude from decorrelation but {exclude} given."
         for c in exclude: assert isinstance(c, int), f"get_decorr: column number to exclude from decorrelation must be an integer but {c} given in exclude."
 
@@ -654,8 +656,8 @@ class load_lightcurves:
         if isinstance(u2, list): assert len(u2) == nfilt, f"get_decorr(): u2 must be a list of same length as number of unique filters {nfilt} but {len(u2)} given." 
         else: u2=[u2]*nfilt
 
-        blpars = {"dt":[], "dphi":[],"dx":[], "dy":[], "dconta":[], "dsky":[],"gp":[]}  #inputs to lc_baseline method
-        self._decorr_result = []   #list of decorr result for each lc. #TODO: consider storing as a dictionary with file as key
+        blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[], "dcol6":[], "dcol7":[],"gp":[]}  #inputs to lc_baseline method
+        self._decorr_result = []   #list of decorr result for each lc.
         self._tra_occ_pars = dict(T_0=T_0, Period=Period, Duration=Duration, L=L, Impact_para=Impact_para, \
             RpRs=RpRs, Eccentricity=Eccentricity, omega=omega)#, u1=u1,u2=u2)  #transit/occultation parameters
         ld_u1, ld_u2 = {},{}
@@ -739,16 +741,16 @@ class load_lightcurves:
             self._tmodel.append(_decorr(self._fpath+file,**pps, cheops=cheops_flag[j], return_models=True))
 
             #set-up lc_baseline model from obtained configuration
-            blpars["dt"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
-            blpars["dx"].append( 2 if pps["B3"]!=0 else 1 if  pps["A3"]!=0 else 0)
-            blpars["dy"].append( 2 if pps["B4"]!=0 else 1 if  pps["A4"]!=0 else 0)
-            blpars["dconta"].append( 2 if pps["B6"]!=0 else 1 if  pps["A6"]!=0 else 0)
-            blpars["dsky"].append( 2 if pps["B7"]!=0 else 1 if  pps["A7"]!=0 else 0)
+            blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
+            blpars["dcol3"].append( 2 if pps["B3"]!=0 else 1 if  pps["A3"]!=0 else 0)
+            blpars["dcol4"].append( 2 if pps["B4"]!=0 else 1 if  pps["A4"]!=0 else 0)
+            blpars["dcol6"].append( 2 if pps["B6"]!=0 else 1 if  pps["A6"]!=0 else 0)
+            blpars["dcol7"].append( 2 if pps["B7"]!=0 else 1 if  pps["A7"]!=0 else 0)
             blpars["gp"].append("n")
             if not cheops_flag[j]:
-                blpars["dphi"].append( 2 if pps["B5"]!=0 else 1 if  pps["A5"]!=0 else 0)
+                blpars["dcol5"].append( 2 if pps["B5"]!=0 else 1 if  pps["A5"]!=0 else 0)
             else:
-                blpars["dphi"].append(0)
+                blpars["dcol5"].append(0)
                 # blpars["gp"].append("y")  #for gp in roll-angle (mostly needed)
 
         if plot_model:
@@ -1025,60 +1027,60 @@ class load_lightcurves:
         self.lc_baseline(re_init=True,verbose=False)
 
             
-    def lc_baseline(self, dt=None,  dphi=None, dx=None, dy=None, dconta=None, 
-                 dsky=None, dsin=None, grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
+    def lc_baseline(self, dcol0=None, dcol3=None, dcol4=None,  dcol5=None, dcol6=None, 
+                 dcol7=None, dsin=None, grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
         """
-            Define lightcurve baseline model parameters to fit.
-            Each baseline decorrelation parameter should be a list of integers specifying the polynomial order for each light curve.
-            e.g. Given 3 input light curves, if one wishes to fit a 2nd order time trend to only the first and third lightcurves,
-            then dt = [2, 0, 2].
-            The decorrelation parameters depend on the columns of the input light curve. Any desired array can be put in these columns to decorrelate against them irrespective of the name here (which would be modified soon).
+            Define baseline model parameters to fit for each light curve using the columns of the input data. dcol0 refers to decorrelation parameters for column 0, dcol3 for column 3 and so on.
+            Each baseline decorrelation parameter (dcolx) should be a list of integers specifying the polynomial order for column x for each light curve.
+            e.g. Given 3 input light curves, if one wishes to fit a 2nd order trend in column 0 to the first and third lightcurves,
+            then dcol0 = [2, 0, 2].
+            The decorrelation parameters depend on the columns (col) of the input light curve. Any desired array can be put in these columns to decorrelate against them. Note that col0 is usually the time array.
             The columns are:
-            * dt: column 0
-            * dx: colums 3
-            * dy: colums 4
-            * dphi: colums 5
-            * dconta: colums 6
-            * dsky: colums 7
+
 
             Parameters:
             -----------
-            dt, dx,dy,dphi,dconta,dsky : time, x_pos,roll_angle(col5)
+            dcol0, dcol3,dcol4,dcol5,dcol6,dcol7 : list of int;
+                polynomial order to fit to each column. Default is 0 for all columns.
+
             grp_id : list (same length as file_list);
                 group the different input lightcurves by id so that different transit depths can be fitted for each group.
 
             gp : list (same length as file_list); 
                 list containing 'y', 'n', or 'ce' to specify if a gp will be fitted to a light curve. +\
-                    'ce' indicates that the celerite package will be used for the gp. 
+                    'y' indicates that the george gp package will be used while 'ce' uses the celerite package.
             
             re_init : bool;
                 if True, re-initialize all other methods to empty. Default is False.
 
         """
-        dict_args = locals().copy()     #get a dictionary of the input arguments for easy manipulation
-        _ = dict_args.pop("self")            #remove self from dictionary
-        _ = dict_args.pop("re_init")            #remove self from dictionary
-        _ = dict_args.pop("verbose")
+        DA = locals().copy()     #get a dictionary of the input arguments for easy manipulation
+        _ = DA.pop("self")            #remove self from dictionary
+        _ = DA.pop("re_init")            #remove self from dictionary
+        _ = DA.pop("verbose")
 
         n_lc = len(self._names)
 
-        for par in dict_args.keys():
-            assert dict_args[par] is None or isinstance(dict_args[par], (int,str)) or \
-                (isinstance(dict_args[par], (list,np.ndarray)) and len(dict_args[par]) == n_lc), \
-                    f"lc_baseline: parameter {par} must be a list of length {n_lc} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
-            
-            if isinstance(dict_args[par], (int,str)): dict_args[par] = [dict_args[par]]*n_lc
-            elif dict_args[par] is None: dict_args[par] = [0]*n_lc
+        for par in DA.keys():
+            if isinstance(DA[par], (int,str)): DA[par] = [DA[par]]*n_lc      #use same for all lcs
+            elif DA[par] is None: DA[par] = ["n"]*n_lc if par=="gp" else [0]*n_lc   #no decorr or gp for all lcs
+            elif isinstance(DA[par], (list,np.ndarray)):
+                if par=="gp": assert len(DA[par]) == n_lc, f"lc_baseline: parameter `{par}` must be a list of length {n_lc} or str (if same is to be used for all LCs) or None."
+                else: assert len(DA[par]) == n_lc, f"lc_baseline: parameter `{par}` must be a list of length {n_lc} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
 
-        dict_args["grp_id"] = list(np.arange(1,n_lc+1)) if grp_id is None else grp_id
+            for p in DA[par]:
+                if par=="gp": assert p in ["y","n","ce"], f"lc_baseline: gp must be a list of 'y', 'n', or 'ce' for each lc but {p} given."
+                else: assert isinstance(p, int) and p<3, f"lc_baseline: decorrelation parameters must be a list of integers (max integer value = 2) but {p} given."
 
-        self._bases = [ [dict_args["dt"][i], dict_args["dphi"][i], dict_args["dx"][i], dict_args["dy"][i],
-                        dict_args["dconta"][i], dict_args["dsky"][i], dict_args["dsin"][i], 
-                        dict_args["grp"][i]] for i in range(n_lc) ]
+        DA["grp_id"] = list(np.arange(1,n_lc+1)) if grp_id is None else grp_id
 
-        self._groups = dict_args["grp_id"]
-        self._grbases = dict_args["grp"]
-        self._useGPphot= dict_args["gp"]
+        self._bases = [ [DA["dcol0"][i], DA["dcol3"][i], DA["dcol4"][i], DA["dcol5"][i],
+                        DA["dcol6"][i], DA["dcol7"][i], DA["dsin"][i], 
+                        DA["grp"][i]] for i in range(n_lc) ]
+
+        self._groups = DA["grp_id"]
+        self._grbases = DA["grp"]
+        self._useGPphot= DA["gp"]
         self._gp_lcs = np.array(self._names)[np.array(self._useGPphot) != "n"]     #lcs with gp == "y" or "ce"
 
         if verbose: _print_output(self,"lc_baseline")
@@ -1098,7 +1100,7 @@ class load_lightcurves:
         if not hasattr(self,"_ld_dict") or re_init:       self.limb_darkening(verbose=False)
         if not hasattr(self,"_stellar_dict") or re_init:  self.stellar_parameters(verbose=False)
 
-    def add_spline(self, par = "air", knots_every=45, periodicity=360,verbose=True):
+    def add_spline(self, par = None, knots_every=45, periodicity=360,verbose=True):
         """
             add spline to fit correlation along a column. for now the spline only works on column5 to correct roll-angle trends.
             This splits the data at the defined knots and fits a cubic spline to each section. A spline is used for all datasets.    
@@ -1106,7 +1108,7 @@ class load_lightcurves:
             Parameters
             ----------
             par : str, optional
-                axis to which to fit the spline, by default "air" for roll-angle detrending
+                column of input data to which to fit the spline. one of ["col0","col3","col4","col5","col6","col7"]. Default is None.
 
             knots_every : int, optional
                 distance between knots of the spline, by default 15 degrees for cheops data roll-angle 
@@ -1114,7 +1116,7 @@ class load_lightcurves:
             periodicity : int, optional
                 periodicity of the axis data. for cheops data in degress, the default is a periodicity is 360 degrees. set to zero if no periodicity.
         """
-        assert par in ["air","",None],"add_spline: par must either be set to None or 'air'"
+        assert par in ["col0","col3","col4","col5","col6","col7",None],"add_spline: par must either be set to None or a colums number in [0,3,4,5,6,7]."
         self._spline        = SimpleNamespace()
         self._spline.use    = True if par else False
         self._spline.knots  = knots_every
@@ -1138,7 +1140,7 @@ class load_lightcurves:
             pars : list of strings;
                 independent variable of the GP for each lightcurve name in lc_list. 
                 If a lightcurve filename is listed more than once in lc_list, par is used to apply a GP along a different axis.
-                For each lightcurve, `par` can be any of ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"]
+                For each lightcurve, `par` can be any of "col0", "col3", "col4", "col5", "col6", "col7", "col8". Right now only "col0" is supported for celerite
                 
             kernel : list of strings;
                 GP kernel for each lightcuve file in lc_list. Options: "mat32"
@@ -1237,8 +1239,8 @@ class load_lightcurves:
                 
         
         for p in DA["pars"]: 
-            assert p in ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"], \
-                f"add_GP: pars {p} cannot be the GP independent variable"             
+            assert p in ["col0", "col3", "col4", "col5", "col6", "col7", "col8"], \
+                f"add_GP: pars `{p}` cannot be the GP independent variable. Must be one of ['col0', 'col3', 'col4', 'col5', 'col6', 'col7', 'col8'] but onlt col0 supported for celerite"             
         
         
         assert len(DA["pars"]) == len(DA["kernels"]) == len(DA["WN"]) == n_list, f"add_GP:pars and kernels must have same length as lc_list (={len(lc_list)})"

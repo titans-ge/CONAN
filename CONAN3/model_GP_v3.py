@@ -207,9 +207,13 @@ class Transit_Model(Model):
 
 def basefunc_noCNM(coeff, ts, am, cx, cy, fwhm, sky,res,useSpline):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
-    bfunc=coeff[0]+coeff[1]*ts+coeff[2]*np.power(ts,2)+ coeff[3]*np.power(ts,3)+ coeff[4]*np.power(ts,4)+ +\
-        coeff[5]*am+coeff[6]*np.power(am,2)+coeff[7]*cx+coeff[8]*np.power(cx,2)+coeff[9]*cy+coeff[10]*np.power(cy,2)+ +\
-            coeff[11]*fwhm+coeff[12]*np.power(fwhm,2)+coeff[13]*sky+coeff[14]*np.power(sky,2)+coeff[15]*np.sin(ts*coeff[16]+coeff[17])
+    bfunc  = coeff[0]+coeff[1]*ts+coeff[2]*np.power(ts,2)+ coeff[3]*np.power(ts,3)+ coeff[4]*np.power(ts,4)     #time col0
+    bfunc += coeff[5]*cx+coeff[6]*np.power(cx,2)        #x col3
+    bfunc += coeff[7]*cy+coeff[8]*np.power(cy,2)        #y col4
+    bfunc += coeff[9]*am+coeff[10]*np.power(am,2)       #airmass col5
+    bfunc += coeff[11]*fwhm+coeff[12]*np.power(fwhm,2)  #fwhm/conta col6
+    bfunc += coeff[13]*sky+coeff[14]*np.power(sky,2)    #sky/bg col7
+    bfunc += coeff[15]*np.sin(ts*coeff[16]+coeff[17])   #sinusoidal col8
 
     if np.all(bfunc==np.ones_like(ts)) or isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to ones
         spl=np.ones_like(ts)

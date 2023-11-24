@@ -27,7 +27,7 @@ def basecoeff(ibase):
     # A coeff => time:  A[0] + A[1]*t + A[2]*t^2 + A[3]*t^3 + A[4]*t^4
     
     A_in=np.zeros((4,5), dtype=float)
-    
+    #[initial guess, step, min, max]
     if ibase[6] > 0:                          # if we have a CNM
         A_in[:,0]=[0.00,0.0001,-2.,2.1]       # set the starting value and limits of the 0th-order start at 0
     else:

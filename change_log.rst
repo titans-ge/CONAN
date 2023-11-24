@@ -5,6 +5,7 @@
 * get_decorr() also allows to exclude some columns from the decorrelation analysis while enforcing others
 * load_chain() has been renamed as load_result() which contains all the results from the MCMC run.
 * use can now specify output directory for the results using the "out_folder" argument of CONAN.fit_data().
+* columns of the input data are now described by col0, col3, col4, etc. instead of the legacy xshift, yshift which dont necessarily describe the input columns
 
 28-12-2022: version 3.0.5
 ~~~~~~~~~~~~

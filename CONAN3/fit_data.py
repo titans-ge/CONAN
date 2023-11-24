@@ -1,5 +1,4 @@
 from logging import exception
-from telnetlib import STATUS
 import numpy as np
 from types import SimpleNamespace
 import os
@@ -108,19 +107,19 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     groups     = lc._groups
     useGPphot  = lc._useGPphot
 
-    nphot      = len(names)             # the number of photometry input files
-    njumpphot  = np.zeros(nphot)
-    filnames   = np.array(list(sorted(set(filters),key=filters.index))) 
-    ulamdas    = np.array(list(sorted(set(lamdas),key=lamdas.index))) 
-    grnames    = np.array(list(sorted(set(groups))))
+    nphot      = len(names)                                                 # the number of photometry input files
+    njumpphot  = np.zeros(nphot)                                            # the number of jumping parameters for each photometry input file
+    filnames   = np.array(list(sorted(set(filters),key=filters.index)))     # the unique filter names
+    ulamdas    = np.array(list(sorted(set(lamdas),key=lamdas.index)))       # the unique wavelengths
+    grnames    = np.array(list(sorted(set(groups))))                        # the unique group names
     
-    nfilt      = len(filnames)
-    ngroup     = len(grnames)
-    useSpline  = lc._spline
+    nfilt      = len(filnames)                                              # the number of unique filters
+    ngroup     = len(grnames)                                               # the number of unique groups
+    useSpline  = lc._spline                                                 # use spline to interpolate the light curve
 
  #============GP Setup=============================
     #from load_lightcurves.add_GP()
-    GPchoices          = ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"]
+    GPchoices          = ["col0", "col3", "col4", "col5", "col6", "col7", "col8"]# ["time", "xshift", "yshift", "air", "fwhm", "sky", "eti"] #
     ndimGP             = len(GPchoices)
 
     GPphotlc           = np.zeros((nphot, ndimGP))
@@ -158,39 +157,39 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
         if nm == 'all':
             i = np.where(np.array(names) == nm)
-            GPjumping[0,k]=True
-            GPphotkerns[0,k]=DA_gp["kernels"][j]
-            GPphotpars1[0,k]=float(DA_gp["scale"][j])
-            GPphotstep1[0,k]=float(DA_gp["s_step"][j])
-            GPphotprior1[0,k]=float(DA_gp["s_pri"][j])
-            GPphotpriorwid1[0,k]=float(DA_gp["s_pri_wid"][j])
-            GPphotlim1up[0,k]=float(DA_gp["s_up"][j])
-            GPphotlim1lo[0,k]=float(DA_gp["s_lo"][j])
-            GPphotpars2[0,k]=float(DA_gp["metric"][j])
-            GPphotstep2[0,k]=float(DA_gp["m_step"][j])
-            GPphotprior2[0,k]=float(DA_gp["m_pri"][j])
-            GPphotpriorwid2[0,k]=float(DA_gp["m_pri_wid"][j])
-            GPphotlim2up[0,k]=float(DA_gp["m_up"][j])
-            GPphotlim2lo[0,k]=float(DA_gp["m_lo"][j])
-            GPall[0,k]=True
+            GPjumping[0, k]        = True
+            GPphotkerns[0, k]      = DA_gp["kernels"][j]
+            GPphotpars1[0, k]      = float(DA_gp["scale"][j])
+            GPphotstep1[0, k]      = float(DA_gp["s_step"][j])
+            GPphotprior1[0, k]     = float(DA_gp["s_pri"][j])
+            GPphotpriorwid1[0, k]  = float(DA_gp["s_pri_wid"][j])
+            GPphotlim1up[0, k]     = float(DA_gp["s_up"][j])
+            GPphotlim1lo[0, k]     = float(DA_gp["s_lo"][j])
+            GPphotpars2[0, k]      = float(DA_gp["metric"][j])
+            GPphotstep2[0, k]      = float(DA_gp["m_step"][j])
+            GPphotprior2[0, k]     = float(DA_gp["m_pri"][j])
+            GPphotpriorwid2[0, k]  = float(DA_gp["m_pri_wid"][j])
+            GPphotlim2up[0, k]     = float(DA_gp["m_up"][j])
+            GPphotlim2lo[0, k]     = float(DA_gp["m_lo"][j])
+            GPall[0, k]            = True
 
             if DA_gp["WN"][j] == 'y' and useGPphot[i]=='ce':
-                GPphotWNstart[0] = -8.   
-                GPphotWNstep[0] = 0.1 
-                GPphotWNprior[0] = 0.
+                GPphotWNstart[0]    = -8.   
+                GPphotWNstep[0]     = 0.1 
+                GPphotWNprior[0]    = 0.
                 GPphotWNpriorwid[0] = 0.
-                GPphotWNlimup[0] = -5
-                GPphotWNlimlo[0] = -12
-                GPphotWN[0] = 'all'
+                GPphotWNlimup[0]    = -5
+                GPphotWNlimlo[0]    = -12
+                GPphotWN[0]         = 'all'
 
             elif DA_gp["WN"][j] == 'y' and useGPphot[i]=='y':
-                GPphotWNstart[:] = np.log((GPphotWNstartppm/1e6)**2) # in absolute
-                GPphotWNstep[0] = 0.1
-                GPphotWNprior[0] = 0.0
+                GPphotWNstart[:]    = np.log((GPphotWNstartppm/1e6)**2) # in absolute
+                GPphotWNstep[0]     = 0.1
+                GPphotWNprior[0]    = 0.0
                 GPphotWNpriorwid[0] = 0.
-                GPphotWNlimup[0] = -3
-                GPphotWNlimlo[0] = -25.0
-                GPphotWN[0] = 'all'
+                GPphotWNlimup[0]    = -3
+                GPphotWNlimlo[0]    = -25.0
+                GPphotWN[0]         = 'all'
             elif DA_gp["WN"][j] == 'n':
                 GPphotWN[:] = 'n'
             else:
@@ -256,16 +255,16 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         lc._config_par["K"].step_size = 0   
     
     nRV=len(RVnames)             # the number of RV input files
-    njumpRV=np.zeros(nRV)
+    njumpRV=np.zeros(nRV)        # the number of jumping parameters for each RV input file
     
     gamma_in = np.zeros((nRV,7)) # set up array to contain the gamma values
-    extinpars = []
+    extinpars = []               # set up array to contain the names of the externally input parameters
 
  
 #============transit and RV jump parameters===============
     #from load_lightcurves.setup_transit_rv()
 
-    config_par = lc._config_par
+    config_par = lc._config_par     #load input transit and RV parameters from dict
     
    #rprs
     rprs0 = config_par['RpRs'].start_value
@@ -275,8 +274,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 config_par['RpRs'].prior_width_hi ]  
     rprs_ext = [config_par['RpRs'].prior_mean,config_par['RpRs'].prior_width_lo,\
                 config_par['RpRs'].prior_width_hi]    
-    if config_par['RpRs'].step_size != 0.: njumpphot=njumpphot+1
-    if (config_par['RpRs'].to_fit == 'n' and config_par['RpRs'].prior == 'p'):
+    if config_par['RpRs'].step_size != 0.: njumpphot=njumpphot+1                 # if step_size is 0, then rprs is not a jumping parameter
+    if (config_par['RpRs'].to_fit == 'n' and config_par['RpRs'].prior == 'p'):   # if to_fit is 'n' and prior is 'p', then rprs is an externally input parameter
         extinpars.append('RpRs')
 
     erprs0=np.copy(0)
@@ -308,7 +307,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             config_par['T_0'].bounds_hi,config_par['T_0'].prior_mean,config_par['T_0'].prior_width_lo,\
             config_par['T_0'].prior_width_hi]  
     T0_ext = [config_par['T_0'].prior_mean,config_par['T_0'].prior_width_lo,config_par['T_0'].prior_width_hi]    
-    if config_par['T_0'].step_size != 0. != 0.: 
+    if config_par['T_0'].step_size != 0.: 
         njumpphot=njumpphot+1
         njumpRV=njumpRV+1
 
@@ -321,7 +320,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             config_par['Period'].bounds_hi,config_par['Period'].prior_mean,config_par['Period'].prior_width_lo,\
             config_par['Period'].prior_width_hi]  
     per_ext = [config_par['Period'].prior_mean,config_par['Period'].prior_width_lo,config_par['Period'].prior_width_hi]    
-    if config_par['Period'].step_size != 0. != 0.: 
+    if config_par['Period'].step_size != 0.: 
         njumpphot=njumpphot+1
         njumpRV=njumpRV+1
 
@@ -330,9 +329,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
    #ecc
     ecc_in = [config_par['Eccentricity'].start_value,config_par['Eccentricity'].step_size,\
-        config_par['Eccentricity'].bounds_lo,config_par['Eccentricity'].bounds_hi,\
-        config_par['Eccentricity'].prior_mean,config_par['Eccentricity'].prior_width_lo,\
-        config_par['Eccentricity'].prior_width_hi]
+            config_par['Eccentricity'].bounds_lo,config_par['Eccentricity'].bounds_hi,\
+            config_par['Eccentricity'].prior_mean,config_par['Eccentricity'].prior_width_lo,\
+            config_par['Eccentricity'].prior_width_hi]
     eccpri= config_par['Eccentricity'].prior
     if config_par['Eccentricity'].step_size != 0.: 
         njumpRV=njumpRV+1
@@ -381,9 +380,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     
 #============ddfs ==========================
     #from load_lighcurves.transit_depth_variations()
-    drprs_op = lc._ddfs.drprs_op
-    divwhite = lc._ddfs.divwhite
-    ddfYN    = lc._ddfs.ddfYN
+    drprs_op = lc._ddfs.drprs_op    # drprs options --> [0., step, bounds_lo, bounds_hi, 0., width_lo, width_hi]
+    divwhite = lc._ddfs.divwhite    # do we do a divide-white?
+    ddfYN    = lc._ddfs.ddfYN       # do we do a depth-dependent fit?
                 
     grprs  = lc._ddfs.depth_per_group   # the group rprs values
     egrprs = lc._ddfs.depth_err_per_group  # the uncertainties of the group rprs values
@@ -409,8 +408,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     occ_in = np.zeros((nocc,7))
 
     for i, f in enumerate(DA_occ["filters_occ"]):
-        j = np.where(filnames == f )
-        k = np.where(np.array(lc._filters)== f)
+        j = np.where(filnames == f )                #   
+        k = np.where(np.array(lc._filters)== f)     #  get indices where the filter name is the same as the one in the input file
 
         occ_in[j,:] = [DA_occ["start_value"][i], DA_occ["step_size"][i], DA_occ["bounds_lo"][i], DA_occ["bounds_hi"][i],
                         DA_occ["prior_mean"][i], DA_occ["prior_width_lo"][i], DA_occ["prior_width_hi"][i] ]           
@@ -433,8 +432,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         k=np.where(np.array(lc._filters) == filnames[i])
 
         c1_in[j,:] = [DA_ld["c1"][i], DA_ld["step1"][i],DA_ld["bound_lo1"][i],DA_ld["bound_hi1"][i],DA_ld["c1"][i],DA_ld["sig_lo1"][i],DA_ld["sig_hi1"][i]]
-        c1_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else c1_in[j,5])
-        c1_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else c1_in[j,6])
+        c1_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else c1_in[j,5])   #sig_lo
+        c1_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else c1_in[j,6])   #sig_hi
         if c1_in[j,1] != 0.:
             njumpphot[k]=njumpphot[k]+1
 
@@ -446,8 +445,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             njumpphot[k]=njumpphot[k]+1
 
         c3_in[j,:] = [DA_ld["c3"][i], DA_ld["step3"][i],DA_ld["bound_lo3"][i],DA_ld["bound_hi3"][i],DA_ld["c3"][i],DA_ld["sig_lo3"][i],DA_ld["sig_hi3"][i]]  # the limits are -3 and 3 => very safe
-        c3_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step3"][i] == 0.) else c3_in[j,5])
-        c3_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step3"][i] == 0.) else c3_in[j,6])
+        c3_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step3"][i] == 0.) else c3_in[j,5]) 
+        c3_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step3"][i] == 0.) else c3_in[j,6]) 
         if c3_in[j,1] != 0.:
             njumpphot[k]=njumpphot[k]+1
 
@@ -470,7 +469,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             hiv2=np.sqrt(c1_in[j,6]**2+c2_in[j,6]**2)    if c2_in[j,6] else 0
             lo_lim1 = 2.*c1_in[j,2]+c2_in[j,2]  if c1_in[j,2] else 0   #transform bound_lo
             lo_lim2 = c1_in[j,2]-c2_in[j,3]     if c2_in[j,3] else 0
-            hi_lim1 = 2.*c1_in[j,3]+c2_in[j,3]  if c1_in[j,3] else 0
+            hi_lim1 = 2.*c1_in[j,3]+c2_in[j,3]  if c1_in[j,3] else 0   #transform bound_hi
             hi_lim2 = c1_in[j,3]-c2_in[j,2]     if c2_in[j,2] else 0
             if debug:
                 print("\nDEBUG: In fit_data.py")
@@ -567,26 +566,26 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     #============================= SETUP ARRAYS =======================================
     print('Setting up photometry arrays ...')
     if useSpline.use: print('Setting up Spline fitting ...')                                
-    tarr=np.array([]) # initializing array with all timestamps
-    farr=np.array([]) # initializing array with all flux values
-    earr=np.array([]) # initializing array with all error values
-    xarr=np.array([]) # initializing array with all x_shift values
-    yarr=np.array([]) # initializing array with all y_shift values
-    aarr=np.array([]) # initializing array with all airmass values
-    warr=np.array([]) # initializing array with all fwhm values
-    sarr=np.array([]) # initializing array with all sky values
-    lind=np.array([]) # initializing array with the lightcurve indices
-    barr=np.array([]) # initializing array with all bisector values
-    carr=np.array([]) # initializing array with all contrast values
+    t_arr      = np.array([])  # initializing array with all timestamps (col0)
+    f_arr      = np.array([])  # initializing array with all flux values(col1)
+    e_arr      = np.array([])  # initializing array with all error values(col2)
+    col3_arr   = np.array([])  # initializing array with all col4 values (prev xarr)
+    col4_arr   = np.array([])  # initializing array with all col4 values (prev yarr)
+    col5_arr   = np.array([])  # initializing array with all col5 values (prev aarr)
+    col6_arr   = np.array([])  # initializing array with all col6 values (prev warr)
+    col7_arr   = np.array([])  # initializing array with all col7 values (prev sarr)
 
-    indlist = []    # the list of the array indices
-    bvars    = []   # a list that will contain lists of [0, 1] for each of the baseline parameters, for each of the LCs. 0 means it's fixed. 1 means it's variable
+    lind       = np.array([])  # initializing array with the lightcurve indices
+    bis_arr    = np.array([])  # initializing array with all bisector values
+    contr_arr  = np.array([])  # initializing array with all contrast values
+
+    indlist    = []   # the list of the array indices
+    bvars      = []   # a list that will contain lists of [0, 1] for each of the baseline parameters, for each of the LCs. 0 means it's fixed. 1 means it's variable
     bvarsRV    = []   # a list that will contain lists of [0, 1] for each of the baseline parameters, for each of the RV curves. 0 means it's fixed. 1 means it's variable
 
 
     if ddfYN == 'y':   # if ddFs are fit: set the Rp/Rs to the value specified at the jump parameters, and fix it.
-        rprs_in=[rprs_in[0],0,0,1,0,0,0]
-        nddf=nfilt
+        rprs_in=[rprs_in[0],0,0,1,0,0,0]  # the RpRs options [start,step,bound_lo,bound_hi,pri_mean,pri_widthlo,pri_widthhi] 
     else:
         nddf=0
 
@@ -600,9 +599,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     priorup  = np.array([T0_in[6], rprs_in[6], b_in[6], dur_in[6], per_in[6], eos_in[6], eoc_in[6], K_in[6]])  # Prior sigma high side
     pnames   = np.array(['T_0', 'RpRs', 'b', 'dur_[d]', 'Period_[d]', 'esin(w)', 'ecos(w)', 'K']) # Parameter names
 
-    extcens = np.array([T0_ext[0], rprs_ext[0], b_ext[0], dur_ext[0], per_ext[0], 0., 0., K_ext[0]])
-    extup = np.array([T0_ext[1], rprs_ext[1], b_ext[1], dur_ext[1], per_ext[1], 0., 0., K_ext[1]])
-    extlow = np.array([T0_ext[2], rprs_ext[2], b_ext[2], dur_ext[2], per_ext[2], 0., 0., K_ext[2]])
+    extcens  = np.array([T0_ext[0], rprs_ext[0], b_ext[0], dur_ext[0], per_ext[0], 0., 0., K_ext[0]]) # External parameter prior mean
+    extlow   = np.array([T0_ext[1], rprs_ext[1], b_ext[1], dur_ext[1], per_ext[1], 0., 0., K_ext[1]]) # External parameter prior upper sigma #BUG should be lower and the next be upper sigma. doesnt matter if uniform prior on these pars
+    extup    = np.array([T0_ext[2], rprs_ext[2], b_ext[2], dur_ext[2], per_ext[2], 0., 0., K_ext[2]]) # External parameter prior lower sigma
 
 
     if (divwhite=='y'):           # do we do a divide-white? If yes, then fix all the transit shape parameters
@@ -610,114 +609,115 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         prior[0:6] = 0
 
     if ddfYN == 'y':   # if ddFs are fit: set the Rp/Rs to the specified value, and fix it.
-        drprs_in=np.zeros((nfilt,7))
-        njumpphot=njumpphot+1   # each LC has another jump pm
+        drprs_in  = np.zeros((nfilt,7))
+        njumpphot = njumpphot+1   # each LC has another jump pm
 
-        for i in range(nfilt):  # and make an array with the drprs inputs |  drprs_op=[0.,float(adump[3]),float(adump[4]),float(adump[5])]  # the dRpRs options
-            drprs_in[i,:]=drprs_op
-            params=np.concatenate((params, [drprs_in[i,0]]))     # add them to the parameter arrays    
-            stepsize=np.concatenate((stepsize, [drprs_in[i,1]]))
-            pmin=np.concatenate((pmin, [drprs_in[i,2]]))
-            pmax=np.concatenate((pmax, [drprs_in[i,3]]))
-            prior=np.concatenate((prior, [drprs_in[i,4]]))
-            priorlow=np.concatenate((priorlow, [drprs_in[i,5]]))
-            priorup=np.concatenate((priorup, [drprs_in[i,6]]))
-            pnames=np.concatenate((pnames, [filnames[i]+'_dRpRs']))
+        for i in range(nfilt):  # and make an array with the drprs inputs  # the dRpRs options
+            drprs_in[i,:] = drprs_op     #[0., step, bounds_lo, bounds_hi, 0., width_lo, width_hi]
+            params        = np.concatenate((params,   [drprs_in[i,0]]))     # add them to the parameter arrays    
+            stepsize      = np.concatenate((stepsize, [drprs_in[i,1]]))
+            pmin          = np.concatenate((pmin,     [drprs_in[i,2]]))
+            pmax          = np.concatenate((pmax,     [drprs_in[i,3]]))
+            prior         = np.concatenate((prior,    [drprs_in[i,4]]))
+            priorlow      = np.concatenate((priorlow, [drprs_in[i,5]]))
+            priorup       = np.concatenate((priorup,  [drprs_in[i,6]]))
+            pnames        = np.concatenate((pnames,   [filnames[i]+'_dRpRs']))
             
 
     for i in range(nfilt):  # add the occultation depths
-        params=np.concatenate((params, [occ_in[i,0]]))
-        stepsize=np.concatenate((stepsize, [occ_in[i,1]]))
-        pmin=np.concatenate((pmin, [occ_in[i,2]]))
-        pmax=np.concatenate((pmax, [occ_in[i,3]]))
-        prior=np.concatenate((prior, [occ_in[i,4]]))
-        priorlow=np.concatenate((priorlow, [occ_in[i,5]]))
-        priorup=np.concatenate((priorup, [occ_in[i,6]]))
-        pnames=np.concatenate((pnames, [filnames[i]+'_DFocc']))
+        params     = np.concatenate((params,   [occ_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [occ_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [occ_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [occ_in[i,3]]))
+        prior      = np.concatenate((prior,    [occ_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [occ_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [occ_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_DFocc']))
 
     for i in range(nfilt):  # add the LD coefficients for the filters to the parameters
-        params=np.concatenate((params, [c1_in[i,0], c2_in[i,0], c3_in[i,0], c4_in[i,0]]))
-        stepsize=np.concatenate((stepsize, [c1_in[i,1], c2_in[i,1], c3_in[i,1], c4_in[i,1]]))
-        pmin=np.concatenate((pmin, [c1_in[i,2], c2_in[i,2], c3_in[i,2], c4_in[i,2]]))
-        pmax=np.concatenate((pmax, [c1_in[i,3], c2_in[i,3], c3_in[i,3], c4_in[i,3]]))
-        prior=np.concatenate((prior, [c1_in[i,4], c2_in[i,4], c3_in[i,4], c4_in[i,4]]))
-        priorlow=np.concatenate((priorlow, [c1_in[i,5], c2_in[i,5], c3_in[i,5], c4_in[i,5]]))
-        priorup=np.concatenate((priorup, [c1_in[i,6], c2_in[i,6], c3_in[i,6], c4_in[i,6]]))
-        pnames=np.concatenate((pnames, [filnames[i]+'_c1',filnames[i]+'_c2',filnames[i]+'_c3',filnames[i]+'_c4']))
+        params     = np.concatenate((params,   [c1_in[i,0], c2_in[i,0], c3_in[i,0], c4_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [c1_in[i,1], c2_in[i,1], c3_in[i,1], c4_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [c1_in[i,2], c2_in[i,2], c3_in[i,2], c4_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [c1_in[i,3], c2_in[i,3], c3_in[i,3], c4_in[i,3]]))
+        prior      = np.concatenate((prior,    [c1_in[i,4], c2_in[i,4], c3_in[i,4], c4_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [c1_in[i,5], c2_in[i,5], c3_in[i,5], c4_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [c1_in[i,6], c2_in[i,6], c3_in[i,6], c4_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_c1',filnames[i]+'_c2',filnames[i]+'_c3',filnames[i]+'_c4']))
 
     for i in range(nRV):
-        params=np.concatenate((params,[gamma_in[i,0]]), axis=0)
-        stepsize=np.concatenate((stepsize,[gamma_in[i,1]]), axis=0)
-        pmin=np.concatenate((pmin,[gamma_in[i,2]]), axis=0)
-        pmax=np.concatenate((pmax,[gamma_in[i,3]]), axis=0)
-        prior=np.concatenate((prior,[gamma_in[i,4]]), axis=0)
-        priorlow=np.concatenate((priorlow,[gamma_in[i,5]]), axis=0)
-        priorup=np.concatenate((priorup,[gamma_in[i,6]]), axis=0)
-        pnames=np.concatenate((pnames,[RVnames[i]+'_gamma']), axis=0)
+        params      = np.concatenate((params,  [gamma_in[i,0]]), axis=0)
+        stepsize    = np.concatenate((stepsize,[gamma_in[i,1]]), axis=0)
+        pmin        = np.concatenate((pmin,    [gamma_in[i,2]]), axis=0)
+        pmax        = np.concatenate((pmax,    [gamma_in[i,3]]), axis=0)
+        prior       = np.concatenate((prior,   [gamma_in[i,4]]), axis=0)
+        priorlow    = np.concatenate((priorlow,[gamma_in[i,5]]), axis=0)
+        priorup     = np.concatenate((priorup, [gamma_in[i,6]]), axis=0)
+        pnames      = np.concatenate((pnames,  [RVnames[i]+'_gamma']), axis=0)
         
         if (jit_apply=='y'):
             # print('does jitter work?')
             # print(nothing)
-            params=np.concatenate((params,[0.01]), axis=0)
-            stepsize=np.concatenate((stepsize,[0.001]), axis=0)
-            pmin=np.concatenate((pmin,[0.]), axis=0)
-            pmax=np.concatenate((pmax,[100]), axis=0)
-            prior=np.concatenate((prior,[0.]), axis=0)
-            priorlow=np.concatenate((priorlow,[0.]), axis=0)
-            priorup=np.concatenate((priorup,[0.]), axis=0)
-            pnames=np.concatenate((pnames,[RVnames[i]+'_jitter']), axis=0)
+            params      = np.concatenate((params,  [0.01]), axis=0)
+            stepsize    = np.concatenate((stepsize,[0.001]), axis=0)
+            pmin        = np.concatenate((pmin,    [0.]), axis=0)
+            pmax        = np.concatenate((pmax,    [100]), axis=0)
+            prior       = np.concatenate((prior,   [0.]), axis=0)
+            priorlow    = np.concatenate((priorlow,[0.]), axis=0)
+            priorup     = np.concatenate((priorup, [0.]), axis=0)
+            pnames      = np.concatenate((pnames,  [RVnames[i]+'_jitter']), axis=0)
         else:
-            params=np.concatenate((params,[0.]), axis=0)
-            stepsize=np.concatenate((stepsize,[0.]), axis=0)
-            pmin=np.concatenate((pmin,[0.]), axis=0)
-            pmax=np.concatenate((pmax,[0]), axis=0)
-            prior=np.concatenate((prior,[0.]), axis=0)
-            priorlow=np.concatenate((priorlow,[0.]), axis=0)
-            priorup=np.concatenate((priorup,[0.]), axis=0)
-            pnames=np.concatenate((pnames,[RVnames[i]+'_jitter']), axis=0)         
+            params      = np.concatenate((params,  [0.]), axis=0)
+            stepsize    = np.concatenate((stepsize,[0.]), axis=0)
+            pmin        = np.concatenate((pmin,    [0.]), axis=0)
+            pmax        = np.concatenate((pmax,    [0]), axis=0)
+            prior       = np.concatenate((prior,   [0.]), axis=0)
+            priorlow    = np.concatenate((priorlow,[0.]), axis=0)
+            priorup     = np.concatenate((priorup, [0.]), axis=0)
+            pnames      = np.concatenate((pnames,  [RVnames[i]+'_jitter']), axis=0)         
         
     nbc_tot = np.copy(0)  # total number of baseline coefficients let to vary (leastsq OR jumping)
 
     #################################### GP setup #########################################
     print('Setting up photometry GPs ...')
-    GPobjects = []
-    GPparams = []
+    GPobjects   = []
+    GPparams    = []
     GPstepsizes = []
-    GPindex = []  # this array contains the lightcurve index of the lc it applies to
-    GPprior = []
-    GPpriwid = []
-    GPlimup = []
-    GPlimlo =[]
-    GPnames = []
-    GPcombined = []
-    pargps = []
+    GPindex     = []  # this array contains the lightcurve index of the lc it applies to
+    GPprior     = []
+    GPpriwid    = []
+    GPlimup     = []
+    GPlimlo     = []
+    GPnames     = []
+    GPcombined  = []
+    pargps      = []
 
     for i in range(nphot):
-        t, flux, err, xshift, yshift, airm, fwhm, sky, eti = np.loadtxt(fpath+names[i], usecols=(0,1,2,3,4,5,6,7,8), unpack = True)  # reading in the data
+        t, flux, err, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in = np.loadtxt(fpath+names[i], usecols=(0,1,2,3,4,5,6,7,8), unpack = True)  # reading in the data
         if (divwhite=='y'): # if the divide - white is activated, divide the lcs by the white noise model before proceeding
             dwCNM = np.copy(dwCNMarr[dwCNMind[groups[i]-1]])
             flux=np.copy(flux/dwCNM)
+                
+        col7_in       = col7_in - np.mean(col7_in)
+        t_arr     = np.concatenate((t_arr,    t),       axis=0)
+        f_arr     = np.concatenate((f_arr,    flux),    axis=0)
+        e_arr     = np.concatenate((e_arr,    err),     axis=0)
+        col3_arr  = np.concatenate((col3_arr, col3_in), axis=0)
+        col4_arr  = np.concatenate((col4_arr, col4_in), axis=0)
+        col5_arr  = np.concatenate((col5_arr, col5_in), axis=0)
+        col6_arr  = np.concatenate((col6_arr, col6_in), axis=0)
+        col7_arr  = np.concatenate((col7_arr, col7_in), axis=0)  #TODO: we can have column 8 right?
         
-        sky=sky-np.mean(sky)
-        tarr=np.concatenate((tarr,t), axis=0)
-        farr=np.concatenate((farr,flux), axis=0)
-        earr=np.concatenate((earr,err), axis=0)
-        xarr=np.concatenate((xarr,xshift), axis=0)
-        yarr=np.concatenate((yarr,yshift), axis=0)
-        aarr=np.concatenate((aarr,airm), axis=0)
-        warr=np.concatenate((warr,fwhm), axis=0)
-        sarr=np.concatenate((sarr,sky), axis=0)
-        barr=np.concatenate((barr,np.zeros(len(t),dtype=int)), axis=0)   # bisector array: filled with 0s
-        carr=np.concatenate((carr,np.zeros(len(t),dtype=int)), axis=0)   # contrast array: filled with 0s
-        lind=np.concatenate((lind,np.zeros(len(t),dtype=int)+i), axis=0)
-        indices=np.where(lind==i)
+        bis_arr   = np.concatenate((bis_arr, np.zeros(len(t), dtype=int)), axis=0)   # bisector array: filled with 0s
+        contr_arr = np.concatenate((contr_arr, np.zeros(len(t), dtype=int)), axis=0)   # contrast array: filled with 0s
+        lind      = np.concatenate((lind, np.zeros(len(t), dtype=int) + i), axis=0) # lightcurve index array: filled with i
+        indices   = np.where(lind == i)
         if verbose: print(lind, indices)
         indlist.append(indices)
         
-        pargp = np.vstack((t, xshift, yshift, airm, fwhm, sky, eti)).T  # the matrix with all the possible inputs to the GPs
+        pargp = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
 
         if (useGPphot[i]=='n'):
-            pargps.append([])   #Akin: to keep the indexes of the lists pargps and GPobjects index correct, append empty list if no gp
+            pargps.append([])   #to keep the indices of the lists, pargps and GPobjects, correct, append empty list if no gp
             GPobjects.append([])
             A_in,B_in,C1_in,C2_in,D_in,E_in,G_in,H_in,nbc = basecoeff(bases[i])  # the baseline coefficients for this lightcurve; each is a 2D array
             nbc_tot = nbc_tot+nbc # add up the number of jumping baseline coeff
@@ -731,19 +731,41 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 A_in[1,:]=B_in[1,:]=C1_in[1,:]=C2_in[1,:]=D_in[1,:]=E_in[1,:]=G_in[1,:]=H_in[1,:]=0                             # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
 
             # append these to the respective mcmc input arrays
-            params=np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
-            stepsize=np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
-            pmin=np.concatenate((pmin,A_in[2,:],B_in[2,:],C1_in[2,:],C2_in[2,:],D_in[2,:],E_in[2,:],G_in[2,:],H_in[2,:]))
-            pmax=np.concatenate((pmax,A_in[3,:],B_in[3,:],C1_in[3,:],C2_in[3,:],D_in[3,:],E_in[3,:],G_in[3,:],H_in[3,:]))
-            prior=np.concatenate((prior, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            priorlow=np.concatenate((priorlow, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            priorup=np.concatenate((priorup, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            pnames=np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1',names[i]+'_A2',names[i]+'_A3',names[i]+'_A4',names[i]+'_B1',names[i]+'_B2',names[i]+'_C11', names[i]+'_C12',names[i]+'_C21', names[i]+'_C22',names[i]+'_D1',names[i]+'_D2',names[i]+'_E1',names[i]+'_E2',names[i]+'_G1',names[i]+'_G2',names[i]+'_G3',names[i]+'_H1',names[i]+'_H2']))
+            params    = np.concatenate((params, A_in[0,:], B_in[0,:], C1_in[0,:], C2_in[0,:], D_in[0,:], E_in[0,:], G_in[0,:], H_in[0,:]))
+            stepsize  = np.concatenate((stepsize, A_in[1,:], B_in[1,:], C1_in[1,:], C2_in[1,:], D_in[1,:], E_in[1,:], G_in[1,:], H_in[1,:]))
+            pmin      = np.concatenate((pmin, A_in[2,:], B_in[2,:], C1_in[2,:], C2_in[2,:], D_in[2,:], E_in[2,:], G_in[2,:], H_in[2,:]))
+            pmax      = np.concatenate((pmax, A_in[3,:], B_in[3,:], C1_in[3,:], C2_in[3,:], D_in[3,:], E_in[3,:], G_in[3,:], H_in[3,:]))
+            prior     = np.concatenate((prior, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorlow  = np.concatenate((priorlow, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorup   = np.concatenate((priorup, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            # pnames    = np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1', names[i]+'_A2', names[i]+'_A3', names[i]+'_A4', names[i]+'_B1', names[i]+'_B2', names[i]+'_C11', names[i]+'_C12', names[i]+'_C21', names[i]+'_C22', names[i]+'_D1', names[i]+'_D2', names[i]+'_E1', names[i]+'_E2', names[i]+'_G1', names[i]+'_G2', names[i]+'_G3', names[i]+'_H1', names[i]+'_H2']))
+            pnames   = np.concatenate((pnames, [f"lc{i+1}_off",f"lc{i+1}_A0",f"lc{i+1}_B0",f"lc{i+1}_C0",f"lc{i+1}_D0",
+                                                f"lc{i+1}_A3",f"lc{i+1}_B3",
+                                                f"lc{i+1}_A4",f"lc{i+1}_B4",
+                                                f"lc{i+1}_A5",f"lc{i+1}_B5",
+                                                f"lc{i+1}_A6",f"lc{i+1}_B6",
+                                                f"lc{i+1}_A7",f"lc{i+1}_B7",
+                                                f"lc{i+1}_sin_amp",f"lc{i+1}_sin_per",f"lc{i+1}_sin_off",
+                                                f"lc{i+1}_ACNM",f"lc{i+1}_BCNM"
+                                                ]))        
             # note currently we have the following parameters in these arrays:
-            #   [T0,RpRs,b,dur,per,eos, eoc, ddf_1, ..., ddf_n, occ_1, ... , occ_n, c1_f1,c2_f1,c3_f1,c4_f1, c1_f2, .... , c4fn, A0_lc1,A1_lc1,A2_lc0,A3_lc0,A4_lc0, B0_lc1,B1_lc1,C0_lc1,C1_lc1,C2_lc1,C3_lc1,C4_lc1,D0_lc1,D1_lc1,E0_lc1,E1_lc1,G0_lc1,G1_lc1,H0_lc1,H1_lc1,H2_lc1,A0_lc2, ...]
-            #    0  1    2  3   4  5   6    |  7 - 4+nddf     |          [7+nddf -- 6+nddf+4*n_filt]       |                           7+nddf+4*n_filt -- 7+nddf+4*n_filt + 15                                                |    7+nddf+4*n_filt + 16
-            #    p a r a m e t e r s   |  d d F s        | Limb Darkening                             | const.  time  (5)     |      AM (2)  |     coordinate shifts   (5)      |     FWHM  (2) |   sky  (2)   | SIN (3)  | CNM (2) |
-            #    each lightcurve has 21 baseline jump parameters, starting with index  8+nddf+4*n_filt+nRV
+            #   [T0,RpRs,b,dur,per,eos, eoc,K,               (8)
+            #   ddf_1, ..., ddf_n,                           (nddf)
+            #   occ_1, ... , occ_n,                          (nocc)
+            #   c1_f1,c2_f1,c3_f1,c4_f1, c1_f2, .... , c4fn, (4*n_filt)
+            #   Rv_gamma, RV_jit                              (2*nRVs)         
+            #   A0_lc1,A1_lc1,A2_lc1,A3_lc1,A4_lc1,           (5)
+            #   B0_lc1,B1_lc1,                                (2)
+            #   C0_lc1,C1_lc1,C2_lc1,C3_lc1,C4_lc1,           (5)
+            #   D0_lc1,D1_lc1,                                (2)
+            #   E0_lc1,E1_lc1,                                (2)
+            #   G0_lc1,G1_lc1,                                (3)
+            #   H0_lc1,H1_lc1,H2_lc1,                         (2)
+            #   A0_lc2, ...]
+            #    0  1    2  3   4  5   6    |  7 - 4+nddf     | [7+nddf -- 6+nddf+4*n_filt]       |       7+nddf+4*n_filt -- 7+nddf+4*n_filt + 15                                                |    7+nddf+4*n_filt + 16
+            #    p a r a m e t e r s        |  d d F s        | Limb Darkening                    | const.  time  (5)     |      AM (2)  |     coordinate shifts   (5)      |     FWHM  (2) |   sky  (2)   | SIN (3)  | CNM (2) |
+            
+            #    each lightcurve has 21 possible baseline jump parameters, starting with index  8+nddf+nocc+4*n_filt+2*nRV
 
         elif (useGPphot[i]=='y'):
             # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
@@ -757,15 +779,23 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 bvars.append(abind)
                 A_in[1,:]=B_in[1,:]=C1_in[1,:]=C2_in[1,:]=D_in[1,:]=E_in[1,:]=G_in[1,:]=H_in[1,:]=0                             # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
 
-            params=np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
-            stepsize=np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
-            pmin=np.concatenate((pmin,A_in[2,:],B_in[2,:],C1_in[2,:],C2_in[2,:],D_in[2,:],E_in[2,:],G_in[2,:],H_in[2,:]))
-            pmax=np.concatenate((pmax,A_in[3,:],B_in[3,:],C1_in[3,:],C2_in[3,:],D_in[3,:],E_in[3,:],G_in[3,:],H_in[3,:]))
-            prior=np.concatenate((prior, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            priorlow=np.concatenate((priorlow, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            priorup=np.concatenate((priorup, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            pnames=np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1',names[i]+'_A2',names[i]+'_A3',names[i]+'_A4',names[i]+'_B1',names[i]+'_B2',names[i]+'_C11', names[i]+'_C12',names[i]+'_C21', names[i]+'_C22',names[i]+'_D1',names[i]+'_D2',names[i]+'_E1',names[i]+'_E2',names[i]+'_G1',names[i]+'_G2',names[i]+'_G3',names[i]+'_H1',names[i]+'_H2']))
-
+            params   = np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
+            stepsize = np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
+            pmin     = np.concatenate((pmin,A_in[2,:],B_in[2,:],C1_in[2,:],C2_in[2,:],D_in[2,:],E_in[2,:],G_in[2,:],H_in[2,:]))
+            pmax     = np.concatenate((pmax,A_in[3,:],B_in[3,:],C1_in[3,:],C2_in[3,:],D_in[3,:],E_in[3,:],G_in[3,:],H_in[3,:]))
+            prior    = np.concatenate((prior, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorlow = np.concatenate((priorlow, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorup  = np.concatenate((priorup, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            # pnames   = np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1',names[i]+'_A2',names[i]+'_A3',names[i]+'_A4',names[i]+'_B1',names[i]+'_B2',names[i]+'_C11', names[i]+'_C12',names[i]+'_C21', names[i]+'_C22',names[i]+'_D1',names[i]+'_D2',names[i]+'_E1',names[i]+'_E2',names[i]+'_G1',names[i]+'_G2',names[i]+'_G3',names[i]+'_H1',names[i]+'_H2']))
+            pnames   = np.concatenate((pnames, [f"lc{i+1}_off",f"lc{i+1}_A0",f"lc{i+1}_B0",f"lc{i+1}_C0",f"lc{i+1}_D0",
+                                                f"lc{i+1}_A3",f"lc{i+1}_B3",
+                                                f"lc{i+1}_A4",f"lc{i+1}_B4",
+                                                f"lc{i+1}_A5",f"lc{i+1}_B5",
+                                                f"lc{i+1}_A6",f"lc{i+1}_B6",
+                                                f"lc{i+1}_A7",f"lc{i+1}_B7",
+                                                f"lc{i+1}_sin_amp",f"lc{i+1}_sin_per",f"lc{i+1}_sin_off",
+                                                f"lc{i+1}_ACNM",f"lc{i+1}_BCNM"
+                                                ]))
             # define the index in the set of filters that this LC has:
             k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
             k = k[0].item()
@@ -789,15 +819,15 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 d_combined = 0.0
 
 
-            GPparams=np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   # start gppars with the white noise
-            GPstepsizes=np.concatenate((GPstepsizes,GPphotWNstep[i]),axis=0)
-            GPindex=np.concatenate((GPindex,[i]),axis=0)
-            GPprior=np.concatenate((GPprior,GPphotWNprior[i]),axis=0)
-            GPpriwid=np.concatenate((GPpriwid,GPphotWNpriorwid[i]),axis=0)
-            GPlimup=np.concatenate((GPlimup,GPphotWNlimup[i]),axis=0)
-            GPlimlo=np.concatenate((GPlimlo,GPphotWNlimlo[i]),axis=0)
-            GPnames=np.concatenate((GPnames,['GPphotWN_lc'+str(i+1)]),axis=0)
-            GPcombined=np.concatenate((GPcombined,[d_combined]),axis=0)
+            GPparams    = np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   # start gppars with the white noise
+            GPstepsizes = np.concatenate((GPstepsizes,GPphotWNstep[i]),axis=0)
+            GPindex     = np.concatenate((GPindex,[i]),axis=0)
+            GPprior     = np.concatenate((GPprior,GPphotWNprior[i]),axis=0)
+            GPpriwid    = np.concatenate((GPpriwid,GPphotWNpriorwid[i]),axis=0)
+            GPlimup     = np.concatenate((GPlimup,GPphotWNlimup[i]),axis=0)
+            GPlimlo     = np.concatenate((GPlimlo,GPphotWNlimlo[i]),axis=0)
+            GPnames     = np.concatenate((GPnames,['GPphotWN_lc'+str(i+1)]),axis=0)
+            GPcombined  = np.concatenate((GPcombined,[d_combined]),axis=0)
 
             iii=0
 
@@ -830,13 +860,13 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                         GPstepsizes=np.concatenate((GPstepsizes,(0.,0.)),axis=0)
                     else:
                         GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
-                    GPindex=np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
-                    GPprior=np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
-                    GPpriwid=np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
-                    GPlimup=np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
-                    GPlimlo=np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
-                    GPnames=np.concatenate((GPnames,(['GPphotscale_lc'+str(i+1)+'dim'+str(ii),"GPphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
-                    GPcombined=np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
+                    GPindex    = np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
+                    GPprior    = np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
+                    GPpriwid   = np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
+                    GPlimup    = np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
+                    GPlimlo    = np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
+                    GPnames    = np.concatenate((GPnames,(['GPphotscale_lc'+str(i+1)+'dim'+str(ii),"GPphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
+                    GPcombined = np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
 
                     iii=iii+1
                     
@@ -876,15 +906,23 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 bvars.append(abind)
                 A_in[1,:]=B_in[1,:]=C1_in[1,:]=C2_in[1,:]=D_in[1,:]=E_in[1,:]=G_in[1,:]=H_in[1,:]=0                             # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
 
-            params=np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
-            stepsize=np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
-            pmin=np.concatenate((pmin,A_in[2,:],B_in[2,:],C1_in[2,:],C2_in[2,:],D_in[2,:],E_in[2,:],G_in[2,:],H_in[2,:]))
-            pmax=np.concatenate((pmax,A_in[3,:],B_in[3,:],C1_in[3,:],C2_in[3,:],D_in[3,:],E_in[3,:],G_in[3,:],H_in[3,:]))
-            prior=np.concatenate((prior, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            priorlow=np.concatenate((priorlow, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            priorup=np.concatenate((priorup, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
-            pnames=np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1',names[i]+'_A2',names[i]+'_A3',names[i]+'_A4',names[i]+'_B1',names[i]+'_B2',names[i]+'_C11', names[i]+'_C12',names[i]+'_C21', names[i]+'_C22',names[i]+'_D1',names[i]+'_D2',names[i]+'_E1',names[i]+'_E2',names[i]+'_G1',names[i]+'_G2',names[i]+'_G3',names[i]+'_H1',names[i]+'_H2']))
-
+            params   = np.concatenate((params,A_in[0,:],B_in[0,:],C1_in[0,:],C2_in[0,:],D_in[0,:],E_in[0,:],G_in[0,:],H_in[0,:]))
+            stepsize = np.concatenate((stepsize,A_in[1,:],B_in[1,:],C1_in[1,:],C2_in[1,:],D_in[1,:],E_in[1,:],G_in[1,:],H_in[1,:]))
+            pmin     = np.concatenate((pmin,A_in[2,:],B_in[2,:],C1_in[2,:],C2_in[2,:],D_in[2,:],E_in[2,:],G_in[2,:],H_in[2,:]))
+            pmax     = np.concatenate((pmax,A_in[3,:],B_in[3,:],C1_in[3,:],C2_in[3,:],D_in[3,:],E_in[3,:],G_in[3,:],H_in[3,:]))
+            prior    = np.concatenate((prior, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorlow = np.concatenate((priorlow, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            priorup  = np.concatenate((priorup, np.zeros(len(A_in[0,:])+len(B_in[0,:])+len(C1_in[0,:])+len(C2_in[0,:])+len(D_in[0,:])+len(E_in[0,:])+len(G_in[0,:])+len(H_in[0,:]))))
+            # pnames   = np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1',names[i]+'_A2',names[i]+'_A3',names[i]+'_A4',names[i]+'_B1',names[i]+'_B2',names[i]+'_C11', names[i]+'_C12',names[i]+'_C21', names[i]+'_C22',names[i]+'_D1',names[i]+'_D2',names[i]+'_E1',names[i]+'_E2',names[i]+'_G1',names[i]+'_G2',names[i]+'_G3',names[i]+'_H1',names[i]+'_H2']))            
+            pnames   = np.concatenate((pnames, [f"lc{i+1}_off",f"lc{i+1}_A0",f"lc{i+1}_B0",f"lc{i+1}_C0",f"lc{i+1}_D0",
+                                                f"lc{i+1}_A3",f"lc{i+1}_B3",
+                                                f"lc{i+1}_A4",f"lc{i+1}_B4",
+                                                f"lc{i+1}_A5",f"lc{i+1}_B5",
+                                                f"lc{i+1}_A6",f"lc{i+1}_B6",
+                                                f"lc{i+1}_A7",f"lc{i+1}_B7",
+                                                f"lc{i+1}_sin_amp",f"lc{i+1}_sin_per",f"lc{i+1}_sin_off",
+                                                f"lc{i+1}_ACNM",f"lc{i+1}_BCNM"
+                                                ]))
             # define the index in the set of filters that this LC has:
             k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
             k = k[0].item()
@@ -921,15 +959,15 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             
             if GPphotWNstep[i]>1e-12:  #if the white nois is jumping
 
-                GPparams=np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   
-                GPstepsizes=np.concatenate((GPstepsizes,GPphotWNstep[i]),axis=0)
-                GPindex=np.concatenate((GPindex,[i]),axis=0)
-                GPprior=np.concatenate((GPprior,GPphotWNprior[i]),axis=0)
-                GPpriwid=np.concatenate((GPpriwid,GPphotWNpriorwid[i]),axis=0)
-                GPlimup=np.concatenate((GPlimup,GPphotWNlimup[i]),axis=0)
-                GPlimlo=np.concatenate((GPlimlo,GPphotWNlimlo[i]),axis=0)
-                GPnames=np.concatenate((GPnames,['CEphotWN_lc'+str(i+1)]),axis=0)
-                GPcombined=np.concatenate((GPcombined,[d_combined]),axis=0)
+                GPparams    = np.concatenate((GPparams,GPphotWNstart[i]), axis=0)   
+                GPstepsizes = np.concatenate((GPstepsizes,GPphotWNstep[i]),axis=0)
+                GPindex     = np.concatenate((GPindex,[i]),axis=0)
+                GPprior     = np.concatenate((GPprior,GPphotWNprior[i]),axis=0)
+                GPpriwid    = np.concatenate((GPpriwid,GPphotWNpriorwid[i]),axis=0)
+                GPlimup     = np.concatenate((GPlimup,GPphotWNlimup[i]),axis=0)
+                GPlimlo     = np.concatenate((GPlimlo,GPphotWNlimlo[i]),axis=0)
+                GPnames     = np.concatenate((GPnames,['CEphotWN_lc'+str(i+1)]),axis=0)
+                GPcombined  = np.concatenate((GPcombined,[d_combined]),axis=0)
 
                 c_WN=np.copy(GPphotWNstart[i])
                 bounds_w = dict(log_sigma=(GPphotWNlimlo[i],GPphotWNlimup[i]))
@@ -969,13 +1007,13 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 GPstepsizes=np.concatenate((GPstepsizes,(0.,0.)),axis=0)
             else:
                 GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
-            GPindex=np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
-            GPprior=np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
-            GPpriwid=np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
-            GPlimup=np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
-            GPlimlo=np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
-            GPnames=np.concatenate((GPnames,(['CEphotscale_lc'+str(i+1)+'dim'+str(ii),"CEphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
-            GPcombined=np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
+            GPindex     = np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
+            GPprior     = np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
+            GPpriwid    = np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
+            GPlimup     = np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
+            GPlimlo     = np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
+            GPnames     = np.concatenate((GPnames,(['CEphotscale_lc'+str(i+1)+'dim'+str(ii),"CEphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
+            GPcombined  = np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
         
 
             gp = clnGPnew(k3, mean=mean_model,fit_mean=True)#,log_white_noise=GPphotWNstart[i],fit_white_noise=True)
@@ -1011,18 +1049,19 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     for i in range(nRV):
         t, rv, err, bis, fwhm, contrast = np.loadtxt(rv_fpath+RVnames[i], usecols=(0,1,2,3,4,5), unpack = True)  # reading in the data
         
-        tarr = np.concatenate((tarr,t), axis=0)
-        farr = np.concatenate((farr,rv), axis=0)    # ! add the RVs to the "flux" array !
-        earr = np.concatenate((earr,err), axis=0)   # ! add the RV errors to the "earr" array !
-        xarr=np.concatenate((xarr,np.zeros(len(t),dtype=int)), axis=0)  # xshift array: filled with 0s
-        yarr=np.concatenate((yarr,np.zeros(len(t),dtype=int)), axis=0)  # yshift array: filled with 0s
-        aarr=np.concatenate((aarr,np.zeros(len(t),dtype=int)), axis=0)  # airmass array: filled with 0s
-        warr=np.concatenate((warr,fwhm), axis=0)
-        sarr=np.concatenate((sarr,np.zeros(len(t),dtype=int)), axis=0)  # sky array: filled with 0s
-        barr=np.concatenate((barr,bis), axis=0)  # bisector array
-        carr=np.concatenate((carr,contrast), axis=0)  # contrast array
-        lind=np.concatenate((lind,np.zeros(len(t),dtype=int)+i+nphot), axis=0)   # indices
-        indices=np.where(lind==i+nphot)
+        t_arr    = np.concatenate((t_arr,t), axis=0)
+        f_arr    = np.concatenate((f_arr,rv), axis=0)    # ! add the RVs to the "flux" array !
+        e_arr    = np.concatenate((e_arr,err), axis=0)   # ! add the RV errors to the "earr" array !
+        col3_arr = np.concatenate((col3_arr,np.zeros(len(t),dtype=int)), axis=0)  # xshift array: filled with 0s
+        col4_arr = np.concatenate((col4_arr,np.zeros(len(t),dtype=int)), axis=0)  # yshift array: filled with 0s
+        col5_arr = np.concatenate((col5_arr,np.zeros(len(t),dtype=int)), axis=0)  # airmass array: filled with 0s
+        col6_arr = np.concatenate((col6_arr,fwhm), axis=0)
+        col7_arr = np.concatenate((col7_arr,np.zeros(len(t),dtype=int)), axis=0)  # sky array: filled with 0s
+
+        bis_arr     = np.concatenate((bis_arr,bis), axis=0)  # bisector array
+        contr_arr     = np.concatenate((contr_arr,contrast), axis=0)  # contrast array
+        lind     = np.concatenate((lind,np.zeros(len(t),dtype=int)+i+nphot), axis=0)   # indices
+        indices  = np.where(lind==i+nphot)
         indlist.append(indices)
         Pin = sinPs[i]
 
@@ -1038,19 +1077,19 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 bvarsRV.append(abind)
                 W_in[1,:]=V_in[1,:]=U_in[1,:]=S_in[1,:]=P_in[1,:]=0        # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
             # append these to the respective mcmc input arrays
-            params=np.concatenate((params,W_in[0,:],V_in[0,:],U_in[0,:],S_in[0,:],P_in[0,:]))
-            stepsize=np.concatenate((stepsize,W_in[1,:],V_in[1,:],U_in[1,:],S_in[1,:],P_in[1,:]))
-            pmin=np.concatenate((pmin,W_in[2,:],V_in[2,:],U_in[2,:],S_in[2,:],P_in[2,:]))
-            pmax=np.concatenate((pmax,W_in[3,:],V_in[3,:],U_in[3,:],S_in[3,:],P_in[3,:]))
-            prior=np.concatenate((prior, np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
-            priorlow=np.concatenate((priorlow, np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
-            priorup=np.concatenate((priorup, np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
-            pnames=np.concatenate((pnames, [RVnames[i]+'_W1',RVnames[i]+'_W2',RVnames[i]+'_V1',RVnames[i]+'_V2',RVnames[i]+'_U1', RVnames[i]+'_U2',RVnames[i]+'_S1',RVnames[i]+'_S2',RVnames[i]+'_P1',RVnames[i]+'_P2',RVnames[i]+'_P3',RVnames[i]+'_P4']))
+            params    = np.concatenate((params,W_in[0,:],V_in[0,:],U_in[0,:],S_in[0,:],P_in[0,:]))
+            stepsize  = np.concatenate((stepsize,W_in[1,:],V_in[1,:],U_in[1,:],S_in[1,:],P_in[1,:]))
+            pmin      = np.concatenate((pmin,W_in[2,:],V_in[2,:],U_in[2,:],S_in[2,:],P_in[2,:]))
+            pmax      = np.concatenate((pmax,W_in[3,:],V_in[3,:],U_in[3,:],S_in[3,:],P_in[3,:]))
+            prior     = np.concatenate((prior, np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
+            priorlow  = np.concatenate((priorlow, np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
+            priorup   = np.concatenate((priorup, np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
+            pnames    = np.concatenate((pnames, [RVnames[i]+'_W1',RVnames[i]+'_W2',RVnames[i]+'_V1',RVnames[i]+'_V2',RVnames[i]+'_U1', RVnames[i]+'_U2',RVnames[i]+'_S1',RVnames[i]+'_S2',RVnames[i]+'_P1',RVnames[i]+'_P2',RVnames[i]+'_P3',RVnames[i]+'_P4']))
             # note currently we have the following parameters in these arrays:
             #   [T0,RpRs,b,dur,per,eos, eoc,K,ddf_1, ..., ddf_n, c1_f1,c2_f1,c3_f1,c4_f1, c1_f2, .... , c4fn, A0_lc1,A1_lc1,A2_lc0,A3_lc0,A4_lc0, B0_lc1,B1_lc1,C0_lc1,C1_lc1,C2_lc1,C3_lc1,C4_lc1,D0_lc1,D1_lc1,E0_lc1,E1_lc1,G0_lc1,G1_lc1,H0_lc1,H1_lc1,H2_lc1,A0_lc2, ...]
             #    0  1    2  3   4  5   6    |  7 - 4+nddf     |          [7+nddf -- 6+nddf+4*n_filt]       |                           7+nddf+4*n_filt -- 7+nddf+4*n_filt + 15                                                |    7+nddf+4*n_filt + 16
             #    p a r a m e t e r s   |  d d F s        | Limb Darkening                             | const.  time  (5)     |      AM (2)  |     coordinate shifts   (5)      |     FWHM  (2) |   sky  (2)   | SIN (3)  | CNM (2) | time_rv (2) | bisector (2) | fwhm_rv (2) | contrast (2)   | sinus (3)
-            # each rv curve has 8 baseline jump parameters, starting with index  8+nddf+4*n_filt+nRV + nphot* 21
+            # each rv curve has 8 baseline jump parameters, starting with index  8+nddf+nocc+4*n_filt+2*nRV + nphot* 21
 
 
     # calculate the weights for the lightcurves to be used for the CNM calculation later: do this in a function!
@@ -1068,7 +1107,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
     for i in range(nphot):
         
-        temp=np.ndarray([0])
+        temp=np.ndarray([0])  # the indices of the parameters that jump for this LC
         
         lcstep1 = np.where(stepsize[0:7]!=0.)  # the common transit jump parameters
         lcstep = lcstep1[0]
@@ -1079,19 +1118,22 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         # define the index in the set of filters that this LC has:
         k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
         k = k[0].item()
-
+        
+        #transit depth variation
         if (ddfYN=='y'):    
             if temp.shape:    
                 temp=np.concatenate((np.asarray(temp),np.asarray([8+k])),axis=0)
             else:
                 temp=np.asarray([8+k])
-
-        occind=8+nddf+k 
-        if (stepsize[occind]!=0.):
+        
+        #occultation
+        occind=8+nddf+k                   # the index of the occultation parameter for this LC
+        if (stepsize[occind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[occind]),axis=0)
         
         if verbose: print(temp)
 
+        #limb darkening
         c1ind=8+nddf+nocc+k*4
         if (stepsize[c1ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[c1ind]),axis=0)
@@ -1100,8 +1142,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         if (stepsize[c2ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[c2ind]),axis=0)
     
+        #baseline
         bfstart= 8+nddf+nocc+nfilt*4 + nRV*2  # the first index in the param array that refers to a baseline function    
-        blind = np.asarray(list(range(bfstart+i*20,bfstart+i*20+20)))  # the indices for the coefficients for the base function    
+        blind = np.asarray(list(range(bfstart+i*20,bfstart+i*20+20)))  # the indices for the coefficients for the base function  #TODO why 20, not 21  
         if verbose: print(bfstart, blind, nocc, nfilt)
 
         #BUG: this here is not set to the correct indices
@@ -1151,33 +1194,33 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     # print(f"RVjump:{RVjump}")
     # =============================== CALCULATION ==========================================
 
+    pnames_all   = np.concatenate((pnames, GPnames))
+    initial      = np.concatenate((params, GPparams))
+    steps        = np.concatenate((stepsize, GPstepsizes))
+    priors       = np.concatenate((prior, GPprior))
+    priwid       = (priorup + priorlow) / 2.
+    priorwids    = np.concatenate((priwid, GPpriwid))
+    lim_low      = np.concatenate((pmin, GPlimlo))
+    lim_up       = np.concatenate((pmax, GPlimup))
+    ndim         = np.count_nonzero(steps)
+    jumping      = np.where(steps != 0.)
+    jumping_noGP = np.where(stepsize != 0.)
+    jumping_GP   = np.where(GPstepsizes != 0.)
 
-    pnames_all = np.concatenate((pnames,GPnames))
-    initial = np.concatenate((params,GPparams))
-    steps = np.concatenate((stepsize,GPstepsizes))
-    priors = np.concatenate((prior,GPprior))
-    priwid = (priorup+priorlow)/2.
-    priorwids = np.concatenate((priwid,GPpriwid))
-    lim_low = np.concatenate((pmin,GPlimlo))
-    lim_up = np.concatenate((pmax,GPlimup))
-    ndim = np.count_nonzero(steps)
-    jumping=np.where(steps!=0.)
-    jumping_noGP = np.where(stepsize!=0.)
-    jumping_GP = np.where(GPstepsizes!=0.)
 
     pindices = []
     for i in range(nphot):
-        fullist=list(jumping[0])
-        lclist=list(LCjump[i])
-        both = list(set(fullist).intersection(lclist))  # attention: set() makes it unordered. we'll need to reorder it
+        fullist = list(jumping[0])   # the indices of all the jumping parameters
+        lclist  = list(LCjump[i])    # the indices of the jumping parameters for this LC
+        both    = list(set(fullist).intersection(lclist))  # attention: set() makes it unordered. we'll need to reorder it
         both.sort()
         indices_A = [fullist.index(x) for x in both]
         pindices.append(indices_A)
 
     for i in range(nRV):
-        fullist=list(jumping[0])
-        rvlist=list(RVjump[i])
-        both = list(set(fullist).intersection(rvlist))  # attention: set() makes it unordered. we'll need to reorder it
+        fullist = list(jumping[0])
+        rvlist  = list(RVjump[i])
+        both    = list(set(fullist).intersection(rvlist))  # attention: set() makes it unordered. we'll need to reorder it
         both.sort()
         indices_A = [fullist.index(x) for x in both]
         pindices.append(indices_A)
@@ -1189,9 +1232,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     print('\nPlotting initial guess\n---------------------------')
 
     inmcmc = 'n'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
+    indparams = [t_arr,f_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
                 nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, 
-                cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
+                cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
                 pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
                 jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined,useSpline]
     
@@ -1200,7 +1243,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',initial,T0_in[0],per_in[0])
+    mcmc_plots(mval,t_arr,f_arr,e_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',initial,T0_in[0],per_in[0])
     if debug: print(f'finished mcmc_plots, took {(time.time() - debug_t2)} secs')
 
 
@@ -1208,9 +1251,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     print('\nRunning MCMC')
 
     inmcmc = 'y'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
+    indparams = [t_arr,f_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
                 nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV,
-                cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
+                cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
                 pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
                 jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined,useSpline]
 
@@ -1347,9 +1390,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     print('Plotting output figures')
 
     inmcmc='n'
-    indparams = [tarr,farr,xarr,yarr,warr,aarr,sarr,barr,carr, nphot, nRV, indlist, filters, nfilt,
+    indparams = [t_arr,f_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr, nphot, nRV, indlist, filters, nfilt,
          filnames,nddf,nocc,rprs0,erprs0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, 
-              baseLSQ, bvars, bvarsRV, cont,names,RVnames,earr,divwhite,dwCNMarr,dwCNMind,params,
+              baseLSQ, bvars, bvarsRV, cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,
                   useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump, 
                       priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps, 
                           jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes,GPcombined,useSpline]
@@ -1362,22 +1405,22 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
     #median
     mval, merr,T0_post,p_post = logprob_multi(medp[jumping],*indparams,make_out_file=(statistic=="median"), verbose=True,out_folder=out_folder)
-    mcmc_plots(mval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',medp,T0_post,p_post)
+    mcmc_plots(mval,t_arr,f_arr,e_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',medp,T0_post,p_post)
 
     #max_posterior
     mval2, merr2, T0_post, p_post = logprob_multi(maxp[jumping],*indparams,make_out_file=(statistic=="max"),verbose=False)
-    mcmc_plots(mval2,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',maxp, T0_post,p_post)
+    mcmc_plots(mval2,t_arr,f_arr,e_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr,lind, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',maxp, T0_post,p_post)
 
 
-    maxresiduals = farr - mval2 if statistic != "median" else farr - mval  #Akin allow statistics to be based on median of posterior
-    chisq = np.sum(maxresiduals**2/earr**2)
+    maxresiduals = f_arr - mval2 if statistic != "median" else f_arr - mval  #Akin allow statistics to be based on median of posterior
+    chisq = np.sum(maxresiduals**2/e_arr**2)
 
-    ndat = len(tarr)
+    ndat = len(t_arr)
     bic=get_BIC_emcee(npar,ndat,chisq,out_folder)
     aic=get_AIC_emcee(npar,ndat,chisq,out_folder)
 
-    rarr=farr-mval2  if statistic != "median" else farr - mval  # the full residuals
-    bw, br, brt, cf, cfn = corfac(rarr, tarr, earr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
+    rarr=f_arr-mval2  if statistic != "median" else f_arr - mval  # the full residuals
+    bw, br, brt, cf, cfn = corfac(rarr, t_arr, e_arr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
 
 
     of=open(out_folder+"/CF.dat",'w')
@@ -1385,11 +1428,11 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     # print(earr[indlist[i][0]])
         of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
         if (cf_apply == 'cf'):
-            earr[indlist[i][0]] = np.multiply(earr[indlist[i][0]],cf[i])
-            if verbose: print((earr[indlist[i][0]]))        
+            e_arr[indlist[i][0]] = np.multiply(e_arr[indlist[i][0]],cf[i])
+            if verbose: print((e_arr[indlist[i][0]]))        
         if (cf_apply == 'rchisq'):
-            earr[indlist[i][0]] = np.sqrt((earr[indlist[i][0]])**2 + (cfn[i])**2)
-            if verbose: print((earr[indlist[i][0]]))
+            e_arr[indlist[i][0]] = np.sqrt((e_arr[indlist[i][0]])**2 + (cfn[i])**2)
+            if verbose: print((e_arr[indlist[i][0]]))
 
     of.close()
 
