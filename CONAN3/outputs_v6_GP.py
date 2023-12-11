@@ -10,157 +10,167 @@ import scipy.interpolate as si
 from .credibleregion_ML import *
 
 
-def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, nfilt, filnames, howstellar, extinpars, extins, extind_PDF,out_folder):
+def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+                 nfilt, filnames, howstellar, extinpars, extins, extind_PDF,npl,out_folder):
    
      npoint,npara=posterior.shape
-     
+     #TODO: can be improved with parameter names already in posterior dict
      # =============== calculate the physical parameters taking into account the input and inferred PDFs ========
      # first, allocate the necessary jump parameters into PDF variables
-     ind = np.where(np.char.find(jnames, 'T_0')==0)[0]
-     indn = np.where(np.char.find(njnames, 'T_0')==0)[0]
-     if len(extinpars) > 0:
-        inde = np.where(np.char.find(extinpars, 'T_0')==0)[0]
-     else :
-         inde = []
-     if (len(ind) > 0):
-        T0_PDF = posterior[:,ind[0]]
-        T0_bp = bp[ijnames[0][ind]]
-     else:
-        T0_PDF = np.zeros(npoint)
-        T0_PDF[:] = bp[nijnames[0][indn]]
-        T0_bp = bp[nijnames[0][indn]]
-     if (len(inde) > 0):
-        T0_PDF = extind_PDF[:,inde]
-        posterior[:,ind[0]] = extind_PDF[:,inde]
 
-     ind = np.where(np.char.find(jnames, 'Period_[d]')==0)[0]
-     indn = np.where(np.char.find(njnames, 'Period_[d]')==0)[0]
-     if len(extinpars) > 0:
-        inde = np.where(np.char.find(extinpars, 'Period_[d]')==0)[0]
-     else :
-         inde = []
-     if (len(ind) > 0):
-         Period_PDF = posterior[:,ind[0]]
-         Period_bp = bp[ijnames[0][ind]]
-     else:
-         Period_PDF = np.zeros(npoint)
-         Period_PDF[:] = bp[nijnames[0][indn]]
-         Period_bp = bp[nijnames[0][indn]]
-     if (len(inde) > 0):
-         Period_PDF = np.squeeze(extind_PDF[:,inde])
-         
-     ind = np.where(np.char.find(jnames, 'RpRs')==0)[0]
-     indn = np.where(np.char.find(njnames, 'RpRs')==0)[0]
-     if len(extinpars) > 0:
-        inde = np.where(np.char.find(extinpars, 'RpRs')==0)[0]
-     else :
-         inde = []
-     if (len(ind) > 0):
-         RpRs_PDF = posterior[:,ind[0]]
-         RpRs_bp = bp[ijnames[0][ind]]
-     else:
-         RpRs_PDF = np.zeros(npoint)
-         RpRs_PDF[:] = bp[nijnames[0][indn]]
-         RpRs_bp = bp[nijnames[0][indn]]
-     if (len(inde) > 0):
-         RpRs_PDF = np.squeeze(extind_PDF[:,inde])
-     
-     ind = np.where(jnames == "b")[0] #np.where(np.char.find(jnames, 'b')==0)[0] (fixes problems when lc file name begins with b)
-     indn = np.where(njnames == "b")[0] #np.where(np.char.find(njnames, 'b')==0)[0]
-     if len(extinpars) > 0:
-        inde = np.where(extinpars == "K")[0] #np.where(np.char.find(extinpars, 'b')==0)[0]
-     else :
-         inde = []
-     if (len(ind) > 0):
-         b_PDF = posterior[:,ind[0]]
-         b_bp = bp[ijnames[0][ind]]
-     else:
-         b_PDF = np.zeros(npoint)
-         b_PDF[:] = bp[nijnames[0][indn]]
-         b_bp = bp[nijnames[0][indn]]
-     if (len(inde) > 0):
-         b_PDF = np.squeeze(extind_PDF[:,inde])
+     derived_pnames, derived_PDFs, derived_bp = [],[],[]
+     for n in range(npl):
+        nm = f"_{n+1}" if npl>1 else ""
 
-     ind = np.where(np.char.find(jnames, 'dur_[d]')==0)[0]
-     indn = np.where(np.char.find(njnames, 'dur_[d]')==0)[0]
-     if len(extinpars) > 0:
-        inde = np.where(np.char.find(extinpars, 'dur_[d]')==0)[0]
-     else :
-         inde = []
-     if (len(ind) > 0):
-         dur_PDF = posterior[:,ind[0]]
-         dur_bp = bp[ijnames[0][ind]]
-     else:
-         dur_PDF = np.zeros(npoint)
-         dur_PDF[:] = bp[nijnames[0][indn]]
-         dur_bp = bp[nijnames[0][indn]]
-     if (len(inde) > 0):
-         dur_PDF = np.squeeze(extind_PDF[:,inde])          
+        ind  = np.where(np.char.find(jnames, 'T_0'+nm)==0)[0]
+        indn = np.where(np.char.find(njnames, 'T_0'+nm)==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(np.char.find(extinpars, 'T_0'+nm)==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            T0_PDF = posterior[:,ind[0]]
+            T0_bp = bp[ijnames[0][ind]]
+        else:
+            T0_PDF = np.zeros(npoint)
+            T0_PDF[:] = bp[nijnames[0][indn]]
+            T0_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            T0_PDF = extind_PDF[:,inde]
+            posterior[:,ind[0]] = extind_PDF[:,inde]
 
-     ind = np.where(np.char.find(jnames, 'ecos(w)')==0)[0]
-     indn = np.where(np.char.find(njnames, 'ecos(w)')==0)[0]
-     if (len(ind) > 0):
-         ecosw_PDF = posterior[:,ind[0]]
-         ecosw_bp = bp[ijnames[0][ind]]
-     else:
-         ecosw_PDF = np.zeros(npoint)
-         ecosw_PDF[:] = bp[nijnames[0][indn]]
-         ecosw_bp = bp[nijnames[0][indn]]
-     
-     ind = np.where(np.char.find(jnames, 'esin(w)')==0)[0]
-     indn = np.where(np.char.find(njnames, 'esin(w)')==0)[0]
-     if (len(ind) > 0):
-         esinw_PDF = posterior[:,ind[0]]
-         esinw_bp = bp[ijnames[0][ind]]
-     else:
-         esinw_PDF = np.zeros(npoint)
-         esinw_PDF[:] = bp[nijnames[0][indn]]
-         esinw_bp = bp[nijnames[0][indn]]
+        ind = np.where(np.char.find(jnames, 'Period'+nm)==0)[0]
+        indn = np.where(np.char.find(njnames, 'Period'+nm)==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(np.char.find(extinpars, 'Period'+nm)==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            Period_PDF = posterior[:,ind[0]]
+            Period_bp = bp[ijnames[0][ind]]
+        else:
+            Period_PDF = np.zeros(npoint)
+            Period_PDF[:] = bp[nijnames[0][indn]]
+            Period_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            Period_PDF = np.squeeze(extind_PDF[:,inde])
+            
+        ind = np.where(np.char.find(jnames, 'RpRs'+nm)==0)[0]
+        indn = np.where(np.char.find(njnames, 'RpRs'+nm)==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(np.char.find(extinpars, 'RpRs'+nm)==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            RpRs_PDF = posterior[:,ind[0]]
+            RpRs_bp = bp[ijnames[0][ind]]
+        else:
+            RpRs_PDF = np.zeros(npoint)
+            RpRs_PDF[:] = bp[nijnames[0][indn]]
+            RpRs_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            RpRs_PDF = np.squeeze(extind_PDF[:,inde])
+        
+        ind = np.where(jnames == 'Impact_para'+nm)[0] #np.where(np.char.find(jnames, 'b'+nm)==0)[0] (fixes problems when lc file name begins with b)
+        indn = np.where(njnames == 'Impact_para'+nm)[0] #np.where(np.char.find(njnames, 'b')==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(extinpars == 'Impact_para'+nm)[0] #np.where(np.char.find(extinpars, 'b')==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            b_PDF = posterior[:,ind[0]]
+            b_bp = bp[ijnames[0][ind]]
+        else:
+            b_PDF = np.zeros(npoint)
+            b_PDF[:] = bp[nijnames[0][indn]]
+            b_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            b_PDF = np.squeeze(extind_PDF[:,inde])
 
-     ind = np.where(jnames == "K")[0] #np.where(np.char.find(jnames, 'K')==0)[0] (fixes problems when lc file name begins with K)
-     indn = np.where(njnames == "K")[0] #np.where(np.char.find(njnames, 'K')==0)[0]
-     if len(extinpars) > 0:
-        inde = np.where(extinpars == "K")[0] #np.where(np.char.find(extinpars, 'K')==0)[0]
-     else :
-         inde = []
-     if (len(ind) > 0):
-         K_PDF = posterior[:,ind[0]]
-         K_bp = bp[ijnames[0][ind]]
-     else:
-         K_PDF = np.zeros(npoint)
-         K_PDF[:] = bp[nijnames[0][indn]]
-         K_bp = bp[nijnames[0][indn]]
-     if (len(inde) > 0):
-         K_PDF = np.squeeze(extind_PDF[:,inde])
-         
-     c1_PDF = np.zeros((npoint,nfilt))
-     c2_PDF = np.zeros((npoint,nfilt))
-     c1_bp = np.zeros(nfilt)
-     c2_bp = np.zeros(nfilt)
-     
-     for i in range(nfilt):
-         ind = np.where(np.char.find(jnames, filnames[i]+'_c1')==0)[0]
-         indn = np.where(np.char.find(njnames, filnames[i]+'_c1')==0)[0]
-         if (len(ind) > 0):
-             c1_PDF[:,i] = posterior[:,ind[0]]
-             c1_bp[i] = bp[ijnames[0][ind]]
-         else:
-             c1_PDF[:,i] = bp[nijnames[0][indn]]
-             c1_bp[i] = bp[nijnames[0][indn]]
-         ind = np.where(np.char.find(jnames, filnames[i]+'_c2')==0)[0]
-         indn = np.where(np.char.find(njnames, filnames[i]+'_c2')==0)[0]
-         if (len(ind) > 0):
-             c2_PDF[:,i] = posterior[:,ind[0]]
-             c2_bp[i] = bp[ijnames[0][ind]]
-         else:
-             c2_PDF[:,i] = bp[nijnames[0][indn]]
-             c2_bp[i] = bp[nijnames[0][indn]]
-     
-     derived_pnames, derived_PDFs, starstring = derive_parameters(filnames, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, ecosw_PDF, esinw_PDF, K_PDF, c1_PDF, c2_PDF, howstellar) 
-     
-     derived_pnames_bp, derived_bp, starstring_bp = derive_parameters(filnames, Rs_in, Ms_in, RpRs_bp, Period_bp, b_bp, dur_bp, ecosw_bp, esinw_bp, K_bp, c1_bp, c2_bp, howstellar)
-     
-     nderived = len(derived_pnames)
+        ind = np.where(np.char.find(jnames, 'Duration'+nm)==0)[0]
+        indn = np.where(np.char.find(njnames, 'Duration'+nm)==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(np.char.find(extinpars, 'Duration'+nm)==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            dur_PDF = posterior[:,ind[0]]
+            dur_bp = bp[ijnames[0][ind]]
+        else:
+            dur_PDF = np.zeros(npoint)
+            dur_PDF[:] = bp[nijnames[0][indn]]
+            dur_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            dur_PDF = np.squeeze(extind_PDF[:,inde])          
+
+        ind = np.where(np.char.find(jnames, 'secos(w)'+nm)==0)[0]
+        indn = np.where(np.char.find(njnames, 'secos(w)'+nm)==0)[0]
+        if (len(ind) > 0):
+            ecosw_PDF = posterior[:,ind[0]]
+            ecosw_bp = bp[ijnames[0][ind]]
+        else:
+            ecosw_PDF = np.zeros(npoint)
+            ecosw_PDF[:] = bp[nijnames[0][indn]]
+            ecosw_bp = bp[nijnames[0][indn]]
+        
+        ind = np.where(np.char.find(jnames, 'sesin(w)'+nm)==0)[0]
+        indn = np.where(np.char.find(njnames, 'sesin(w)'+nm)==0)[0]
+        if (len(ind) > 0):
+            esinw_PDF = posterior[:,ind[0]]
+            esinw_bp = bp[ijnames[0][ind]]
+        else:
+            esinw_PDF = np.zeros(npoint)
+            esinw_PDF[:] = bp[nijnames[0][indn]]
+            esinw_bp = bp[nijnames[0][indn]]
+
+        ind = np.where(jnames == 'K'+nm)[0] #np.where(np.char.find(jnames, 'K'+nm)==0)[0] (fixes problems when lc file name begins with K)
+        indn = np.where(njnames == 'K'+nm)[0] #np.where(np.char.find(njnames, 'K'+nm)==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(extinpars == 'K'+nm)[0] #np.where(np.char.find(extinpars, 'K'+nm)==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            K_PDF = posterior[:,ind[0]]
+            K_bp = bp[ijnames[0][ind]]
+        else:
+            K_PDF = np.zeros(npoint)
+            K_PDF[:] = bp[nijnames[0][indn]]
+            K_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            K_PDF = np.squeeze(extind_PDF[:,inde])
+            
+        c1_PDF = np.zeros((npoint,nfilt))
+        c2_PDF = np.zeros((npoint,nfilt))
+        c1_bp  = np.zeros(nfilt)
+        c2_bp  = np.zeros(nfilt)
+        
+        for i in range(nfilt):
+            ind = np.where(np.char.find(jnames, filnames[i]+'_c1')==0)[0]
+            indn = np.where(np.char.find(njnames, filnames[i]+'_c1')==0)[0]
+            if (len(ind) > 0):
+                c1_PDF[:,i] = posterior[:,ind[0]]
+                c1_bp[i] = bp[ijnames[0][ind]]
+            else:
+                c1_PDF[:,i] = bp[nijnames[0][indn]]
+                c1_bp[i] = bp[nijnames[0][indn]]
+            ind = np.where(np.char.find(jnames, filnames[i]+'_c2')==0)[0]
+            indn = np.where(np.char.find(njnames, filnames[i]+'_c2')==0)[0]
+            if (len(ind) > 0):
+                c2_PDF[:,i] = posterior[:,ind[0]]
+                c2_bp[i] = bp[ijnames[0][ind]]
+            else:
+                c2_PDF[:,i] = bp[nijnames[0][indn]]
+                c2_bp[i] = bp[nijnames[0][indn]]
+        
+        pnames, PDFs, starstring   = derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, ecosw_PDF, esinw_PDF, K_PDF, c1_PDF, c2_PDF, howstellar) 
+        _,   bp_PDFs, _         = derive_parameters(filnames, nm, Rs_in, Ms_in, RpRs_bp, Period_bp, b_bp, dur_bp, ecosw_bp, esinw_bp, K_bp, c1_bp, c2_bp, howstellar)
+
+        derived_pnames.extend(pnames)
+        derived_PDFs.extend(PDFs)
+        derived_bp.extend(bp_PDFs)
+
+        
+        nderived = len(derived_pnames)
      
    # =============================================================================================================
    #                  START OUTPUT SECTION 
@@ -168,9 +178,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
 
    
    # =============== write out the medians, best values and distributions of the jump parameters =================
-     outfile=out_folder+"/"+'results_med.dat'
-     outfile2=out_folder+"/"+'results_max.dat'
-     outfile3=out_folder+"/"+'results_bf.dat'
+     outfile  = out_folder+"/"+'results_med.dat'
+     outfile2 = out_folder+"/"+'results_max.dat'
+     outfile3 = out_folder+"/"+'results_bf.dat'
 
      of=open(outfile,'w')
      of2=open(outfile2,'w')
@@ -183,23 +193,23 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
      i1sig = np.array([np.round(npoint/2)-n1sig,np.round(npoint/2)+n1sig], dtype='int32') # indexes of the points at median -/+ 1 n1sig
      i3sig = np.array([np.round(npoint/2)-n3sig,np.round(npoint/2)+n3sig], dtype='int32') # indexes of the points at median -/+ 1 n1sig
      
-     medvals = np.zeros(npara)
-     maxvals = np.zeros(npara)
+     medvals  = np.zeros(npara)
+     maxvals  = np.zeros(npara)
      medvalsd = np.zeros(nderived)
      maxvalsd = np.zeros(nderived)
 
-     sig1 =  np.zeros([npara,2])   # array to contain the 1-sigma limits [lower, upper] for all parameters
-     sig3 =  np.zeros([npara,2])   # array to contain the 3-sigma limits [lower, upper] for all parameters
-     sig1m =  np.zeros([npara,2])  # array to contain the 1-sigma limits [lower, upper] for all parameters
-     sig3m =  np.zeros([npara,2])  # array to contain the 3-sigma limits [lower, upper] for all parameters
+     sig1   =  np.zeros([npara,2])   # array to contain the 1-sigma limits [lower, upper] for all parameters
+     sig3   =  np.zeros([npara,2])   # array to contain the 3-sigma limits [lower, upper] for all parameters
+     sig1m  =  np.zeros([npara,2])  # array to contain the 1-sigma limits [lower, upper] for all parameters
+     sig3m  =  np.zeros([npara,2])  # array to contain the 3-sigma limits [lower, upper] for all parameters
      sig1s  =  np.zeros([2])       # array to contain the 1-sigma limits [lower, upper] for a single parameter
      sig3s  =  np.zeros([2]) 
-     sig1ms  =  np.zeros([2]) 
-     sig3ms  =  np.zeros([2]) 
+     sig1ms =  np.zeros([2]) 
+     sig3ms =  np.zeros([2]) 
      sig1d  =  np.zeros([nderived,2])  # array to contain the 1-sigma limits [lower, upper] for the derived parameters
      sig3d  =  np.zeros([nderived,2]) 
-     sig1md  =  np.zeros([nderived,2]) 
-     sig3md  =  np.zeros([nderived,2]) 
+     sig1md =  np.zeros([nderived,2]) 
+     sig3md =  np.zeros([nderived,2]) 
      
      of.write('====================================================================================================\n')
      of.write('Jump parameters:\n')
@@ -551,7 +561,7 @@ def get_PDF_Gauss(cen,sig1,sig2,dim):
    
     return val_PDF
 
-def derive_parameters(filnames, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, ecosw_PDF, esinw_PDF, K_PDF, c1_PDF, c2_PDF, howstellar):
+def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, ecosw_PDF, esinw_PDF, K_PDF, c1_PDF, c2_PDF, howstellar):
     
     import scipy.constants as cn
 
@@ -671,7 +681,8 @@ def derive_parameters(filnames, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur
 
      
          
-    derived_pnames = ["Rp_[Rjup]","Mp_[Mjup]", "rho_p_[rhoJup]", "g_p_[SI]", "dF", "aRs", "a_[au]", "rhoS_[rhoSun]", "Ms_[Msun]", "Rs_[Rsun]", "inclination_[deg]", "eccentricity", "omega_[deg]", "Occult_dur", "Rs_a", "MF_PDF_[Msun]"]
+    derived_pnames = [f"Rp{nm}_[Rjup]",f"Mp{nm}_[Mjup]", f"rho{nm}_p_[rhoJup]", f"g_p{nm}_[SI]", f"dF{nm}", f"aRs{nm}", f"a{nm}_[au]", f"rhoS{nm}_[rhoSun]", "Ms_[Msun]", "Rs_[Rsun]",
+                       f"inclination{nm}_[deg]", f"eccentricity{nm}", f"omega{nm}_[deg]", f"Occult_dur{nm}", f"Rs_a{nm}", "MF_PDF_[Msun]"]
     
     derived_pnames =  derived_pnames + pnames_LD
         

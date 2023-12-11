@@ -1,34 +1,34 @@
 import numpy as np
 
-def ecc_om_par(ecc_in, omega_in):
+def ecc_om_par(ecc, omega):
     # This function calculates the prior values and limits for the eccentricity and omega parameters
 
-    sesino=np.sqrt(ecc_in[0])*np.sin(omega_in[0])     # starting value
-    sesinolo=-1.   # lower limit
-    sesinoup=1.   # upper limit
+    sesino=np.sqrt(ecc.start_value)*np.sin(omega.start_value)     # starting value
+    sesinolo = -1.   # lower limit
+    sesinoup = 1.   # upper limit
     
-    dump1=np.sqrt(ecc_in[0]+ecc_in[1])*np.sin(omega_in[0]+omega_in[1])-np.sqrt(ecc_in[0])*np.sin(omega_in[0])
-    dump2=np.sqrt(ecc_in[0]-ecc_in[1])*np.sin(omega_in[0]+omega_in[1])-np.sqrt(ecc_in[0])*np.sin(omega_in[0])
-    dump3=np.sqrt(ecc_in[0]+ecc_in[1])*np.sin(omega_in[0]-omega_in[1])-np.sqrt(ecc_in[0])*np.sin(omega_in[0])
-    dump4=np.sqrt(ecc_in[0]-ecc_in[1])*np.sin(omega_in[0]-omega_in[1])-np.sqrt(ecc_in[0])*np.sin(omega_in[0])
+    dump1=np.sqrt(ecc.start_value+ecc.step_size)*np.sin(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
+    dump2=np.sqrt(ecc.start_value-ecc.step_size)*np.sin(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
+    dump3=np.sqrt(ecc.start_value+ecc.step_size)*np.sin(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
+    dump4=np.sqrt(ecc.start_value-ecc.step_size)*np.sin(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
 
     sesinostep=np.nanmax(np.abs([dump1,dump2,dump3,dump4])) # the stepsize
 
-    if (ecc_in[5]!=0.):   # if an eccentricity prior is set
-        edump=np.copy(ecc_in[4])
-        eup=np.copy(ecc_in[5])
-        elo=np.copy(ecc_in[6])
+    if (ecc.prior_width_lo!=0.):   # if an eccentricity prior is set
+        edump= np.copy(ecc.prior_mean)
+        eup  = np.copy(ecc.prior_width_lo)
+        elo  = np.copy(ecc.prior_width_hi)
     else:
-        edump=np.copy(ecc_in[0])
+        edump= np.copy(ecc.start_value)
         eup=0.
         elo=0.
 
-    if (omega_in[5]!=0.):   # if an omega prior is set
-        odump=np.copy(omega_in[4])
-        oup=np.copy(omega_in[5])
-        olo=np.copy(omega_in[6])
+    if (omega.prior_width_lo!=0.):   # if an omega prior is set
+        odump= np.copy(omega.prior_mean)
+        oup  = np.copy(omega.prior_width_lo)
+        olo  = np.copy(omega.prior_width_hi)
     else:
-        odump=np.copy(omega_in[0])
+        odump= np.copy(omega.start_value)
         oup=0.
         olo=0.
 
@@ -42,14 +42,14 @@ def ecc_om_par(ecc_in, omega_in):
     sesinoplo=np.abs(np.nanmin([dump1,dump2,dump3,dump4]))
     sesinopup=np.abs(np.nanmax([dump1,dump2,dump3,dump4]))
                                     
-    secoso=np.sqrt(ecc_in[0])*np.cos(omega_in[0])
+    secoso=np.sqrt(ecc.start_value)*np.cos(omega.start_value)
     secosolo=-1.   # lower limit
     secosoup=1.   # upper limit
 
-    dump1=np.sqrt(ecc_in[0]+ecc_in[1])*np.cos(omega_in[0]+omega_in[1])-np.sqrt(ecc_in[0])*np.cos(omega_in[0])
-    dump2=np.sqrt(ecc_in[0]-ecc_in[1])*np.cos(omega_in[0]+omega_in[1])-np.sqrt(ecc_in[0])*np.cos(omega_in[0])
-    dump3=np.sqrt(ecc_in[0]+ecc_in[1])*np.cos(omega_in[0]-omega_in[1])-np.sqrt(ecc_in[0])*np.cos(omega_in[0])
-    dump4=np.sqrt(ecc_in[0]-ecc_in[1])*np.cos(omega_in[0]-omega_in[1])-np.sqrt(ecc_in[0])*np.cos(omega_in[0])
+    dump1=np.sqrt(ecc.start_value+ecc.step_size)*np.cos(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
+    dump2=np.sqrt(ecc.start_value-ecc.step_size)*np.cos(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
+    dump3=np.sqrt(ecc.start_value+ecc.step_size)*np.cos(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
+    dump4=np.sqrt(ecc.start_value-ecc.step_size)*np.cos(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
 
     secosostep=np.nanmax(np.abs([dump1,dump2,dump3,dump4]))
 
@@ -63,7 +63,13 @@ def ecc_om_par(ecc_in, omega_in):
 
     secosop=np.sqrt(edump)*np.cos(odump)     # the prior
 
-    eos_in=[sesino,sesinostep,sesinolo,sesinoup,sesinop,sesinoplo,sesinopup]
-    eoc_in=[secoso,secosostep,secosolo,secosoup,secosop,secosoplo,secosopup]
+    to_fit = "y" if ecc.to_fit=="y" or omega.to_fit=="y" else "n"
+    pri    =  ecc.prior
+    eos_in=[to_fit,sesino,sesinostep,pri,sesinop,sesinoplo,sesinopup,sesinolo,sesinoup]
+    eoc_in=[to_fit,secoso,secosostep,pri,secosop,secosoplo,secosopup,secosolo,secosoup]
+
+    from ._classes import _param_obj
+    eos_in = _param_obj(eos_in)
+    eoc_in = _param_obj(eoc_in)
 
     return eos_in, eoc_in

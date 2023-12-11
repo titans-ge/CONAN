@@ -11,10 +11,10 @@ from lmfit import minimize, Parameters, Parameter
 import batman
 from warnings import warn
 from ldtk import SVOFilter
-from scipy.signal import medfilt
+from .utils import outlier_clipping
+from copy import deepcopy
 
-
-__all__ = ["load_lightcurves", "load_rvs", "setup_fit", "__default_backend__","load_result_array"]
+__all__ = ["load_lightcurves", "load_rvs", "mcmc_setup", "load_result", "__default_backend__","load_result_array"]
 
 #helper functions
 __default_backend__ = matplotlib.get_backend()
@@ -38,8 +38,8 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
         plt.errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[0]}')
         if model_overplot:
             plt.plot(p1,model_overplot[0][0],"r",zorder=3,label="detrend_model")
-            if tsm: plt.plot(model_overplot[0][2],model_overplot[0][3],"c",zorder=3,label="tra/occ_model")   #smooth model plot if time on x axis
-            else: plt.plot(p1,model_overplot[0][1],"c",zorder=3,label="tra/occ_model")
+            if tsm: plt.plot(model_overplot[0][2],model_overplot[0][3],"c",zorder=3,label="tra/rv_model")   #smooth model plot if time on x axis
+            else: plt.plot(p1,model_overplot[0][1],"c",zorder=3,label="tra/rv_model")
 
 
         if fit_order>0:
@@ -101,7 +101,7 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
                 A4=None, B4=None, A5=None, B5=None,
                 A6=None, B6=None, A7=None, B7=None,
                 A5_2=None, B5_2=None, A5_3=None,B5_3=None,
-                cheops=False, return_models=False):
+                cheops=False, npl=1,return_models=False):
     """
     linear decorrelation with different columns of data file. It performs a linear model fit to the 3rd column of the file.
     It uses columns 0,3,4,5,6,7 to construct the linear trend model.
@@ -128,6 +128,9 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
     cheops : Bool;
         True, if data is from CHEOPS with col5 being the roll-angle. 
         In this case, a linear fourier model up to 3rd harmonic in roll-angle  is used for col5 
+
+    npl : int; 
+        number of planets in the system. default is 1.
         
     return_models : Bool;
         True to return trend model and transit/eclipse model.
@@ -138,8 +141,8 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
         result object from fit with several attributes such as result.bestfit, result.params, result.bic, ...
         if return_models = True, returns (trend_model, transit/eclipse model)
     """
-    in_pars = locals().copy()
-    _       = in_pars.pop("file")
+    DA = locals().copy()
+    _       = DA.pop("file")
     tr_pars = {}
 
     ff = np.loadtxt(file,usecols=(0,1,2,3,4,5,6,7,8))
@@ -162,11 +165,20 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
         mask = abs(df["cols0"] - Tc) > 0.5*in_pars["Duration"]
         df = df[mask]
         
-    for p in ["T_0", "Period", "Duration", "L", "Impact_para","RpRs", "Eccentricity", "omega", "u1","u2"]: 
-        tr_pars[p]= in_pars[p]    #transit/eclipse pars
-    #remove non-decorr variables    
-    _ = [in_pars.pop(item) for item in ["T_0", "Period", "Duration", "L","Impact_para","RpRs", "Eccentricity", "omega","u1","u2",
-                                        "mask","cheops", "return_models","decorr_bound"]]
+    
+
+    #transit variables
+    for p in ["T_0", "Period", "Duration", "L", "Impact_para","RpRs", "Eccentricity", "omega", "u1","u2"]:
+        for n in range(npl):
+            lbl = f"_{n+1}" if npl>1 else ""   #numbering to add to parameter names of each planet
+            if p not in ["u1","u2"]:
+                tr_pars[p+lbl]= DA[p][n]  #transit/eclipse pars
+            else:
+                tr_pars[p] = DA[p]        #limb darkening pars
+
+    #decorr variables    
+    decorr_vars = [f"{L}{i}" for i in [0,3,4,5,6,7] for L in ["A","B"]]  + ["A5_2","B5_2","A5_3","B5_3","offset"]
+    in_pars = {k:v for k,v in DA.items() if k in decorr_vars}
 
     #decorr params
     params = Parameters()
@@ -190,42 +202,50 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
         if isinstance(tr_pars[key], (float,int)):
             tr_params.add(key, value=tr_pars[key], vary=False)
         if tr_pars[key] == None:
-            val = 1e-10 if key in ["RpRs","Period","Duration"] else 0 #allows to obtain transit/eclipse with zero depth
+            vs = ["RpRs","Period","Duration"]
+            vs = [v+(f"_{n+1}" if npl>1 else "") for n in range(npl) for v in vs]    
+            val = 1e-10 if key in vs else 0 #allows to obtain transit/eclipse with zero depth
             tr_params.add(key, value=val, vary=False)
                 
     
-    def transit_occ_model(tr_params,t=None):
-        bt = batman.TransitParams()
-
-        bt.per = tr_params["Period"]
-        bt.t0  = tr_params["T_0"]
-        bt.fp  = tr_params["L"]
-        bt.rp  = tr_params["RpRs"]
-        b      = tr_params["Impact_para"]
-        dur    = tr_params["Duration"]
-        bt.ecc = tr_params["Eccentricity"]
-        bt.w = tr_params["omega"]
-        bt.a   = np.sqrt( (1+bt.rp)**2 - b**2)/(np.pi*dur/bt.per)
-                                                
-        ecc_factor=(1-bt.ecc**2)/(1+bt.ecc*np.sin(np.deg2rad(bt.w)))  
-        
-        bt.inc = np.rad2deg(np.arccos(b/(bt.a * ecc_factor)))
-        bt.limb_dark = "quadratic"
-        
-        u1 = tr_params["u1"]
-        u2 = tr_params["u2"]
-        bt.u   = [u1,u2]
-
-        bt.t_secondary = bt.t0 + 0.5*bt.per*(1 + 4/np.pi * bt.ecc * np.cos(np.deg2rad(bt.w))) #eqn 33 (http://arxiv.org/abs/1001.2010)
+    def transit_occ_model(tr_params,t=None,npl=1):
         if t is None: t = df["cols0"].values
+        model_flux = np.zeros_like(t)
 
-        m_tra = batman.TransitModel(bt, t,transittype="primary")
-        m_ecl = batman.TransitModel(bt, t,transittype="secondary")
+        for n in range(1,npl+1):
+            lbl = f"_{n}" if npl>1 else ""
+            
+            bt = batman.TransitParams()
+            bt.per = tr_params["Period"+lbl]
+            bt.t0  = tr_params["T_0"+lbl]
+            bt.fp  = tr_params["L"+lbl]
+            bt.rp  = tr_params["RpRs"+lbl]
+            b      = tr_params["Impact_para"+lbl]
+            dur    = tr_params["Duration"+lbl]
+            bt.ecc = tr_params["Eccentricity"+lbl]
+            bt.w   = tr_params["omega"+lbl]
+            bt.a   = np.sqrt( (1+bt.rp)**2 - b**2)/(np.pi*dur/bt.per)
+            bt.fp  = tr_params["L"+lbl]                                        
+            ecc_factor=(1-bt.ecc**2)/(1+bt.ecc*np.sin(np.deg2rad(bt.w)))  
+            
+            bt.inc = np.rad2deg(np.arccos(b/(bt.a * ecc_factor)))
+            bt.limb_dark = "quadratic"
+            
+            u1 = tr_params["u1"]
+            u2 = tr_params["u2"]
+            bt.u   = [u1,u2]
 
-        f_tra = m_tra.light_curve(bt)
-        f_occ = (m_ecl.light_curve(bt)-bt.fp)
-        model_flux = f_tra*f_occ #transit and eclipse model
-        return np.array(model_flux)
+            bt.t_secondary = bt.t0 + 0.5*bt.per*(1 + 4/np.pi * bt.ecc * np.cos(np.deg2rad(bt.w))) #eqn 33 (http://arxiv.org/abs/1001.2010)
+            
+
+            m_tra = batman.TransitModel(bt, t,transittype="primary")
+            m_ecl = batman.TransitModel(bt, t,transittype="secondary")
+
+            f_tra = m_tra.light_curve(bt)-1
+            f_occ = (m_ecl.light_curve(bt)-bt.fp)-1
+            model_flux += f_tra+f_occ           #transit and eclipse model
+
+        return np.array(1+model_flux)
 
 
     def trend_model(params):
@@ -251,11 +271,11 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
 
     if return_models:
         tsm = np.linspace(min(df["cols0"]),max(df["cols0"]),len(df["cols0"])*3)
-        return trend_model(params),transit_occ_model(tr_params),tsm,transit_occ_model(tr_params,tsm)   
+        return trend_model(params),transit_occ_model(tr_params,npl=npl),tsm,transit_occ_model(tr_params,tsm,npl=npl)   
     
     #perform fitting 
     def chisqr(fit_params):
-        flux_model = trend_model(fit_params)*transit_occ_model(fit_params)
+        flux_model = trend_model(fit_params)*transit_occ_model(fit_params,npl=npl)
         res = (df["cols1"] - flux_model)/df["cols2"]
         for p in fit_params:
             u = fit_params[p].user_data  #obtain tuple specifying the normal prior if defined
@@ -268,9 +288,9 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
     out = minimize(chisqr, fit_params, nan_policy='propagate')
     
     #modify output object
-    out.bestfit = trend_model(out.params)*transit_occ_model(out.params)
+    out.bestfit = trend_model(out.params)*transit_occ_model(out.params,npl=npl)
     out.trend   = trend_model(out.params)
-    out.transit = transit_occ_model(out.params)
+    out.transit = transit_occ_model(out.params,npl=npl)
     out.time    = np.array(df["cols0"])
     out.flux    = np.array(df["cols1"])
     out.flux_err= np.array(df["cols2"])
@@ -287,28 +307,171 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
     return out
 
 
+def _decorr_RV(file, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None, decorr_bound=(-1000,1000),
+                 A0=None, B0=None, A3=None, B3=None, A4=None, B4=None, A5=None, B5=None, npl=1,return_models=False):
+    """
+    linear decorrelation with different columns of data file. It performs a linear model fit to the 3rd column of the file.
+    It uses columns 0,3,4,5 to construct the linear trend model.
+    
+    Parameters:
+    -----------
+    file : str;
+        path to data file with columns 0 to 8 (col0-col8).
+    
+    T_0, Period, K, Eccentricity, omega : floats, None;
+        RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) in the data file.
+        if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
+
+    offset, Ai, Bi; floats [-1,1] or None;
+        coefficients of linear model where offset is the systemic velocity. They have large bounds [-1000,1000].
+        Ai, Bi are the linear and quadratic term of the model against column i. A0*col0 + A0*col0**2 for time trend
+    
+    npl : int; 
+        number of planets in the system. default is 1.
+        
+    return_models : Bool;
+        True to return trend model and transit/eclipse model.
+         
+    Returns:
+    -------
+    result: object;
+        result object from fit with several attributes such as result.bestfit, result.params, result.bic, ...
+        if return_models = True, returns (trend_model, transit/eclipse model)
+    """
+    from CONAN3.RVmodel_v3 import get_RVmod
+
+    DA      = locals().copy()
+    _       = DA.pop("file")
+    rv_pars = {}
+
+    ff = np.loadtxt(file,usecols=(0,1,2,3,4,5))
+    dict_ff = {}
+    for i in range(6): dict_ff[f"cols{i}"] = ff[:,i]
+    df = pd.DataFrame(dict_ff)  #pandas dataframe
+    cols0_med = np.median(df["cols0"])
+                          
+
+    #add indices to parameters if npl>1
+    for p in ["T_0", "Period", "K", "sesinw", "secosw"]:
+        for n in range(npl):
+            lbl = f"_{n+1}" if npl>1 else ""   # numbering to add to parameter names of each planet
+            rv_pars[p+lbl]= DA[p][n]           # rv pars
+    rv_pars["gamma"] = DA["gamma"]   #same for all planets
+
+    #decorr variables    
+    decorr_vars = [f"{L}{i}" for i in [0,3,4,5] for L in ["A","B"]] 
+    in_pars = {k:v for k,v in DA.items() if k in decorr_vars}  #dictionary of decorr parameters Ai,Bi
+
+    #decorr params to fit or fix
+    params = Parameters()
+    for key in in_pars.keys():
+        val  = in_pars[key] if in_pars[key] != None else 0
+        vary = True if in_pars[key] != None else False
+        params.add(key, value=val, min=decorr_bound[0], max=decorr_bound[1], vary=vary)
+    
+    #rvparameters
+    rv_params = Parameters()
+    for key in rv_pars.keys():
+        if isinstance(rv_pars[key], (list,tuple)):
+            assert len(rv_pars[key]) in [2,3],f"{key} must be float/int or tuple of length 2/3"
+            if len(rv_pars[key])==3:  #uniform prior (min, start, max)
+                val = rv_pars[key]
+                rv_params.add(key, value=val[1], min=val[0], max=val[2], vary=True)
+            if len(rv_pars[key])==2: #normal prior (mean, std)
+                rv_params[key] = Parameter(key, value=rv_pars[key][0], vary=True, user_data = rv_pars[key] )
+        if isinstance(rv_pars[key], (float,int)):
+            rv_params.add(key, value=rv_pars[key], vary=False)
+        if rv_pars[key] is None:
+            rv_params.add(key, value=0, vary=False)
+                
+    
+    def rv_model(rv_params,t=None,npl=1):
+        if t is None: t = df["cols0"].values
+        rvmod_ms = np.zeros_like(t)
+
+        for n in range(1,npl+1):
+            lbl = f"_{n}" if npl>1 else ""
+
+            per     = [rv_params["Period"+lbl]]
+            t0      = [rv_params["T_0"+lbl]]
+            K       = [rv_params["K"+lbl]]
+            sesinw  = [rv_params["sesinw"+lbl]]
+            secosw  = [rv_params["secosw"+lbl]]
+            mod,_   = get_RVmod(t, t0, per, K, sesinw, secosw, get_model=True)  
+            rvmod_ms += mod
+        
+        rvmod_kms = rvmod_ms/1000 # to km/s
+        return rvmod_kms + rv_params["gamma"]
+
+
+    def trend_model(params):
+        trend  = params["A0"]*(df["cols0"]-cols0_med)  + params["B0"]*(df["cols0"]-cols0_med)**2 #time trend
+        trend += params["A3"]*df["cols3"]  + params["B3"]*df["cols3"]**2 #bisector
+        trend += params["A4"]*df["cols4"]  + params["B4"]*df["cols4"]**2 #fwhm
+        trend += params["A5"]*df["cols5"]  + params["B5"]*df["cols5"]**2 #contrast
+        return np.array(trend)
+    
+
+    if return_models:
+        tsm = np.linspace(min(df["cols0"]),max(df["cols0"]),len(df["cols0"])*3)
+        return trend_model(params)+rv_params["gamma"], rv_model(rv_params,npl=npl), tsm,rv_model(rv_params,tsm,npl=npl)   
+    
+    #perform fitting 
+    def chisqr(fit_params):
+        rvmod = trend_model(fit_params)+rv_model(fit_params,npl=npl)
+        res = (df["cols1"] - rvmod)/df["cols2"]
+        for p in fit_params:
+            u = fit_params[p].user_data  #obtain tuple specifying the normal prior if defined
+            if u:  #modify residual to account for how far the value is from mean of prior
+                res = np.append(res, (u[0]-fit_params[p].value)/u[1] )
+        # print(f"chi-square:{np.sum(res**2)}")
+        return res
+    
+    fit_params = params+rv_params
+    out = minimize(chisqr, fit_params, nan_policy='propagate')
+    
+    #modify output object
+    out.bestfit = trend_model(out.params)+rv_model(out.params,npl=npl)
+    out.trend   = trend_model(out.params)+out.params["gamma"]
+    out.rvmodel = rv_model(out.params,npl=npl)
+    out.time    = np.array(df["cols0"])
+    out.rv      = np.array(df["cols1"])
+    out.rv_err  = np.array(df["cols2"])
+    out.data    = df
+    out.rms     = np.std(out.rv - out.bestfit)
+    out.ndata   = len(out.time)
+    out.residual= out.residual[:out.ndata]    #out.residual = chisqr(out.params)
+    out.nfree   = out.ndata - out.nvarys
+    out.chisqr  = np.sum(out.residual**2)
+    out.redchi  = out.chisqr/out.nfree
+    out.lnlike  = -0.5*np.sum(out.residual**2 + np.log(2*np.pi*out.rv_err**2))
+    out.bic     = out.chisqr + out.nvarys*np.log(out.ndata)
+
+    return out
+
+
 def _print_output(self, section: str, file=None):
     """function to print to screen/file the different sections of CONAN setup"""
 
     lc_possible_sections= ["lc_baseline", "gp", "transit_rv_pars", "depth_variation",
                             "occultations", "limb_darkening", "contamination", "stellar_pars"]
     if self._obj_type == "lc_obj":
-        assert section in lc_possible_sections, f"{section} not a valid section of `lc_data`. \
-            section must be one of {lc_possible_sections}."
+        assert section in lc_possible_sections, f"{section} not a valid section of `lc_data`. Section must be one of {lc_possible_sections}."
         max_name_len = max([len(n) for n in self._names]+[len("name")])      #max length of lc filename
-        max_filt_len = max([len(n) for n in self._filters]+[len("filter")])  #max length of lc filter name
+        max_filt_len = max([len(n) for n in self._filters]+[len("filt")])  #max length of lc filter name
     if self._obj_type == "rv_obj":
         assert section == "rv_baseline", f"The only valid section for an RV data object is 'rv_baseline' but {section} given."
+        max_name_len = max([len(n) for n in self._names]+[len("name")])      #max length of lc filename
     if self._obj_type == "mcmc_obj":
         assert section == "mcmc",  f"The only valid section for an mcmc object is 'mcmc' but {section} given."
 
     if section == "lc_baseline":
         _print_lc_baseline = f"""#--------------------------------------------- \n# Input lightcurves filters baseline function--------------""" +\
-                            f""" \n{"name":{max_name_len}s}  {"filter":{max_filt_len}s}\t {"lamda":8s} {"col1":4s}\t {"col3":4s}  {"col4":4s}  {"col5":4s}  {"col6":4s}  {"col7":4s}\t {"sin":3s}\t {"group":5s}\t {"id":2s}\t {"GP":2s}"""
+                            f""" \n{"name":{max_name_len}s}  {"filt":{max_filt_len}s}  {"lamda":8s} {"col0":4s}  {"col3":4s}  {"col4":4s}  {"col5":4s}  {"col6":4s}  {"col7":4s}  {"sin":3s}  {"group":5s}  {"id":2s}  {"GP":2s}  {"spl_config     ":20s}"""
         #define print out format
-        txtfmt = f"\n{{0:{max_name_len}s}}  {{1:{max_filt_len}s}}"+"\t{2:8s} {3:4d}\t {4:4d}  {5:4d}  {6:4d}  {7:4d}  {8:4d}\t {9:3d}\t {10:5d}\t {11:2d}\t {12:2s}"        
+        txtfmt = f"\n{{0:{max_name_len}s}}  {{1:{max_filt_len}s}}"+"  {2:8s} {3:4d}  {4:4d}  {5:4d}  {6:4d}  {7:4d}  {8:4d}  {9:3d}  {10:5d}  {11:2d}  {12:2s}  {13:20s}"        
         for i in range(len(self._names)):
-            t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), *self._bases[i], self._groups[i], self._useGPphot[i])
+            t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), *self._bases[i], self._groups[i], self._useGPphot[i],self._lcspline[i].conf)
             _print_lc_baseline += t
         print(_print_lc_baseline, file=file)   
 
@@ -335,13 +498,16 @@ def _print_output(self, section: str, file=None):
                                   f"""\n{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\t{"value   ":8s}\tsig_lo\tsig_hi"""
 
         #define print out format
-        txtfmt = "\n{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6:5s}\t{7:8.5f}\t{8:6.1e}\t{9:6.1e} "        
-        for i,p in enumerate(self._parnames):
-            t = txtfmt.format(  p, DA[p].to_fit, DA[p].start_value,
-                                DA[p].step_size, DA[p].bounds_lo, 
-                                DA[p].bounds_hi, DA[p].prior, DA[p].prior_mean,
-                                DA[p].prior_width_lo, DA[p].prior_width_hi)
-            _print_transit_rv_pars += t
+        txtfmt = "\n{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6:5s}\t{7:8.5f}\t{8:6.1e}\t{9:6.1e} "
+        for n in range(1,self._nplanet+1):        
+            for i,p in enumerate(self._TR_RV_parnames):
+                t = txtfmt.format(  p+(f"_{n}" if self._nplanet>1 else ""),
+                                    DA[f'pl{n}'][p].to_fit, DA[f'pl{n}'][p].start_value,
+                                    DA[f'pl{n}'][p].step_size, DA[f'pl{n}'][p].bounds_lo, 
+                                    DA[f'pl{n}'][p].bounds_hi, DA[f'pl{n}'][p].prior, DA[f'pl{n}'][p].prior_mean,
+                                    DA[f'pl{n}'][p].prior_width_lo, DA[f'pl{n}'][p].prior_width_hi)
+                _print_transit_rv_pars += t
+            if n!=self._nplanet: _print_transit_rv_pars += "---------------------"
         print(_print_transit_rv_pars, file=file)
 
     if section == "depth_variation":
@@ -431,17 +597,15 @@ def _print_output(self, section: str, file=None):
 
     if section == "rv_baseline":
         _print_rv_baseline = f"""# ------------------------------------------------------------\n# Input RV curves, baseline function, gamma  """+\
-                                    f"""\n{'name':13s}   time  bis  fwhm  contrast  sinPs  gamma_kms  stepsize  prior  value  sig_lo  sig_hi"""
+                                    f"""\n{'name':{max_name_len}s} {'col0':4s} {'col3':4s} {'col4':4s} {"col5":4s} {'sin':3s} {"spl_config     ":20s} | {'gamma_kms':9s} {'stepsize':8s} {'prior':5s} {'    value':9s} {'sig_lo':6s} {'sig_hi':6s}"""
         
         if self._names != []:
             #define gp print out format
-            txtfmt = "\n{0:13s}   {1:4d}  {2:3d}  {3:4d}  {4:8d}  {5:5d}  {6:9.4f}  {7:8.4f}  {8:5s}  {9:6.4f}  {10:6.4f}  {11:6.4f}"         
+            txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:4d} {2:4d} {3:4d} {4:4d} {5:3d} {6:20s} | {7:9.4f} {8:8.4f} {9:5s} {10:9.4f} {11:6.4f} {12:6.4f}"         
             for i in range(self._nRV):
-                t = txtfmt.format(self._names[i],*self._RVbases[i],self._gammas[i], 
-                                self._gamsteps[i], self._prior[i], self._gampri[i],
-                                self._siglo[i], self._sighi[i])
+                t = txtfmt.format(self._names[i],*self._RVbases[i],self._rvspline[i].conf,self._gammas[i], 
+                                self._gamsteps[i], self._prior[i], self._gampri[i],self._siglo[i], self._sighi[i])
                 _print_rv_baseline += t
-
         print(_print_rv_baseline, file=file)
 
 class _param_obj():
@@ -454,23 +618,21 @@ class _param_obj():
         for i in range(len(par_list)): assert isinstance(par_list[i], (int,float,str)), \
             f"par_list[{i}] must be of type: int, float or str."
             
-        self.to_fit = par_list[0] if (par_list[0] in ["n","y"]) \
-                                    else _raise(ValueError, "to_fit (par_list[0]) must be 'n' or 'y'")
-        self.start_value = par_list[1]
-        self.step_size = par_list[2]
-        self.prior = par_list[3] if (par_list[3] in ["n","p"]) \
-                                    else _raise(ValueError, "prior (par_list[3]) must be 'n' or 'p'")
-        self.prior_mean = par_list[4]
+        self.to_fit         = par_list[0] if (par_list[0] in ["n","y"]) else _raise(ValueError, "to_fit (par_list[0]) must be 'n' or 'y'")
+        self.start_value    = par_list[1]
+        self.step_size      = par_list[2]
+        self.prior          = par_list[3] if (par_list[3] in ["n","p"]) else _raise(ValueError, "prior (par_list[3]) must be 'n' or 'p'")
+        self.prior_mean     = par_list[4]
         self.prior_width_lo = par_list[5]
         self.prior_width_hi = par_list[6]
-        self.bounds_lo = par_list[7]
-        self.bounds_hi = par_list[8]
+        self.bounds_lo      = par_list[7]
+        self.bounds_hi      = par_list[8]
         
     def _set(self, par_list):
         return self.__init__(par_list)
     
     @classmethod
-    def re_init(cls, par_list):
+    def re_init(cls, par_list):      #re-initialize class
         _ = cls(par_list)
         
     def __repr__(self):
@@ -537,11 +699,16 @@ class load_lightcurves:
         Returns:
         --------
         lc_data : light curve object
+
+        Example:
+        --------
+        >>> lc_data = load_lightcurves(file_list=["lc1.dat","lc2.dat"], filters=["V","I"], lamdas=[6000,8000])
         
     """
-    def __init__(self, file_list, data_filepath=None, filters=None, lamdas=None,
+    def __init__(self, file_list, data_filepath=None, filters=None, lamdas=None, nplanet=1,
                  verbose=True, show_guide=False):
         self._obj_type = "lc_obj"
+        self._nplanet = nplanet
         self._fpath = os.getcwd()+'/' if data_filepath is None else data_filepath
         self._names = [file_list] if isinstance(file_list, str) else [] if file_list is None else file_list
         for lc in self._names: assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
@@ -554,15 +721,16 @@ class load_lightcurves:
         if isinstance(filters, str): filters = [filters]
         if isinstance(lamdas, (int, float)): lamdas = [float(lamdas)]
 
-        if filters is not None and len(filters) == 1: filters = filters*len(self._names)
-        if lamdas is  not None and len(lamdas)  == 1: lamdas  = lamdas *len(self._names)
+        self._nphot = len(self._names)
+        if filters is not None and len(filters) == 1: filters = filters*self._nphot
+        if lamdas is  not None and len(lamdas)  == 1: lamdas  = lamdas *self._nphot
 
-        self._filters = ["V"]*len(self._names) if filters is None else [f for f in filters]
-        self._lamdas  = [6000.0]*len(self._names) if lamdas is None else [l for l in lamdas]
+        self._filters = ["V"]*self._nphot if filters is None else [f for f in filters]
+        self._lamdas  = [6000.0]*self._nphot if lamdas is None else [l for l in lamdas]
         self._filter_shortcuts = filter_shortcuts
         
-        assert len(self._names) == len(self._filters) == len(self._lamdas), \
-            f"filters and lamdas must be a list with same length as file_list (={len(self._names)})"
+        assert self._nphot == len(self._filters) == len(self._lamdas), \
+            f"filters and lamdas must be a list with same length as file_list (={self._nphot})"
         self._filnames   = np.array(list(sorted(set(self._filters),key=self._filters.index)))
 
         #modify input files to have 9 columns as CONAN expects
@@ -586,8 +754,9 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def get_decorr(self, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, u1=0, u2=0, mask=False, delta_BIC=-3, decorr_bound =(-1,1),
-                     cheops=False, exclude=[],enforce=[],verbose=True, show_steps=False, plot_model=True, use_result=True):
+    def get_decorr(self, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, K=0,u1=0, u2=0, 
+                   mask=False, delta_BIC=-3, decorr_bound =(-1,1),cheops=False, exclude=[],enforce=[],verbose=True, 
+                   show_steps=False, plot_model=True, use_result=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
             It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
@@ -650,7 +819,7 @@ class load_lightcurves:
 
         nfilt = len(self._filnames)
         if isinstance(u1, np.ndarray): u1 = list(u1)
-        if isinstance(u1, list): assert len(u1) == nfilt, f"get_decorr(): u2 must be a list of same length as number of unique filters {nfilt} but {len(u1)} given." 
+        if isinstance(u1, list): assert len(u1) == nfilt, f"get_decorr(): u1 must be a list of same length as number of unique filters {nfilt} but {len(u1)} given." 
         else: u1=[u1]*nfilt
         if isinstance(u2, np.ndarray): u2 = list(u2)
         if isinstance(u2, list): assert len(u2) == nfilt, f"get_decorr(): u2 must be a list of same length as number of unique filters {nfilt} but {len(u2)} given." 
@@ -658,8 +827,18 @@ class load_lightcurves:
 
         blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[], "dcol6":[], "dcol7":[],"gp":[]}  #inputs to lc_baseline method
         self._decorr_result = []   #list of decorr result for each lc.
+        
+        input_pars = dict(T_0=T_0, Period=Period, Duration=Duration, Impact_para=Impact_para, \
+                        RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
+
         self._tra_occ_pars = dict(T_0=T_0, Period=Period, Duration=Duration, L=L, Impact_para=Impact_para, \
-            RpRs=RpRs, Eccentricity=Eccentricity, omega=omega)#, u1=u1,u2=u2)  #transit/occultation parameters
+                              RpRs=RpRs, Eccentricity=Eccentricity, omega=omega)#, u1=u1,u2=u2)  #transit/occultation parameters
+        
+        for p in self._tra_occ_pars:
+            if isinstance(self._tra_occ_pars[p], (int,float,tuple)): self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
+            if isinstance(self._tra_occ_pars[p], (list)): assert len(self._tra_occ_pars[p]) == self._nplanet, \
+                f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
+
         ld_u1, ld_u2 = {},{}
         for i,fil in enumerate(self._filnames):
             ld_u1[fil] = u1[i]
@@ -673,12 +852,11 @@ class load_lightcurves:
             else: print(f"get_decorr(): Warning!!! converting u1,u2={u1_:.3f},{u2_:.3f} to Kipping parameterization q1,q2={q1:.3f},{q2:.3f} for filter {fil}. The conditions 0<q1<1, 0<=q2<1 are not met.")
 
         
-
         #check cheops input
         assert delta_BIC<0,f'get_decorr(): delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
-        if isinstance(cheops, bool): cheops_flag = [cheops]*len(self._names)
+        if isinstance(cheops, bool): cheops_flag = [cheops]*self._nphot
         elif isinstance(cheops, list):
-            assert len(cheops) == len(self._names),f"list given for cheops must have same +\
+            assert len(cheops) == self._nphot,f"list given for cheops must have same +\
                 length as number of input lcs but {len(cheops)} given."
             for flag in cheops:
                 assert isinstance(flag, bool), f"get_decorr(): all elements in cheops list must be bool: +\
@@ -692,13 +870,14 @@ class load_lightcurves:
         decorr_cols = [0,3,4,5,6,7]
         for c in exclude: assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude." 
         _ = [decorr_cols.remove(c) for c in exclude]  #remove excluded columns from decorr_cols
+
         for j,file in enumerate(self._names):
             if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for lc: {file} (cheops={cheops_flag[j]})" + _text_format.END)
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
             if cheops_flag[j]: all_par += ["A5_2","B5_2","A5_3","B5_3"]
 
             out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filters[j]],u2=ld_u2[self._filters[j]], mask=mask,
-                            offset=0,cheops=cheops_flag[j], decorr_bound=decorr_bound)    #no trend, only offset
+                            offset=0,cheops=cheops_flag[j], decorr_bound=decorr_bound, npl=self._nplanet)    #no trend, only offset
             best_bic = out.bic
             best_pars = {"offset":0}                      #parameter salways included
             for cp in enforce: best_pars[cp]=0            #add enforced parameters
@@ -714,17 +893,16 @@ class load_lightcurves:
                     dtmp = best_pars.copy()   #always include offset
                     dtmp[p] = 0
                     out = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filters[j]],u2=ld_u2[self._filters[j]],**dtmp,
-                                    cheops=cheops_flag[j], decorr_bound=decorr_bound)
+                                    cheops=cheops_flag[j], decorr_bound=decorr_bound, npl=self._nplanet)
                     if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                     pars_bic[p] = out.bic
 
-                par_in = min(pars_bic,key=pars_bic.get)
+                par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
                 par_in_bic = pars_bic[par_in]
-                # bic_ratio = par_in_bic/best_bic
                 del_BIC = par_in_bic - best_bic
                 bf = np.exp(-0.5*(del_BIC))
                 if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
-            #     if bic_ratio < 1:
+
                 if del_BIC < delta_BIC:# if bf>1:
                     if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
                     best_pars[par_in]=0
@@ -732,13 +910,21 @@ class load_lightcurves:
                     all_par.remove(par_in)            
                       
             result = _decorr(self._fpath+file, **self._tra_occ_pars, u1=ld_u1[self._filters[j]],u2=ld_u2[self._filters[j]],
-                                **best_pars, cheops=cheops_flag[j], decorr_bound=decorr_bound)
+                                **best_pars, cheops=cheops_flag[j], decorr_bound=decorr_bound, npl=self._nplanet)
             self._decorr_result.append(result)
             print(f"BEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
             
             #calculate determined trend and tra/occ model over all data(no mask)
             pps = result.params.valuesdict()
-            self._tmodel.append(_decorr(self._fpath+file,**pps, cheops=cheops_flag[j], return_models=True))
+            #convert result transit parameters to back to a list
+            for p in ['RpRs', 'Impact_para', 'Duration', 'T_0', 'Period', 'Eccentricity', 'omega','L']:
+                if self._nplanet==1:
+                    pps[p] = [pps[p]]  
+                else:      
+                    pps[p] = [pps[p+f"_{n}"] for n in range(1,self._nplanet+1)]
+                    _ = [pps.pop(f"{p}_{n}") for n in range(1,self._nplanet+1)]
+    
+            self._tmodel.append(_decorr(self._fpath+file,**pps, cheops=cheops_flag[j], npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -767,18 +953,16 @@ class load_lightcurves:
             self.lc_baseline(**blpars, verbose=verbose)
             # print(_text_format.RED + f"\n Note: GP flag for each lc has been set to {self._useGPphot}. "+\
             #         "Use `._useGPphot` method to modify this list with 'y' or 'n' for each loaded lc\n" + _text_format.END)
-
-            if isinstance(self._tra_occ_pars["L"], (list, tuple)):
-                if verbose: print(_text_format.BOLD + "\nSetting-up occultation pars from input values" +_text_format.END)
+        
+            if verbose: print(_text_format.BOLD + "\nSetting-up occultation pars from input values" +_text_format.END)
+            if isinstance(self._tra_occ_pars["L"], tuple):   #TODO: not printed when occultation fixed
                 self.setup_occultation("all",start_depth=self._tra_occ_pars["L"], verbose=verbose)
             else:
                 self.setup_occultation(verbose=False)
             
             if all([p in self._tra_occ_pars for p in["Period","Duration","Impact_para","RpRs","Eccentricity", "omega", "T_0"]]):
                 if verbose: print(_text_format.BOLD + "\nSetting-up transit pars from input values" +_text_format.END)
-                self.setup_transit_rv(RpRs=self._tra_occ_pars["RpRs"], Impact_para=self._tra_occ_pars["Impact_para"], T_0=self._tra_occ_pars["T_0"],
-                                    Period=self._tra_occ_pars["Period"], Duration=self._tra_occ_pars["Duration"], 
-                                    Eccentricity=self._tra_occ_pars["Eccentricity"], omega=self._tra_occ_pars["omega"], verbose=verbose)
+                self.setup_transit_rv(**input_pars, verbose=verbose)
             
             # if all([p in self._tra_occ_pars for p in ["u1","u2"]]):
             if verbose: print(_text_format.BOLD + "\nSetting-up Limb darkening pars from input values" +_text_format.END)
@@ -796,7 +980,7 @@ class load_lightcurves:
         where M.A.D is the mean absolute deviation from the median in each window
 
         Parameters:
-        ----------
+        ------------
         lc_list: list of string, None, 'all';
             list of lightcurve filenames on which perform outlier clipping. Default is 'all' which clips all lightcurves in the object.
         
@@ -844,14 +1028,14 @@ class load_lightcurves:
         for j,file in enumerate(self._names):
             if file in lc_list:
                 data = np.loadtxt(self._fpath+file)
+
+                _,_,clpd_mask = outlier_clipping(x=data[:,0],y=data[:,1],clip=clip,width=width,verbose=verbose,
+                                 return_clipped_indices=True)   #returns mask of the clipped points
+                ok = ~clpd_mask     #invert mask to get indices of points that are not clipped
                 
-                y = data[:,1]
-                dd  = abs(medfilt(y-1, width)+1 - y)   #medfilt pads with zero, so filtering at edge is better if flux level is taken to zero(y-1)
-                mad = dd.mean()
-                ok  = dd < clip * mad
-                
-                data[:,1:3] = data[:,1:3]/np.median(data[:,1])
-                
+                med_baseline = np.median(np.sort(data[:,1])[-int(0.4*len(data[:,1])):])  #estimated median of the baseline
+                data[:,1:3]  = data[:,1:3]/med_baseline  #normalise data by median of baseline
+            
                 clipped_data = data[ok]
             
                 if verbose:
@@ -1059,28 +1243,27 @@ class load_lightcurves:
         _ = DA.pop("re_init")            #remove self from dictionary
         _ = DA.pop("verbose")
 
-        n_lc = len(self._names)
 
         for par in DA.keys():
-            if isinstance(DA[par], (int,str)): DA[par] = [DA[par]]*n_lc      #use same for all lcs
-            elif DA[par] is None: DA[par] = ["n"]*n_lc if par=="gp" else [0]*n_lc   #no decorr or gp for all lcs
+            if isinstance(DA[par], (int,str)): DA[par] = [DA[par]]*self._nphot      #use same for all lcs
+            elif DA[par] is None: DA[par] = ["n"]*self._nphot if par=="gp" else [0]*self._nphot   #no decorr or gp for all lcs
             elif isinstance(DA[par], (list,np.ndarray)):
-                if par=="gp": assert len(DA[par]) == n_lc, f"lc_baseline: parameter `{par}` must be a list of length {n_lc} or str (if same is to be used for all LCs) or None."
-                else: assert len(DA[par]) == n_lc, f"lc_baseline: parameter `{par}` must be a list of length {n_lc} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
+                if par=="gp": assert len(DA[par]) == self._nphot, f"lc_baseline: parameter `{par}` must be a list of length {self._nphot} or str (if same is to be used for all LCs) or None."
+                else: assert len(DA[par]) == self._nphot, f"lc_baseline: parameter `{par}` must be a list of length {self._nphot} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
 
             for p in DA[par]:
                 if par=="gp": assert p in ["y","n","ce"], f"lc_baseline: gp must be a list of 'y', 'n', or 'ce' for each lc but {p} given."
                 else: assert isinstance(p, int) and p<3, f"lc_baseline: decorrelation parameters must be a list of integers (max integer value = 2) but {p} given."
 
-        DA["grp_id"] = list(np.arange(1,n_lc+1)) if grp_id is None else grp_id
+        DA["grp_id"] = list(np.arange(1,self._nphot+1)) if grp_id is None else grp_id
 
         self._bases = [ [DA["dcol0"][i], DA["dcol3"][i], DA["dcol4"][i], DA["dcol5"][i],
                         DA["dcol6"][i], DA["dcol7"][i], DA["dsin"][i], 
-                        DA["grp"][i]] for i in range(n_lc) ]
+                        DA["grp"][i]] for i in range(self._nphot) ]
 
-        self._groups = DA["grp_id"]
-        self._grbases = DA["grp"]
-        self._useGPphot= DA["gp"]
+        self._groups    = DA["grp_id"]
+        self._grbases   = DA["grp"]
+        self._useGPphot = DA["gp"]
         self._gp_lcs = np.array(self._names)[np.array(self._useGPphot) != "n"]     #lcs with gp == "y" or "ce"
 
         if verbose: _print_output(self,"lc_baseline")
@@ -1092,7 +1275,7 @@ class load_lightcurves:
             if self._show_guide: print("\nNext: use method `add_GP` to include GPs for the specified lcs. Get names of lcs with GPs using `._gp_lcs` attribute of the lightcurve object.")
 
         #initialize other methods to empty incase they are not called/have not been called
-        if not hasattr(self,"_spline") or re_init:        self.add_spline(None, verbose=False)
+        if not hasattr(self,"_lcspline") or re_init:      self.add_spline(None, verbose=False)
         if not hasattr(self,"_config_par") or re_init:    self.setup_transit_rv(verbose=False)
         if not hasattr(self,"_ddfs") or re_init:          self.transit_depth_variation(verbose=False)
         if not hasattr(self,"_occ_dict") or re_init:      self.setup_occultation(verbose=False)
@@ -1100,31 +1283,117 @@ class load_lightcurves:
         if not hasattr(self,"_ld_dict") or re_init:       self.limb_darkening(verbose=False)
         if not hasattr(self,"_stellar_dict") or re_init:  self.stellar_parameters(verbose=False)
 
-    def add_spline(self, par = None, knots_every=45, periodicity=360,verbose=True):
+    def add_spline(self, lc_list= None, par = None, degree=3, knots_every=None, periodicity=0,verbose=True):
         """
-            add spline to fit correlation along a column. for now the spline only works on column5 to correct roll-angle trends.
-            This splits the data at the defined knots and fits a cubic spline to each section. A spline is used for all datasets.    
+            add spline to fit correlation along 1 or 2 columns of the data. This splits the data at the defined knots interval and fits a spline to each section. 
+            scipy's LSQUnivariateSpline() and LSQBivariateSpline() functions are used for 1D spline and 2D splines respectively.
+            All arguments can be given as a list to specify config for each lc file in lc_list.
 
             Parameters
             ----------
-            par : str, optional
-                column of input data to which to fit the spline. one of ["col0","col3","col4","col5","col6","col7"]. Default is None.
+            lc_list : list, str, optional
+                list of lc files to fit a spline to. set to "all" to use spline for all lc files. Default is None for no splines.
 
-            knots_every : int, optional
+            par : str,tuple,list, optional
+                column of input data to which to fit the spline. must be one/two of ["col0","col3","col4","col5","col6","col7"]. Default is None.
+                Give list of columns if different for each lc file. e.g. ["col0","col3"] for spline in col0 for lc1.dat and col3 for lc2.dat. 
+                For 2D spline for an lc file, use tuple of length 2. e.g. ("col0","col3") for simultaneous spline fit to col0 and col3.
+
+            degree : int, tuple, list optional
+                Degree of the smoothing spline. Must be 1 <= degree <= 5. Default is 3 for a cubic spline.
+            
+            knots_every : float, tuple, list
                 distance between knots of the spline, by default 15 degrees for cheops data roll-angle 
 
-            periodicity : int, optional
-                periodicity of the axis data. for cheops data in degress, the default is a periodicity is 360 degrees. set to zero if no periodicity.
-        """
-        assert par in ["col0","col3","col4","col5","col6","col7",None],"add_spline: par must either be set to None or a colums number in [0,3,4,5,6,7]."
-        self._spline        = SimpleNamespace()
-        self._spline.use    = True if par else False
-        self._spline.knots  = knots_every
-        self._spline.period = periodicity
-        if verbose: 
-            print(f"Adding a spline to fit column5: knots = {knots_every}, periodicity={periodicity}\n") if par else print("No spline\n")
+            periodicity : float, tuple, list optional
+                periodicity of the spline in that axis  of the data. e.g for cheops roll angle in degrees, the periodicity should be set to 360 degrees. 
+                Default is zero for no periodicity.
+            
+            verbose : bool, optional
+                print output. Default is True.
 
-    def add_GP(self, lc_list=None, pars="time", kernels="mat32", WN="y", 
+            Examples
+            --------
+            To use different spline configuration for 2 lc files: 2D spline for the first file and 1D for the second.
+            >>> lc_data.add_spline(lc_list=["lc1.dat","lc2.dat"], par=[("col3","col4"),"col4"], degree=[(3,3),2], knots_every=[(5,3),2], periodicity=0)
+            
+            For same spline configuration for all loaded lc files
+            >>> lc_data.add_spline(lc_list="all", par="col3", degree=3, knots_every=5, periodicity=0)
+        """  
+
+        #default spline config -- None
+        self._lcspline = [None]*self._nphot                   #list to hold spline configuration for each lc
+        for i in range(self._nphot):
+            self._lcspline[i]        = SimpleNamespace()    #create empty namespace for each lc
+            self._lcspline[i].name   = self._names[i]
+            self._lcspline[i].dim    = 0
+            self._lcspline[i].par    = None
+            self._lcspline[i].use    = False
+            self._lcspline[i].deg    = None
+            self._lcspline[i].knots  = None
+            self._lcspline[i].period = None
+            self._lcspline[i].conf   = "None"
+
+        if lc_list is None:
+            print("No spline\n")
+            return
+        elif lc_list == "all":
+            lc_list = self._names
+        else:
+            if isinstance(lc_list, str): lc_list = [lc_list]
+        
+        nlc_spl = len(lc_list)   #number of lcs to add spline to
+        for lc in lc_list:
+            assert lc in self._names, f"add_spline(): {lc} not in loaded lc files: {self._names}."
+        
+        DA = locals().copy()
+        _ = [DA.pop(item) for item in ["self", "verbose","lc"]]  
+
+        for p in ["par","degree","knots_every","periodicity"]:
+            if DA[p] is None: DA[p] = [None]*nlc_spl
+            if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]*nlc_spl
+            if isinstance(DA[p], list): assert len(DA[p])==nlc_spl, f"add_spline(): {p} must be a list of length {nlc_spl} or length 1 (if same is to be used for all lcs)."
+            
+            #check if inputs are valid
+            for list_item in DA[p]:
+                if p=="par":
+                    if isinstance(list_item, str): assert list_item in ["col0","col3","col4","col5","col6","col7",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {list_item} given.'
+                    if isinstance(list_item, tuple): 
+                        for tup_item in list_item: assert tup_item in ["col0","col3","col4","col5","col6","col7",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {tup_item} given.'
+                if p=="degree": 
+                    assert isinstance(list_item, (int,tuple)),f'add_spline(): {p} must be an integer but {list_item} given.'
+                    if isinstance(list_item, tuple):
+                        for tup_item in list_item: assert isinstance(tup_item, int),f'add_spline(): {p} must be an integer but {tup_item} given.'
+
+        for i,lc in enumerate(lc_list):
+            ind = self._names.index(lc)    #index of lc in self._names
+            par, deg, knots, period =  DA["par"][i], DA["degree"][i], DA["knots_every"][i], DA["periodicity"][i]
+            dim = 1 if isinstance(par,str) else len(par)
+            assert dim <=2, f"add_spline(): dimension of spline must be 1 or 2 but {par} (dim {dim}) given for {lc}."
+            if dim==2:   #if 2d spline 
+                if isinstance(deg, int): deg = (deg,deg)  #if degree is int, make it a tuple
+                if isinstance(knots, int): knots = (knots,knots)
+                if isinstance(period, int): period = (period,period)
+
+            self._lcspline[ind].name   = lc
+            self._lcspline[ind].dim    = dim
+            self._lcspline[ind].par    = par
+            self._lcspline[ind].use    = True if par else False
+            self._lcspline[ind].deg    = deg
+            self._lcspline[ind].knots  = knots
+            self._lcspline[ind].period = period
+                
+            if dim==1:
+                self._lcspline[ind].conf   = f"c{par[-1]}:d{deg}K{knots}P{period}"
+            else:
+                self._lcspline[ind].conf   = f"c{par[0][-1]}:d{deg[0]}K{knots[0]}P{period[0]}|c{par[1][-1]}:d{deg[1]}K{knots[1]}P{period[1]}"
+
+            if verbose: 
+                print(f"{lc} – Adding a spline to fit {par}: knots = {knots}, periodicity={period}")
+        
+        if verbose: _print_output(self,"lc_baseline")
+
+    def add_GP(self, lc_list=None, pars="col0", kernels="mat32", WN="y", 
                log_scale=[(-25,-15.2,-5)], s_step=0.1,
                log_metric=[(-10,6.9,15)],  m_step=0.1,
                verbose=True):
@@ -1143,7 +1412,7 @@ class load_lightcurves:
                 For each lightcurve, `par` can be any of "col0", "col3", "col4", "col5", "col6", "col7", "col8". Right now only "col0" is supported for celerite
                 
             kernel : list of strings;
-                GP kernel for each lightcuve file in lc_list. Options: "mat32"
+                GP kernel for each lightcuve file in lc_list. Options: ["mat32","sqexp] for george, ["mat32","sho"] for celerite.
                 
             WN : list;
                 list containing "y" or "n" to specify whether to fit a white noise component for each GP. 
@@ -1159,12 +1428,12 @@ class load_lightcurves:
                 step sizes of the scale and metric parameter of the GP kernel.
         
         """
-        assert hasattr(self,"_bases"), f"add_GP: need to run lc_baseline() function before adding GP."
-        assert isinstance(log_scale, (tuple,list)), f"add_GP: log_scale must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
-        assert isinstance(log_metric, (tuple,list)), f"add_GP: log_metric must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
+        assert hasattr(self,"_bases"), f"add_GP(): need to run lc_baseline() function before adding GP."
+        assert isinstance(log_scale, (tuple,list)), f"add_GP(): log_scale must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
+        assert isinstance(log_metric, (tuple,list)), f"add_GP(): log_metric must be a list of tuples specifying value for each lc or single tuple if same for all lcs."
 
-        if isinstance(log_scale, tuple): log_scale= [log_scale]
-        if isinstance(log_metric, tuple): log_metric= [log_metric]
+        if isinstance(log_scale, tuple):  log_scale  = [log_scale]
+        if isinstance(log_metric, tuple): log_metric = [log_metric]
 
         #unpack scale and metric to the expected CONAN parameters
         scale, s_pri, s_pri_wid, s_lo, s_up = [], [], [], [], []
@@ -1183,7 +1452,7 @@ class load_lightcurves:
                 s_pri.append(0.0)
                 s_up.append(s[2])
             
-            else: _raise(TypeError, f"add_GP: tuple of len 2 or 3 was expected but got the value {s} in log_scale.")
+            else: _raise(TypeError, f"add_GP(): tuple of len 2 or 3 was expected but got the value {s} in log_scale.")
 
         metric, m_pri, m_pri_wid, m_lo, m_up  = [], [], [], [], []
         for m in log_metric:
@@ -1221,11 +1490,11 @@ class load_lightcurves:
 
         if 'all' not in lc_list:
             for lc in self._gp_lcs: 
-                assert lc in lc_list,f"add_GP: GP was expected for {lc} but was not given in lc_list."   
+                assert lc in lc_list,f"add_GP(): GP was expected for {lc} but was not given in lc_list."   
 
             for lc in lc_list: 
-                assert lc in self._names,f"add_GP: {lc} is not one of the loaded lightcurve files"
-                assert lc in self._gp_lcs, f"add_GP: while defining baseline model in the `lc_baseline` method, gp = 'y' was not specified for {lc}."
+                assert lc in self._names,f"add_GP(): {lc} is not one of the loaded lightcurve files"
+                assert lc in self._gp_lcs, f"add_GP(): while defining baseline model in the `lc_baseline` method, gp = 'y' or 'ce' was not specified for {lc}."
         n_list = len(lc_list)
         
         #transform        
@@ -1233,17 +1502,17 @@ class load_lightcurves:
             if (isinstance(DA[key],list) and len(DA[key])==1): 
                 DA[key]= DA[key]*n_list
             if isinstance(DA[key], list):
-                assert len(DA[key]) == n_list, f"add_GP: {key} must have same length as lc_list"
+                assert len(DA[key]) == n_list, f"add_GP(): {key} must have same length as lc_list"
             if isinstance(DA[key],(float,int,str)):  
                 DA[key] = [DA[key]]*n_list
                 
         
         for p in DA["pars"]: 
             assert p in ["col0", "col3", "col4", "col5", "col6", "col7", "col8"], \
-                f"add_GP: pars `{p}` cannot be the GP independent variable. Must be one of ['col0', 'col3', 'col4', 'col5', 'col6', 'col7', 'col8'] but onlt col0 supported for celerite"             
+                f"add_GP(): pars `{p}` cannot be the GP independent variable. Must be one of ['col0', 'col3', 'col4', 'col5', 'col6', 'col7', 'col8'] but only col0 supported for celerite"             
         
         
-        assert len(DA["pars"]) == len(DA["kernels"]) == len(DA["WN"]) == n_list, f"add_GP:pars and kernels must have same length as lc_list (={len(lc_list)})"
+        assert len(DA["pars"]) == len(DA["kernels"]) == len(DA["WN"]) == n_list, f"add_GP():pars and kernels must have same length as lc_list (={len(lc_list)})"
                                             
         self._GP_dict = DA     #save dict of gp pars in lc object
 
@@ -1261,6 +1530,35 @@ class load_lightcurves:
             * fixed value as float or int, e.g Period = 3.4
             * free parameter with gaussian prior given as tuple of len 2, e.g. T_0 = (5678, 0.1)
             * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. RpRs = (0,0.1,0.2) with 0.1 being the initial value.
+
+            Parameters:
+            -----------
+            RpRs : float, tuple;
+                Ratio of planet to stellar radius. Default is 0.
+
+            Impact_para : float, tuple;
+                Impact parameter of the transit. Default is 0.
+
+            Duration : float, tuple;
+                Duration of the transit in days. Default is 0.
+
+            T_0 : float, tuple;
+                Mid-transit time in days. Default is 0.
+
+            Period : float, tuple;
+                Orbital period of the planet in days. Default is 0.
+
+            Eccentricity : float, tuple;
+                Eccentricity of the orbit. Default is 0.
+
+            omega : float, tuple;
+                Argument of periastron. Default is 90.
+
+            K : float, tuple;
+                Radial velocity semi-amplitude in m/s. Default is 0.
+
+            verbose : bool;
+                print output. Default is True.
         """
         
         DA = locals().copy()         #dict of arguments (DA)
@@ -1270,44 +1568,147 @@ class load_lightcurves:
         key_order = ["RpRs","Impact_para","Duration", "T_0", "Period", "Eccentricity","omega", "K"]
         DA = {key:DA[key] for key in key_order if key in DA} 
             
-        self._parnames  = [n for n in DA.keys()]
-        self._npars = 8
+        self._TR_RV_parnames  = [nm for nm in DA.keys()] 
+        # self._npars = 8
+        self._config_par = {}
 
         for par in DA.keys():
-            if par in ["RpRs","Duration", "Eccentricity"]: up_lim = 1
-            elif par=="Impact_para": up_lim=1.5
-            elif par == "omega": up_lim = 360
-            else: up_lim = 10000
+            if isinstance(DA[par], (float,int,tuple)): DA[par] = [DA[par]]*self._nplanet
+            if isinstance(DA[par], list): assert len(DA[par])==self._nplanet, f"setup_transit_rv: {par} must be a list of length {self._nplanet} or float/int/tuple."
 
-            #fitting parameter
-            #_param_obj([to_fit, start_value, step_size,prior, prior_mean,pr_width_lo, 
-            #                                      prior_width_hi, bounds_lo, bounds_hi])
-            if isinstance(DA[par], tuple):
-                #gaussian       
-                if len(DA[par]) == 2:
-                    if par in ["T_0","Duration"]: up_lim = DA[par][0]+20*DA[par][1]    #uplim is mean+20*sigma   
-                    DA[par] = _param_obj(["y", DA[par][0], 0.1*DA[par][1], "p", DA[par][0],
-                                  DA[par][1], DA[par][1], 0, up_lim])
-                #uniform
-                elif len(DA[par]) == 3: 
-                    DA[par] = _param_obj(["y", DA[par][1], min(0.01,0.01*np.ptp(DA[par])), "n", DA[par][1],
-                                       0, 0, DA[par][0], DA[par][2]])
-                
-                else: _raise(ValueError, f"setup_transit_rv: length of tuple is {len(DA[par])} but it must be 2 or 3 such that it follows (lo_limit, start_value, up_limit).")
-            #fixing parameter
-            elif isinstance(DA[par], (int, float)):
-                DA[par] = _param_obj(["n", DA[par], 0.00, "n", DA[par],
-                                       0,  0, 0, 1.1*DA[par]])
+        for n in range(self._nplanet):    #n is planet number
+            self._config_par[f"pl{n+1}"] = {}
 
-            else: _raise(TypeError, f"setup_transit_rv: {par} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par])}")
+            for par in DA.keys():
+                if par in ["RpRs","Duration", "Eccentricity"]: up_lim = 1
+                elif par == "Impact_para": up_lim = 1.5
+                elif par == "omega":       up_lim = 360
+                else: up_lim = 10000
 
-        self._config_par = DA      #add to object
-        self._items = DA["RpRs"].__dict__.keys()
+                #fitting parameter
+                #_param_obj([to_fit, start_value, step_size,prior, prior_mean,pr_width_lo, 
+                #                                      prior_width_hi, bounds_lo, bounds_hi])
+                if isinstance(DA[par][n], tuple):
+                    #gaussian       
+                    if len(DA[par][n]) == 2:
+                        if par in ["T_0","Duration"]: up_lim = DA[par][n][0]+20*DA[par][n][1]    #uplim is mean+20*sigma   
+                        DA[par][n] = _param_obj(["y", DA[par][n][0], 0.1*DA[par][n][1], "p", DA[par][n][0],    #TODO: for code clarity, use argument names instead of index (e.g. to_fit="y",)
+                                                        DA[par][n][1], DA[par][n][1], 0, up_lim])
+                    #uniform
+                    elif len(DA[par][n]) == 3: 
+                        DA[par][n] = _param_obj(["y", DA[par][n][1], min(0.01,0.01*np.ptp(DA[par][n])), "n", DA[par][n][1],
+                                                        0, 0, DA[par][n][0], DA[par][n][2]])
+                    
+                    else: _raise(ValueError, f"setup_transit_rv: length of tuple {par} is {len(DA[par][n])} but it must be 2 for gaussian or 3 for uniform priors")
+                #fixing parameter
+                elif isinstance(DA[par][n], (int, float)):
+                    DA[par][n] = _param_obj(["n", DA[par][n], 0.00, "n", DA[par][n],
+                                                    0,  0, 0, 1.1*DA[par][n]])
+
+                else: _raise(TypeError, f"setup_transit_rv: {par} for planet{n} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par][n])}")
+
+                self._config_par[f"pl{n+1}"][par] = DA[par][n]      #add to object
+        # self._items = DA["RpRs"].__dict__.keys()
         
         if verbose: _print_output(self,"transit_rv_pars")
 
 
         if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_occultation` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
+
+
+    def update_setup_transit_rv(self, RpRs=0., Impact_para=0, Duration=0, T_0=0, Period=0, 
+                 Eccentricity=0, omega=90, K=0, verbose=True):
+        """
+            Define parameters an priors of model parameters.
+            By default, the parameters are fixed to the given values. To fit a parameter use the `to_fit` method to change it from 'n' to 'y'.
+            The parameters can be defined in following ways:
+            
+            * fixed value as float or int, e.g Period = 3.4
+            * free parameter with gaussian prior given as tuple of len 2, e.g. T_0 = (5678, 0.1)
+            * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. RpRs = (0,0.1,0.2) with 0.1 being the initial value.
+
+            Parameters:
+            -----------
+            RpRs : float, tuple;
+                Ratio of planet to stellar radius. Default is 0.
+
+            Impact_para : float, tuple;
+                Impact parameter of the transit. Default is 0.
+
+            Duration : float, tuple;
+                Duration of the transit in days. Default is 0.
+
+            T_0 : float, tuple;
+                Mid-transit time in days. Default is 0.
+
+            Period : float, tuple;
+                Orbital period of the planet in days. Default is 0.
+
+            Eccentricity : float, tuple;
+                Eccentricity of the orbit. Default is 0.
+
+            omega : float, tuple;
+                Argument of periastron. Default is 90.
+
+            K : float, tuple;
+                Radial velocity semi-amplitude in m/s. Default is 0.
+
+            verbose : bool;
+                print output. Default is True.
+        """
+        
+        DA = locals().copy()         #dict of arguments (DA)
+        _ = DA.pop("self")                            #remove self from dictionary
+        _ = DA.pop("verbose")
+
+        rm_par= []
+        for par in DA.keys():
+            if DA[par] == 0: rm_par.append(par)
+        _ = [DA.pop(p) for p in rm_par]
+        
+
+        for par in DA.keys():
+            if isinstance(DA[par], (float,int,tuple)): DA[par] = [DA[par]]*self._nplanet
+            if isinstance(DA[par], list): assert len(DA[par])==self._nplanet, f"setup_transit_rv: {par} must be a list of length {self._nplanet} or float/int/tuple."
+
+        for n in range(self._nplanet):    #n is planet number
+
+            for par in DA.keys():
+                if par in ["RpRs","Duration", "Eccentricity"]: up_lim = 1
+                elif par == "Impact_para": up_lim = 1.5
+                elif par == "omega":       up_lim = 360
+                else: up_lim = 10000
+
+                #fitting parameter
+                #_param_obj([to_fit, start_value, step_size,prior, prior_mean,pr_width_lo, 
+                #                                      prior_width_hi, bounds_lo, bounds_hi])
+                if isinstance(DA[par][n], tuple):
+                    #gaussian       
+                    if len(DA[par][n]) == 2:
+                        if par in ["T_0","Duration"]: up_lim = DA[par][n][0]+20*DA[par][n][1]    #uplim is mean+20*sigma   
+                        DA[par][n] = _param_obj(["y", DA[par][n][0], 0.1*DA[par][n][1], "p", DA[par][n][0],    #TODO: for code clarity, use argument names instead of index (e.g. to_fit="y",)
+                                                        DA[par][n][1], DA[par][n][1], 0, up_lim])
+                    #uniform
+                    elif len(DA[par][n]) == 3: 
+                        DA[par][n] = _param_obj(["y", DA[par][n][1], min(0.01,0.01*np.ptp(DA[par][n])), "n", DA[par][n][1],
+                                                        0, 0, DA[par][n][0], DA[par][n][2]])
+                    
+                    else: _raise(ValueError, f"setup_transit_rv: length of tuple {par} is {len(DA[par][n])} but it must be 2 for gaussian or 3 for uniform priors")
+                #fixing parameter
+                elif isinstance(DA[par][n], (int, float)):
+                    DA[par][n] = _param_obj(["n", DA[par][n], 0.00, "n", DA[par][n],
+                                                    0,  0, 0, 1.1*DA[par][n]])
+
+                else: _raise(TypeError, f"setup_transit_rv: {par} for planet{n} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par][n])}")
+
+                self._config_par[f"pl{n+1}"][par] = DA[par][n]      #add to object
+        # self._items = DA["RpRs"].__dict__.keys()
+        
+        if verbose: _print_output(self,"transit_rv_pars")
+
+
+        if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_occultation` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
+
 
     def transit_depth_variation(self, ddFs="n", transit_depth_per_group=[(0.1,0.0001)], divwhite="n",
                         step=0.001, bounds=(-1,1), prior="n", prior_width=(0,0),
@@ -1316,7 +1717,7 @@ class load_lightcurves:
             Include transit depth variation between the different lcs or lc groups. Note RpRs must be fixed to a reference value and not a jump parameter.
             
             Parameters:
-            ----------
+            -----------
 
             ddFs : str ("y" or "n");
                 specify if to fit depth variation or not. default is "n"
@@ -1379,8 +1780,6 @@ class load_lightcurves:
         assert len(depth_per_group)== len(depth_err_per_group)== ngroup, \
             f"transit_depth_variation(): length of depth_per_group and depth_err_per_group must be equal to the number of unique groups (={ngroup}) defined in `lc_baseline`"
         
-        nphot      = len(self._names)             # the number of photometry input files
-
         self._ddfs.depth_per_group     = depth_per_group
         self._ddfs.depth_err_per_group = depth_err_per_group
         self._ddfs.divwhite            = divwhite
@@ -1391,12 +1790,12 @@ class load_lightcurves:
         if divwhite=="y":
             assert ddFs=='n', 'transit_depth_variation(): you can not do divide-white and not fit ddfs!'
             
-            for i in range(nphot):
+            for i in range(self._nphot):
                 if (self._bases[i][6]>0):
                     _raise(ValueError, 'transit_depth_variation(): you can not have CNMs active and do divide-white')
         
 
-        if len(self._names)>0: 
+        if self._nphot>0: 
             if (ddFs=='n' and np.max(self._grbases)>0): _raise(ValueError,'no ddFs but groups? Not a good idea!')
             
         if verbose: _print_output(self,"depth_variation")
@@ -1542,7 +1941,7 @@ class load_lightcurves:
         -------
         u1, u2 : arrays
             each coefficient is an array of only values (no uncertainity) for each filter. 
-            These can be fed to the `limb_darkening` function to fix the coefficients
+            These can be fed to the `limb_darkening()` function to fix the coefficients
         """
 
         from ldtk import LDPSetCreator, BoxcarFilter
@@ -1556,9 +1955,9 @@ class load_lightcurves:
 
         for i,f in enumerate(filter_names):
             if f.lower() in self._filter_shortcuts.keys(): ft = self._filter_shortcuts[f.lower()]
-            else: flt=f
+            else: ft=f
             flt = SVOFilter(ft)
-            ds  = 'visir' if np.any(flt.wavelength > 1200) else 'vis'
+            ds  = 'visir-lowres' if np.any(flt.wavelength > 1000) else 'vis-lowres'
 
             sc  = LDPSetCreator(teff=Teff, logg=logg, z=Z,    # spectra from the Husser et al.
                                 filters=[flt], dataset=ds)      # FTP server automatically.
@@ -1576,8 +1975,10 @@ class load_lightcurves:
             if verbose: print(f"{f:10s}({self._filters[i]}): u1={ld1}, u2={ld2}")
 
         if use_result: 
+            u_1 = deepcopy(u1)
+            u_2 = deepcopy(u2)
             if verbose: print(_text_format.BOLD + "\nSetting-up limb-darkening priors from LDTk result" +_text_format.END)
-            self.limb_darkening(u1,u2)
+            self.limb_darkening(u_1,u_2)
         return u1,u2
 
 
@@ -1589,14 +1990,14 @@ class load_lightcurves:
             Different LD coefficients are required if observations of different filters are used.
 
             Parameters:
-            ---------
+            -----------
             c1,c2 : float/tuple or list of float/tuple for each filter;
                 Stellar quadratic limb darkening coefficients.
                 if tuple, must be of - length 2 for normal prior (mean,std) or length 3 for uniform prior defined as (lo_lim, val, uplim).
                 **recall the conditions: c1+c2<1, c1>0, c1+c2>0  (https://ui.adsabs.harvard.edu/abs/2013MNRAS.435.2152K/abstract)\n
                 This implies the a broad uniform prior of [0,2] for c1 and [-1,1] for c2. However, it is highly recommended to use gaussian priors on c1 and c2. 
 
-            Note: c1,c2 are reparameterised in the mcmc fitting to: 2*c1+c2 and c1-c2      
+            Note: c1,c2 are reparameterised in the mcmc fitting to: 2*c1+c2 and c1-c2 
         """
         #defaults
         c3 = c4 = 0
@@ -1713,7 +2114,7 @@ class load_lightcurves:
 
     def __repr__(self):
         data_type = str(self.__class__).split("load_")[1].split("'>")[0]
-        return f'Object containing {len(self._names)} {data_type}\nFiles:{self._names}\nFilepath: {self._fpath}'
+        return f'Object containing {self._nphot} {data_type}.\n{self._nplanet} transiting planet(s)\nFiles:{self._names}\nFilepath: {self._fpath}'
  
     def print(self, section="all"):
         """
@@ -1722,8 +2123,7 @@ class load_lightcurves:
             Parameters:
             ------------
             section : str (optional) ;
-                section of configuration to print.
-                Must be one of ["lc_baseline", "gp", "transit_rv_pars", "depth_variation", "occultations", "limb_darkening", "contamination", "stellar_pars"].
+                section of configuration to print.Must be one of ["lc_baseline", "gp", "transit_rv_pars", "depth_variation", "occultations", "limb_darkening", "contamination", "stellar_pars"].
                 Default is 'all' to print all sections.
         """
         if section=="all":
@@ -1812,14 +2212,29 @@ class load_rvs:
         file_list : list;
             list of filenames for the rvs
 
+        nplanet : int;
+            number of planets in the system. Default is 1.
+
+        rv_unit : str;
+            unit of the rv data. Must be one of ["m_s","km_s"]. Default is "km_s".
+
+        show_guide : bool;
+            print output to guide the user. Default is False.
+
         Returns:
         --------
         rv_data : rv object
+
+        Examples:
+        ---------
+        >>> rv_data = load_rvs(file_list=["rv1.dat","rv2.dat"], data_filepath="/path/to/data/", rv_unit="km_s")
     """
-    def __init__(self, file_list=None, data_filepath=None, show_guide =False):
+    def __init__(self, file_list=None, data_filepath=None, nplanet=1, rv_unit="km_s",show_guide =False):
         self._obj_type = "rv_obj"
+        self._nplanet = nplanet
         self._fpath = os.getcwd()+"/" if data_filepath is None else data_filepath
-        self._names   = [] if file_list is None else file_list  
+        self._names   = [] if file_list is None else file_list 
+        assert rv_unit in ["m_s","km_s"], f"load_rvs(): rv_unit must be one of ['m_s','km_s'] but {rv_unit} given." 
         if self._names == []:
             self.rv_baseline(verbose=False)
         else: 
@@ -1830,15 +2245,235 @@ class load_rvs:
                 fdata = np.loadtxt(self._fpath+f)
                 nrow,ncol = fdata.shape
                 if ncol < 6:
-                    print(f"Expected 6 columns for RV file: writing zeros to the missing columns of file: {f}")
-                    new_cols = np.zeros((nrow,6-ncol))
-                    ndata = np.hstack((fdata,new_cols))
-                    np.savetxt(self._fpath+f,ndata,fmt='%.8f')
-
+                    print(f"Expected at least 6 columns for RV file: writing ones to the missing columns of file: {f}")
+                    new_cols = np.ones((nrow,6-ncol))
+                    fdata = np.hstack((fdata,new_cols))
+                    np.savetxt(self._fpath+f,fdata,fmt='%.8f')
+                if rv_unit == "m_s":
+                    print(f"Converting cols[1:] of RV file {f} from m/s to km/s.\nNew file is: {f.split('.')[0]}_kms.{f.split('.')[1]}")
+                    fdata[:,1:] = fdata[:,1:]/1e3
+                    #save new file with _kms suffix
+                    fsplit = f.split(".")
+                    nf = fsplit[0]+"_kms."+fsplit[1]
+                    np.savetxt(self._fpath+nf,fdata,fmt='%.8f')
+                    self._names[self._names.index(f)] = nf
+        
         self._nRV = len(self._names)
+        self.rv_baseline(verbose=False)
 
+    # def update_setup_transit_rv(self, Eccentricity=0, omega=90, K=0, verbose=True):
+    #     """
+    #         Define parameters for Eccentricity 
+    #         By default, the parameters are fixed to the given values. To fit a parameter use the `to_fit` method to change it from 'n' to 'y'.
+    #         The parameters can be defined in following ways:
+            
+    #         * fixed value as float or int, e.g Period = 3.4
+    #         * free parameter with gaussian prior given as tuple of len 2, e.g. K = (20, 5)
+    #         * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. omega = (0,90,360) with 90 being the initial value.
+
+    #         Parameters:
+    #         -----------
+    #         Eccentricity : float, tuple;
+    #             Eccentricity of the orbit. Default is 0.
+
+    #         omega : float, tuple;
+    #             Argument of periastron. Default is 90.
+
+    #         K : float, tuple;
+    #             Radial velocity semi-amplitude in m/s. Default is 0.
+
+    #         verbose : bool;
+    #             print output. Default is True.
+    #     """
+        
+    #     DA = locals().copy()         #dict of arguments (DA)
+    #     _ = DA.pop("self")                            #remove self from dictionary
+    #     _ = DA.pop("verbose")
+    #     #sort to specific order
+
+    #     self._rvconfig_par = {}
+
+    #     for par in DA.keys():
+    #         if isinstance(DA[par], (float,int,tuple)): DA[par] = [DA[par]]*self._nplanet
+    #         if isinstance(DA[par], list): assert len(DA[par])==self._nplanet, f"setup_transit_rv: {par} must be a list of length {self._nplanet} or float/int/tuple."
+
+    #     for n in range(self._nplanet):    #n is planet number
+    #         self._rvconfig_par[f"pl{n+1}"] = {}
+
+    #         for par in DA.keys():
+    #             if par =="Eccentricity": up_lim = 1
+    #             elif par == "omega":       up_lim = 360
+    #             else: up_lim = 10000
+
+    #             #fitting parameter
+    #             #_param_obj([to_fit, start_value, step_size,prior, prior_mean,pr_width_lo, 
+    #             #                                      prior_width_hi, bounds_lo, bounds_hi])
+    #             if isinstance(DA[par][n], tuple):
+    #                 #gaussian       
+    #                 if len(DA[par][n]) == 2:
+    #                     if par in ["T_0","Duration"]: up_lim = DA[par][n][0]+20*DA[par][n][1]    #uplim is mean+20*sigma   
+    #                     DA[par][n] = _param_obj(["y", DA[par][n][0], 0.1*DA[par][n][1], "p", DA[par][n][0],    #TODO: for code clarity, use argument names instead of index (e.g. to_fit="y",)
+    #                                                     DA[par][n][1], DA[par][n][1], 0, up_lim])
+    #                 #uniform
+    #                 elif len(DA[par][n]) == 3: 
+    #                     DA[par][n] = _param_obj(["y", DA[par][n][1], min(0.01,0.01*np.ptp(DA[par][n])), "n", DA[par][n][1],
+    #                                                     0, 0, DA[par][n][0], DA[par][n][2]])
+                    
+    #                 else: _raise(ValueError, f"setup_transit_rv: length of tuple {par} is {len(DA[par][n])} but it must be 2 for gaussian or 3 for uniform priors")
+    #             #fixing parameter
+    #             elif isinstance(DA[par][n], (int, float)):
+    #                 DA[par][n] = _param_obj(["n", DA[par][n], 0.00, "n", DA[par][n],
+    #                                                 0,  0, 0, 1.1*DA[par][n]])
+
+    #             else: _raise(TypeError, f"setup_transit_rv: {par} for planet{n} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par][n])}")
+
+    #             self._rvconfig_par[f"pl{n+1}"][par] = DA[par][n]      #add to object
+    #     # self._items = DA["RpRs"].__dict__.keys()
+        
+    #     if verbose: _print_output(self,"transit_rv_pars")
+
+
+
+    def get_decorr(self, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=0,
+                    delta_BIC=-5, decorr_bound =(-1000,1000), exclude=[],enforce=[],verbose=True, 
+                        show_steps=False, plot_model=True, use_result=True):
+        """
+            Function to obtain best decorrelation parameters for each rv file using the forward selection method.
+            It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
+            It uses columns 0,3,4,5 to construct the polynomial trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order in column i.
+            Decorrelation parameters that reduces the BIC by 5(i.e delta_BIC = -5, 12X more probable) are iteratively selected.
+            The result can then be used to populate the `rv_baseline()` method, if use_result is set to True.
+
+            Parameters:
+            -----------
+            T_0, Period, K, Eccentricity, omega : floats, None;
+                RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) in the data file.
+                if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
+
+            delta_BIC : float (negative);
+                BIC improvement a parameter needs to provide in order to be considered relevant for decorrelation. + \
+                    Default is conservative and set to -5 i.e, parameters needs to lower the BIC by 5 to be included as decorrelation parameter.
+
+            decorr_bound: tuple of size 2;
+                bounds when fitting decorrelation parameters. Default is (-1000,1000)
+                
+            exclude : list of int;
+                list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is [].
+
+            enforce : list of int;
+                list of decorr params (e.g. ['B3', 'A5']) to enforce in decorrelation. Default is [].
+
+            verbose : Bool, optional;
+                Whether to show the table of baseline model obtained. Defaults to True.
+
+            show_steps : Bool, optional;
+                Whether to show the steps of the forward selection of decorr parameters. Default is False
+            
+            plot_model : Bool, optional;
+                Whether to overplot suggested trend model on the data. Defaults to True.
+
+            use_result : Bool, optional;
+                whether to use result/input to setup the baseline model and transit/eclipse models. Default is True.
+        
+            Returns
+            -------
+            decorr_result: list of result object
+                list containing result object for each lc.
+        """
+        assert isinstance(exclude, list), f"get_decorr: exclude must be a list of column numbers to exclude from decorrelation but {exclude} given."
+        for c in exclude: assert isinstance(c, int), f"get_decorr: column number to exclude from decorrelation must be an integer but {c} given in exclude."
+        assert delta_BIC<0,f'get_decorr(): delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
+        if isinstance(gamma, tuple):
+            assert len(gamma)==2,f"get_decorr(): gamma must be float or tuple of length 2, but {gamma} given."
+        
+
+        blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[]}  #inputs to rv_baseline method
+        self._rvdecorr_result = []   #list of decorr result for each lc.
+        self._rvmodel = []  #list to hold determined trendmodel for each rv
+
+
+        self._rv_pars = dict(T_0=T_0, Period=Period, K=K, sesinw=sesinw, secosw=secosw, gamma=gamma) #rv parameters
+        for p in self._rv_pars:
+            if p != "gamma":
+                if isinstance(self._rv_pars[p], (int,float,tuple)): self._rv_pars[p] = [self._rv_pars[p]]*self._nplanet
+                if isinstance(self._rv_pars[p], (list)): assert len(self._rv_pars[p]) == self._nplanet, \
+                    f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._rv_pars[p])} given."
+
+
+        decorr_cols = [0,3,4,5]
+        for c in exclude: assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude." 
+        _ = [decorr_cols.remove(c) for c in exclude]  #remove excluded columns from decorr_cols
+
+        for j,file in enumerate(self._names):
+            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for rv: {file}" + _text_format.END)
+            all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
+
+            out = _decorr_RV(self._fpath+file, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet)    #no trend, only offset
+            best_bic = out.bic
+            best_pars = {}                      #parameter salways included
+            for cp in enforce: best_pars[cp]=0            #add enforced parameters
+            _ = [all_par.remove(cp) for cp in enforce if cp in all_par]    #remove enforced parameters from all_par
+
+            if show_steps: print(f"{'Param':7s} : {'BIC':6s} N_pars \n---------------------------")
+            del_BIC = -np.inf 
+            while del_BIC < delta_BIC:
+                if show_steps: print(f"{'Best':7s} : {best_bic:.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
+                pars_bic = {}
+                for p in all_par:
+                    dtmp = best_pars.copy()  #temporary dict to hold parameters to test
+                    dtmp[p] = 0
+                    out = _decorr_RV(self._fpath+file, **self._rv_pars,**dtmp, decorr_bound=decorr_bound, npl=self._nplanet)
+                    if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
+                    pars_bic[p] = out.bic
+
+                par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
+                par_in_bic = pars_bic[par_in]
+                del_BIC = par_in_bic - best_bic
+                bf = np.exp(-0.5*(del_BIC))
+                if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
+
+                if del_BIC < delta_BIC:# if bf>1:
+                    if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
+                    best_pars[par_in]=0
+                    best_bic = par_in_bic
+                    all_par.remove(par_in)            
+                      
+            result = _decorr_RV(self._fpath+file, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet)
+            self._rvdecorr_result.append(result)
+            print(f"\nBEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
+            
+            #calculate determined trend and rv model over all data
+            pps = result.params.valuesdict()
+            #convert result transit parameters to back to a list
+            for p in ["T_0", "Period", "K", "sesinw", "secosw"]:
+                if self._nplanet==1:
+                    pps[p] = [pps[p]]  
+                else:      
+                    pps[p] = [pps[p+f"_{n}"] for n in range(1,self._nplanet+1)]
+                    _      = [pps.pop(f"{p}_{n}") for n in range(1,self._nplanet+1)]
+    
+            self._rvmodel.append(_decorr_RV(self._fpath+file,**pps,decorr_bound=decorr_bound, npl=self._nplanet, return_models=True))
+
+            #set-up lc_baseline model from obtained configuration
+            blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
+            blpars["dcol3"].append( 2 if pps["B3"]!=0 else 1 if  pps["A3"]!=0 else 0)
+            blpars["dcol4"].append( 2 if pps["B4"]!=0 else 1 if  pps["A4"]!=0 else 0)
+            blpars["dcol5"].append( 2 if pps["B5"]!=0 else 1 if  pps["A5"]!=0 else 0)
+
+        if plot_model:
+            _plot_data(self,plot_cols=(0,1,2),col_labels=("time","rv"),model_overplot=self._rvmodel)
+        
+
+        #prefill other light curve setup from the results here or inputs given here.
+        if use_result:
+            if verbose: print(_text_format.BOLD + "Setting-up rv baseline model from result" +_text_format.END)
+            self.rv_baseline(dt = blpars["dcol0"], dbis=blpars["dcol3"], dfwhm=blpars["dcol4"],
+                             dcont=blpars["dcol5"], gammas_kms= gamma, verbose=verbose)
+
+        return self._rvdecorr_result
+    
     def rv_baseline(self, dt=None, dbis=None, dfwhm=None, dcont=None,sinPs=None,
-                    gammas_kms=0.0, gam_steps=0.01, 
+                    gammas_kms=0.0, gam_steps=0.001, 
                     verbose=True):
         
         """
@@ -1848,14 +2483,12 @@ class load_rvs:
             then dt = [2, 0, 2].
 
             dt, dbis, dfwhm,dcont: list of ints;
-                decorrelatation paramters: time, bis, fwhm, contrast
+                decorrelatation parameters: time, bis, fwhm, contrast
                 
             gammas_kms: tuple,floats or list of tuple/float;
-                specify if to fit for gamma. if float/int, it is fixed to this value. If tuple of len 2 it is fitted gaussian prior as (prior_mean, width). 
+                specify if to fit for gamma. if float/int, it is fixed to this value. If tuple of len 2 it is fitted gaussian prior as (prior_mean, width). Uniform prior cannot be defined for gamma. use wide gaussian prior instead.
         """
 
-        # assert self._names != [], "No rv files given"
-        # assert 
         if self._names == []: 
             if verbose: _print_output(self,"rv_baseline")
             return 
@@ -1880,29 +2513,29 @@ class load_rvs:
                 gam_pri.append(g[0])
                 sig_lo.append(g[1])
                 sig_hi.append(g[1])   
-            else: _raise(TypeError, f"a tuple of len 2, float or int  was expected but got the value {g} in gammas_kms.")
+            else: _raise(TypeError, f"a tuple of len 2, float or int was expected but got the value {g} of len {len(g)} in gammas_kms. instead of uniform priors wide gaussian priors should be used")
 
-        dict_args = locals().copy()     #get a dictionary of the input/variables arguments for easy manipulation
-        _ = dict_args.pop("self")            #remove self from dictionary
-        _ = [dict_args.pop(item) for item in ["verbose","gammas_kms","g"]]
+        DA = locals().copy()     #get a dictionary of the input/variables arguments for easy manipulation
+        _ = DA.pop("self")            #remove self from dictionary
+        _ = [DA.pop(item) for item in ["verbose","gammas_kms","g"]]
 
 
-        for par in dict_args.keys():
-            assert dict_args[par] is None or isinstance(dict_args[par], (int,float)) or (isinstance(dict_args[par], (list,np.ndarray)) and len(dict_args[par]) == self._nRV), f"parameter {par} must be a list of length {self._nRV} or int (if same degree is to be used for all RVs) or None (if not used in decorrelation)."
+        for par in DA.keys():
+            assert DA[par] is None or isinstance(DA[par], (int,float)) or (isinstance(DA[par], (list,np.ndarray)) and len(DA[par]) == self._nRV), f"parameter {par} must be a list of length {self._nRV} or int (if same degree is to be used for all RVs) or None (if not used in decorrelation)."
             
-            if dict_args[par] is None: dict_args[par] = [0]*self._nRV
-            elif isinstance(dict_args[par], (int,float,str)): dict_args[par] = [dict_args[par]]*self._nRV
+            if DA[par] is None: DA[par] = [0]*self._nRV
+            elif isinstance(DA[par], (int,float,str)): DA[par] = [DA[par]]*self._nRV
             
 
-        self._RVbases = [ [dict_args["dt"][i], dict_args["dbis"][i], dict_args["dfwhm"][i], dict_args["dcont"][i],dict_args["sinPs"][i]] for i in range(self._nRV) ]
+        self._RVbases = [ [DA["dt"][i], DA["dbis"][i], DA["dfwhm"][i], DA["dcont"][i],DA["sinPs"][i]] for i in range(self._nRV) ]
 
-        self._gammas = dict_args["gammas"]
-        self._gamsteps = dict_args["gam_steps"]
-        self._gampri = dict_args["gam_pri"]
+        self._gammas = DA["gammas"]
+        self._gamsteps = DA["gam_steps"]
+        self._gampri = DA["gam_pri"]
         
-        self._prior = dict_args["prior"]
-        self._siglo = dict_args["sig_lo"]
-        self._sighi = dict_args["sig_hi"]
+        self._prior = DA["prior"]
+        self._siglo = DA["sig_lo"]
+        self._sighi = DA["sig_hi"]
         
         gampriloa=[]
         gamprihia=[]
@@ -1910,17 +2543,129 @@ class load_rvs:
             gampriloa.append( 0. if (self._prior[i] == 'n' or self._gamsteps[i] == 0.) else self._siglo[i])
             gamprihia.append( 0. if (self._prior[i] == 'n' or self._gamsteps[i] == 0.) else self._sighi[i])
         
-        self._gamprilo = gampriloa                
-        self._gamprihi = gamprihia                
-        self._sinPs = dict_args["sinPs"]
+        self._gamprilo = DA["gampriloa"] = gampriloa                
+        self._gamprihi = DA["gamprihia"] = gamprihia                
+        self._sinPs    = DA["sinPs"]
         
+        self._rvdict   = DA
+        if not hasattr(self,"_rvspline"):        self.add_spline(None, verbose=False)
+
         if verbose: _print_output(self,"rv_baseline")
+    
+
+    def add_spline(self, rv_list=None, par = None, degree=3, knots_every=None, periodicity=0,verbose=True):
+        """
+            add spline to fit correlation along 1 or 2 columns of the data. This splits the data at the defined knots interval and fits a spline to each section. 
+            scipy's LSQUnivariateSpline() and LSQBivariateSpline() functions are used for 1D spline and 2D splines respectively.
+            All arguments can be given as a list to specify config for each rv file in rv_list.
+
+            Parameters
+            ----------
+            rv_list : list, str, optional
+                list of rv files to fit a spline to. set to "all" to use spline for all rv files. Default is None for no splines.
+
+            par : str,tuple,list, optional
+                column of input data to which to fit the spline. must be one/two of ["col0","col3","col4","col5"]. Default is None.
+                Give list of columns if different for each rv file. e.g. ["col0","col3"] for spline in col0 for rv1.dat and col3 for rv2.dat. 
+                For 2D spline for an rv file, use tuple of length 2. e.g. ("col0","col3") for simultaneous spline fit to col0 and col3.
+
+            degree : int, tuple, list optional
+                Degree of the smoothing spline. Must be 1 <= degree <= 5. Default is 3 for a cubic spline.
+            
+            knots_every : float, tuple, list
+                distance between knots of the spline, by default 15 degrees for cheops data roll-angle 
+
+            periodicity : float, tuple, list optional
+                periodicity of the spline in that axis  of the data. e.g for cheops roll angle in degrees, the periodicity should be set to 360 degrees. 
+                Default is zero for no periodicity.
+            
+            verbose : bool, optional
+                print output. Default is True.
+
+            Examples
+            --------
+            To use different spline configuration for 2 rv files: 2D spline for the first file and 1D for the second.
+            >>> rv_data.add_spline(rv_list=["rv1.dat","rv2.dat"], par=[("col3","col4"),"col4"], degree=[(3,3),2], knots_every=[(5,3),2], periodicity=0)
+            
+            For same spline configuration for all loaded RV files
+            >>> rv_data.add_spline(rv_list="all", par="col3", degree=3, knots_every=5, periodicity=0)
+        """  
+        #default spline config -- None
+        self._rvspline = [None]*self._nRV                   #list to hold spline configuration for each rv
+        for i in range(self._nRV):
+            self._rvspline[i]        = SimpleNamespace()    #create empty namespace for each rv
+            self._rvspline[i].name   = self._names[i]
+            self._rvspline[i].dim    = 0
+            self._rvspline[i].par    = None
+            self._rvspline[i].use    = False
+            self._rvspline[i].deg    = None
+            self._rvspline[i].knots  = None
+            self._rvspline[i].period = None
+            self._rvspline[i].conf   = "None"
+
+        if rv_list is None:
+            print("No spline\n")
+            return
+        elif rv_list == "all":
+            rv_list = self._names
+        else:
+            if isinstance(rv_list, str): rv_list = [rv_list]
+        
+        nrv_spl = len(rv_list)   #number of rvs to add spline to
+        for rv in rv_list:
+            assert rv in self._names, f"add_spline(): {rv} not in loaded rv files: {self._names}."
+        
+        DA = locals().copy()
+        _ = [DA.pop(item) for item in ["self", "verbose","rv"]]  
+
+        for p in ["par","degree","knots_every","periodicity"]:
+            if DA[p] is None: DA[p] = [None]*nrv_spl
+            if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]*nrv_spl
+            if isinstance(DA[p], list): assert len(DA[p])==nrv_spl, f"add_spline(): {p} must be a list of length {nrv_spl} or length 1 (if same is to be used for all RVs)."
+            
+            #check if inputs are valid
+            for list_item in DA[p]:
+                if p=="par":
+                    if isinstance(list_item, str): assert list_item in ["col0","col3","col4","col5",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {list_item} given.'
+                    if isinstance(list_item, tuple): 
+                        for tup_item in list_item: assert tup_item in ["col0","col3","col4","col5",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {tup_item} given.'
+                if p=="degree": 
+                    assert isinstance(list_item, (int,tuple)),f'add_spline(): {p} must be an integer but {list_item} given.'
+                    if isinstance(list_item, tuple):
+                        for tup_item in list_item: assert isinstance(tup_item, int),f'add_spline(): {p} must be an integer but {tup_item} given.'
+
+        for i,rv in enumerate(rv_list):
+            ind = self._names.index(rv)    #index of rv in self._names
+            par, deg, knots, period =  DA["par"][i], DA["degree"][i], DA["knots_every"][i], DA["periodicity"][i]
+            dim = 1 if isinstance(par,str) else len(par)
+            assert dim <=2, f"add_spline(): dimension of spline must be 1 or 2 but {par} (dim {dim}) given for {rv}."
+            if dim==2:   #if 2d spline 
+                if isinstance(deg, int): deg = (deg,deg)  #if degree is int, make it a tuple
+                if isinstance(knots, int): knots = (knots,knots)
+                if isinstance(period, int): period = (period,period)
+
+            self._rvspline[ind].name   = rv
+            self._rvspline[ind].dim    = dim
+            self._rvspline[ind].par    = par
+            self._rvspline[ind].use    = True if par else False
+            self._rvspline[ind].deg    = deg
+            self._rvspline[ind].knots  = knots
+            self._rvspline[ind].period = period
+            
+        if dim==1:
+            self._rvspline[ind].conf   = f"c{par[-1]}:d{deg}:K{knots}:P{period}" if par else "None"
+        else:
+            self._rvspline[ind].conf   = f"c{par[0][-1]}:d{deg[0]}K{knots[0]}P{period[0]}|c{par[1][-1]}:d{deg[1]}K{knots[1]}P{period[1]}"
+
+        if verbose: 
+            print(f"Adding a spline to fit {par}: knots = {knots}, periodicity={period}")
+            _print_output(self,"rv_baseline")
     
     def __repr__(self):
         data_type = str(self.__class__).split("load_")[1].split("'>")[0]
         return f'Object containing {len(self._names)} {data_type}\nFiles:{self._names}\nFilepath: {self._fpath}'
         
-    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, return_fig=False):
+    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, show_decorr_model=False,return_fig=False):
         """
             visualize data
 
@@ -1937,6 +2682,12 @@ class load_rvs:
             nrow_ncols : tuple of length 2;
                 Number of rows and columns to plot the input files. 
                 Default is (None, None) to find the best layout.
+
+            fit_order : int;
+                order of polynomial to fit to the plotted data columns to visualize correlation.
+                
+            show_decorr_model : bool;
+                show decorrelation model if decorrelation has been done.
             
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
@@ -1952,12 +2703,18 @@ class load_rvs:
             f"col_labels must be tuple of length 2, but is {type(col_labels)} and length of {len(col_labels)}."
         
         assert isinstance(fit_order,int),f'fit_order must be an integer'
+
+        if show_decorr_model:
+            if not hasattr(self,"_rvmodel"): 
+                print("cannot show decorr model since decorrelation has not been done. First, use `rv_data.get_decorr()` to launch decorrelation.")
+                show_decorr_model = False
         
         if col_labels is None:
             col_labels = ("time", "rv") if plot_cols[:2] == (0,1) else (f"column[{plot_cols[0]}]",f"column[{plot_cols[1]}]")
         
         if self._names != []:
-            fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, fit_order=fit_order, figsize=figsize)
+            fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, fit_order=fit_order, figsize=figsize,
+                             model_overplot=self._rvmodel if show_decorr_model else None)
             if return_fig: return fig
         else: print("No data to plot")
     
@@ -1966,43 +2723,49 @@ class load_rvs:
     
 class mcmc_setup:
     """
-        class to setup fitting
+        class to configure mcmc run
+            
+        Parameters:
+        ------------
+        n_chains: int;
+            number of chains/walkers
+        
+        n_steps: int;
+            length of each chain. the effective total steps becomes n_steps*n_chains.
+
+        n_burn: int;
+            number of steps to discard as burn-in
+        
+        n_cpus: int;
+            number of cpus to use for parallelization.
+        
+        sampler: int;
+            sampler algorithm to use in traversing the parameter space. Options are ["demc","snooker"].
+            if None, the default emcee StretchMove is used.
+
+        leastsq_for_basepar: "y" or "n";
+            whether to use least-squares fit within the mcmc to fit for the baseline. This reduces +\
+            the computation time especially in cases with several input files. Default is "n".
+
+        apply_jitter: "y" or "n";
+            whether to apply a jitter term for the fit of RV data. Default is "y".
+        
+        Other keyword arguments to the emcee sampler function `run_mcmc` can be given in the call to `CONAN3.fit_data`.
+        
+        Returns:
+        --------
+        mcmc : mcmc object
+
+        Examples:
+        ---------
+        >>> mcmc = CONAN3.mcmc_setup(n_chains=64, n_steps=2000, n_burn=500, n_cpus=2)
+
     """
     def __init__(self, n_chains=64, n_steps=2000, n_burn=500, n_cpus=2, sampler=None,
                     leastsq_for_basepar="n", apply_CFs="y",apply_jitter="n",
                     verbose=True, remove_param_for_CNM="n", lssq_use_Lev_Marq="n",
                     GR_test="y", make_plots="n", leastsq="y", savefile="output_ex1.npy",
                     savemodel="n", adapt_base_stepsize="y"):
-        """
-            configure mcmc run
-            
-            Parameters:
-            ----------
-            n_chains: int;
-                number of chains/walkers
-            
-            n_steps: int;
-                length of each chain. the effective total steps becomes n_steps*n_chains.
-
-            n_burn: int;
-                number of steps to discard as burn-in
-            
-            n_cpus: int;
-                number of cpus to use for parallelization.
-            
-            sampler: int;
-                sampler algorithm to use in traversing the parameter space. Options are ["demc","snooker"].
-                if None, the default emcee StretchMove is used.
-
-            leastsq_for_basepar: "y" or "n";
-                whether to use least-squares fit within the mcmc to fit for the baseline. This reduces +\
-                the computation time especially in cases with several input files. Default is "n".
-
-            apply_jitter: "y" or "n";
-                whether to apply a jitter term for the fit of RV data. Default is "y".
-            
-            Other keyword arguments to the emcee sampler function `run_mcmc` can be given in the call to `CONAN3.fit_data`.
-        """
         
         DA = _reversed_dict(locals().copy())
         _ = DA.pop("self")            #remove self from dictionary
@@ -2019,6 +2782,490 @@ class mcmc_setup:
         _print_output(self, "mcmc")
 
                    
+
+class load_result:
+    """
+        Load results from mcmc run
+        
+        Parameters:
+        ------------
+        folder: str;
+            folder where the output files are located. Default is "output".
+        
+        chain_file: str;
+            name of the file containing the chains. Default is "chains_dict.pkl".
+        
+        burnin_chain_file: str;
+            name of the file containing the burn-in chains. Default is "burnin_chains_dict.pkl".
+
+        Returns:
+        --------
+        load_result : load_result object
+
+        Examples:
+        ---------
+        >>> result = CONAN3.load_result(folder="output")
+    """
+
+    def __init__(self, folder="output",chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl",verbose=True):
+
+        chain_file        = folder+"/"+chain_file
+        burnin_chain_file = folder+"/"+burnin_chain_file
+        self._folder = folder
+        assert os.path.exists(chain_file) or os.path.exists(burnin_chain_file) , f"file {chain_file} or {burnin_chain_file}  does not exist in the given directory"
+
+        if os.path.exists(chain_file):
+            self._chains = pickle.load(open(chain_file,"rb"))
+        if os.path.exists(burnin_chain_file):
+            self._burnin_chains = pickle.load(open(burnin_chain_file,"rb"))
+
+        self._par_names     = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
+        self.params_names   = list(self._par_names)
+
+        #reconstruct posterior from dictionary of chains
+        if hasattr(self,"_chains"):
+            posterior = np.array([ch for k,ch in self._chains.items()])
+            posterior = np.moveaxis(posterior,0,-1)
+            s = posterior.shape
+
+            #FLATTEN posterior
+            self.flat_posterior = posterior.reshape((s[0]*s[1],s[2]))
+
+        #retrieve summary statistics of the fit
+        try:
+            self._ind_para      = pickle.load(open(folder+"/.par_config.pkl","rb"))
+            self._stat_vals     = pickle.load(open(folder+"/.stat_vals.pkl","rb"))
+            self.params_median  = self._stat_vals["med"]
+            self.params_max     = self._stat_vals["max"]
+            self.params_bestfit = self._stat_vals["bf"]
+            self.params_bfdict  = {k:v for k,v in zip(self.params_names, self.params_median)}
+
+            self.lc             = SimpleNamespace(names    = self._ind_para[31],
+                                                  filters  = self._ind_para[12],
+                                                  evaluate = self._evaluate_lc,
+                                                  outdata  = self.load_result_array(["lc"],verbose=verbose),
+                                                  indata   = None)
+            self.rv             = SimpleNamespace(names    = self._ind_para[32],
+                                                  filters  = self._ind_para[12],
+                                                  evaluate = self._evaluate_rv,
+                                                  outdata  = self.load_result_array(["rv"],verbose=verbose),
+                                                  indata   = None)
+
+        except:
+            pass
+        
+    def __repr__(self):
+        return f'Object containing chains (main or burn-in) from mcmc. \
+                \nParameters in chain are:\n\t {self.params_names} \
+                \n\nuse `plot_chains()`, `plot_burnin_chains()`, `plot_corner()` or `plot_posterior()` methods on selected parameters to visualize results.'
+        
+    def plot_chains(self, pars=None, figsize = None, thin=1, discard=0, alpha=0.05,
+                    color=None, label_size=12, force_plot = False):
+        """
+            Plot chains of selected parameters.
+              
+            Parameters:
+            ------------
+            pars: list of str;
+                parameter names to plot. Plot less than 20 parameters at a time for clarity.
+
+            figsize: tuple of length 2;
+                Figure size. If None, optimally determined.
+        
+            thin : int;
+                factor by which to thin the chains in order to reduce correlation.
+
+            discard : int;
+                to discard first couple of steps within the chains. 
+
+            alpha : float;
+                transparency of the lines in the plot.
+
+            color : str;
+                color of the lines in the plot.
+
+            label_size : int;
+                size of the labels in the plot.
+
+            force_plot : bool;
+                if True, plot more than 20 parameters at a time.
+
+            
+            
+        """
+        assert pars is None or isinstance(pars, list) or pars == "all", \
+             f'pars must be None, "all", or list of relevant parameters.'
+        if pars is None or pars == "all": pars = [p for p in self._par_names]
+        for p in pars:
+            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
+        
+        ndim = len(pars)
+        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
+
+        if figsize is None: figsize = (12,6+int(ndim/2))
+        fig, axes = plt.subplots(ndim, sharex=True, figsize=figsize)
+        if ndim == 1: axes = np.array([axes])
+            
+        if thin > 1 and discard > 0:
+            axes[0].set_title(f"Discarded first {discard} steps & thinned by {thin}", fontsize=14)
+        elif thin > 1 and discard == 0:
+            axes[0].set_title(f"Thinned by {thin}", fontsize=14)
+        else:
+            axes[0].set_title(f"Discarded first {discard} steps", fontsize=14)
+            
+        
+        for i,p in enumerate(pars):
+            ax = axes[i]
+            ax.plot(self._chains[p][:,discard::thin].T,c = color, alpha=alpha)
+            ax.legend([pars[i]],loc="upper left")
+            ax.autoscale(enable=True, axis='x', tight=True)
+        plt.subplots_adjust(hspace=0.0)
+        axes[-1].set_xlabel("step number", fontsize=label_size);
+
+        return fig
+
+            
+    def plot_burnin_chains(self, pars=None, figsize = None, thin=1, discard=0, alpha=0.05,
+                    color=None, label_size=12, force_plot = False):
+        """
+            Plot chains of selected parameters.
+              
+            Parameters:
+            ------------
+            pars: list of str;
+                parameter names to plot. Plot less than 20 parameters at a time for clarity.
+        
+            thin : int;
+                factor by which to thin the chains in order to reduce correlation.
+
+            discard : int;
+                to discard first couple of steps within the chains. 
+        
+        """
+        self._par_names = self._burnin_chains.keys()
+        assert pars is None or isinstance(pars, list) or pars == "all", \
+             f'pars must be None, "all", or list of relevant parameters.'
+        if pars is None or pars == "all": pars = [p for p in self._par_names]
+        for p in pars:
+            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
+        
+        ndim = len(pars)
+        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
+
+        if figsize is None: figsize = (12,6+int(ndim/2))
+        fig, axes = plt.subplots(ndim, sharex=True, figsize=figsize)
+        if ndim == 1: axes = np.array([axes])
+            
+        if thin > 1 and discard > 0:
+            axes[0].set_title(f"Burn-in\nDiscarded first {discard} steps & thinned by {thin}", fontsize=14)
+        elif thin > 1 and discard == 0:
+            axes[0].set_title(f"Burn-in\nThinned by {thin}", fontsize=14)
+        else:
+            axes[0].set_title(f"Burn-in\nDiscarded first {discard} steps", fontsize=14)
+            
+        
+        for i,p in enumerate(pars):
+            ax = axes[i]
+            ax.plot(self._burnin_chains[p][:,discard::thin].T,c = color, alpha=alpha)
+            ax.legend([pars[i]],loc="upper left")
+            ax.autoscale(enable=True, axis='x', tight=True)
+        plt.subplots_adjust(hspace=0.0)
+        axes[-1].set_xlabel("step number", fontsize=label_size);
+
+        return fig
+        
+    def plot_corner(self, pars=None, bins=20, thin=1, discard=0,
+                    q=[0.16,0.5,0.84], range=None,show_titles=True, title_fmt =".3f", titlesize=14,
+                    labelsize=20, multiply_by=1, add_value= 0, force_plot = False ):
+        """
+            Corner plot of selected parameters.
+              
+            Parameters:
+            ------------
+            pars : list of str;
+                parameter names to plot. Ideally less than 14 pars for clarity of plot
+
+            bins : int;
+                number of bins in 1d histogram
+
+            thin : int;
+                factor by which to thin the chains in order to reduce correlation.
+
+            discard : int;
+                to discard first couple of steps within the chains. 
+            
+            q : list of floats;
+                quantiles to show on the 1d histograms. defaults correspoind to +/-1 sigma
+                
+            range : iterable (same length as pars);
+                A list where each element is either a length 2 tuple containing
+                lower and upper bounds or a float in range (0., 1.)
+                giving the fraction of samples to include in bounds, e.g.,
+                [(0.,10.), (1.,5), 0.999, etc.].
+                If a fraction, the bounds are chosen to be equal-tailed.
+        """
+        assert pars is None or isinstance(pars, list) or pars == "all", \
+             f'pars must be None, "all", or list of relevant parameters.'
+        if pars is None or pars == "all": pars = [p for p in self._par_names]
+
+        ndim = len(pars)
+
+        if not force_plot: assert ndim <= 14, \
+            f'number of parameters to plot should be <=14 for clarity. Use force_plot = True to continue anyways.'
+
+        lsamp = len(self._chains[pars[0]][:,discard::thin].flatten())
+        samples = np.empty((lsamp,ndim))
+
+        #adjustments to make values more readable
+        if isinstance(multiply_by, (int,float)): multiply_by = [multiply_by]*ndim
+        elif isinstance(multiply_by, list): assert len(multiply_by) == ndim
+        if isinstance(add_value, (int,float)): add_value = [add_value]*ndim
+        elif isinstance(add_value, list): assert len(add_value) == ndim
+
+
+        for i,p in enumerate(pars):
+            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
+            samples[:,i] = self._chains[p][:,discard::thin].reshape(-1) * multiply_by[i] + add_value[i]
+        
+        
+        fig = corner.corner(samples, bins=bins, labels=pars, show_titles=show_titles, range=range,
+                    title_fmt=title_fmt,quantiles=q,title_kwargs={"fontsize": titlesize},
+                    label_kwargs={"fontsize":labelsize})
+        
+        return fig
+
+
+    def plot_posterior(self, par, thin=1, discard=0, bins=20, density=True, range=None,
+                        q = [0.0015,0.16,0.5,0.85,0.9985], multiply_by=1, add_value=0, 
+                        return_values=False):
+        """
+        Plot the posterior distribution of a single input parameter, par.
+        if return_values = True, the summary statistic for the parameter is also returned as an output.  
+
+        Parameters:
+        -----------
+        par : str;
+            parameter posterior to plot
+
+        thin : int;
+            thin samples by factor of 'thin'
+
+        discard : int;
+            to discard first couple of steps within the chains. 
+
+
+        Returns:
+        --------
+        fig: figure object
+
+        result: tuple of len 3;
+            summary statistic for the parameter, par, in the order [median, -1sigma, +1sigma] 
+
+        """
+        assert isinstance(par, str), 'par must be a single parameter of type str'
+        assert par in self._par_names, f'{par} is not one of the parameter labels in the mcmc run.'
+        assert isinstance(q, (float, list)),"q must be either a single float or list of length 1, 3 or 5"
+        if isinstance(q,float): q = [q]
+        
+        par_samples = self._chains[par][:,discard::thin].flatten() * multiply_by + add_value
+        quants = np.quantile(par_samples,q)
+
+        if len(q)==1:
+            ls = ['-']; c=["r"]
+            med = quants[0]
+        elif len(q)==3: 
+            ls = ["--","-","--"]; c = ["r"]*3 
+            med = quants[1]; sigma_1 = np.diff(quants)
+        elif len(q)==5: 
+            ls = ["--","--","-","--","--"]; c =["k",*["r"]*3,"k"] 
+            med=quants[2]; sigma_1 = np.diff(quants[1:4])
+        else: _raise(ValueError, "q must be either a single float or list of length 1, 3 or 5")
+
+        fig  = plt.figure()
+        plt.hist(par_samples, bins=bins, density=density, range=range);
+        [plt.axvline(quants[i], ls = ls[i], c=c[i], zorder=3) for i in np.arange(len(quants))]
+        if len(q)==1:
+            plt.title(f"{par}={med:.4f}")
+        else:
+            plt.title(f"{par}={med:.4f}$^{{+{sigma_1[1]:.4f}}}_{{-{sigma_1[0]:.4f}}}$")
+
+        plt.xlabel(par);
+
+        if return_values:
+            result = [med, sigma_1[0],sigma_1[1]]
+            return fig, result
+
+        return fig
+
+
+    def load_result_array(self, data=["lc","rv"],verbose=True):
+        """
+            Load result array from CONAN3 fit allowing for customised plots.
+            All files with '_**out.dat' are loaded. 
+
+            Returns:
+            --------
+                results : dict;
+                    dictionary of holding the arrays for each output file.
+                
+            Examples
+            --------
+            >>> import CONAN3
+            >>> res=CONAN3.load_result()
+            >>> results = res.load_result_array()
+            >>> list(results.keys())
+            ['lc8det_lcout.dat', 'lc6bjd_lcout.dat']
+
+            >>> df1 = results['lc8det_lcout.dat']
+            >>> df1.keys()
+            ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
+
+            >>> #plot arrays
+            >>> plt.plot(df["time"], df["flux"],"b.")
+            >>> plt.plot(df["time"], df["gp*base"],"r")
+            >>> plt.plot(df["time"], df["transit"],"g")
+            
+        """
+        out_files_lc = sorted([ f  for f in os.listdir(self._folder) if '_lcout.dat' in f])
+        out_files_rv = sorted([ f  for f in os.listdir(self._folder) if '_rvout.dat' in f])
+        all_files    = []
+        if "lc" in data: all_files.extend(out_files_lc)
+        if "rv" in data: all_files.extend(out_files_rv)
+        
+        results = {}
+        for f in all_files:
+            df = pd.read_fwf(self._folder+"/"+f, header=0)
+            df = df.rename(columns={'# time': 'time'})
+            keyname = f[:-10]+f[-4:]   #remove _rvout or _lcout from filename
+            results[keyname] = df
+        if verbose: print(f"{data} Output files, {all_files}, loaded into result object")
+        return results
+
+    def make_output_file(self, stat="median"):
+        """
+        make output model file ("*_??out.dat") from parameters obtained using different summary statistic on the posterior.
+        if a *_??out.dat file already exists, it is overwritten (so be sure!!!).
+
+        Parameters
+        ----------
+        stat : str, optional
+            posterior summary statistic to use for model calculation, must be one of ["median","max","bestfit"], by default "median".
+            "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
+            is the parameter combination that gives the maximum joint posterior probability.
+        """
+        
+        from CONAN3.logprob_multi_sin_v4 import logprob_multi
+        from CONAN3.plots_v12 import mcmc_plots
+
+        assert stat in ["median","max","bestfit"],f'make_output_file: stat must be of ["median","max","bestfit"] but {stat} given'
+        if   stat == "median":  stat = "med"
+        elif stat == "bestfit": stat = "bf"
+
+        mval2, merr2, T0_post, p_post = logprob_multi(self._stat_vals[stat],*self._ind_para,make_out_file=True, verbose=True)
+
+        return
+        
+    def _evaluate_lc(self, file, time=None,params=None, nsamp=5000,return_std=False, return_components=False):
+        """
+        Compute transit model from CONAN3 fit for a given input file at the given times using specified parameters.
+
+        Parameters:
+        -----------
+        file : str;
+            name of the LC file  for which to evaluate the LC model.
+
+        time : array-like;
+            times at which to evaluate the model
+
+        params : array-like;
+            parameters to evaluate the model at. The median posterior parameters from the fit are used if params is None
+
+        nsamp : int;
+            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 5000.
+
+        return_std : bool;
+            if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
+
+        return_components : bool;
+            if True, return transit model for each planet in the system. If False, return only the total lc model.
+
+        Returns:
+        --------
+        lcmodel, lc_comps, 1sigma_lo, 1sigma_hi : array, dict, array, array,  respectively;
+            Transit model array evaluated at the given times, for a specific file. transit_components are return if return_components is True.
+            if return_std is True, 1sigma quantiles (lo and hi) of the model is returned.
+        """
+
+        from CONAN3.logprob_multi_sin_v4 import logprob_multi
+        
+        if params is None: params = self.params_median
+        mod  = logprob_multi(params,*self._ind_para,t=time,get_model=True)
+        keys = mod.lc.keys() 
+
+        if not return_std:    #return only the model
+            return mod.lc[file] if return_components else mod.lc[file][0]
+        else:                 #return model and quantiles
+            lenpost = len(self.flat_posterior)
+            mods    = []  #store model realization for each parameter combination
+
+            for p in self.flat_posterior[np.random.randint(0,lenpost,int(min(nsamp,0.2*lenpost)))]:   #at most 5000 random posterior samples 
+                temp = logprob_multi(p,*self._ind_para,t=time,get_model=True)
+                mods.append(temp.lc[file][0])
+
+            qs = np.quantile(mods,q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
+
+            return (mod.lc[file][0],mod.lc[file][1],qs[0],qs[1]) if return_components else (mod.lc[file][0],qs[0],qs[1])
+        
+    def _evaluate_rv(self, file, time=None,params=None, nsamp=5000,return_std=False, return_components=False):
+        """
+        Compute RV model from CONAN3 fit for a given input file at the given times using specified parameters.
+
+        Parameters:
+        -----------
+        file : str;
+            name of the RV file for which to evaluate the RVmodel.
+
+        time : array-like;
+            times at which to evaluate the model
+
+        params : array-like;
+            parameters to evaluate the model at. The median posterior parameters from the fit are used if params is None
+
+        nsamp : int;    
+            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 5000.
+
+        return_std : bool;
+            if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
+
+        return_components : bool;
+            if True, return rv model for each planet in the system. If False, return only the total rv model.
+
+        Returns:
+        --------
+        rvmodel, rv_comps, 1sigma_lo, 1sigma_hi : array, dict, array, array,  respectively;
+            RV model array evaluated at the given times, for a specific file. rv_components are return if return_components is True.
+            if return_std is True, 1sigma quantiles (lo and hi) of the model is returned.
+        """
+
+        from CONAN3.logprob_multi_sin_v4 import logprob_multi
+
+        if params is None: params = self.params_median
+        mod  = logprob_multi(params,*self._ind_para,t=time,get_model=True)
+
+        if not return_std:     #return only the model
+            return mod.rv[file] if return_components else mod.rv[file][0]
+        else:                 #return model and quantiles
+            lenpost = len(self.flat_posterior)
+            mods    = []
+
+            for p in self.flat_posterior[np.random.randint(0,lenpost,int(min(5000,0.2*lenpost)))]:   #at most 5000 random posterior samples
+                temp = logprob_multi(p,*self._ind_para,t=time,get_model=True)
+                mods.append(temp.rv[file][0])
+
+            qs = np.quantile(mods,q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
+            
+            return (mod.rv[file][0],mod.rv[file][1],qs[0],qs[1]) if return_components else (mod.rv[file][0],qs[0],qs[1])
+
 
 
 def create_configfile(lc, rv, mcmc, filename="input_config.dat"): 
@@ -2431,397 +3678,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
 
 
 
-class load_result:
-    def __init__(self, folder="output",chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl"):
-        chain_file        = folder+"/"+chain_file
-        burnin_chain_file = folder+"/"+burnin_chain_file
-        self._folder = folder
-        assert os.path.exists(chain_file) or os.path.exists(burnin_chain_file) , f"file {chain_file} or {burnin_chain_file}  does not exist in the given directory"
 
-        if os.path.exists(chain_file):
-            self._chains = pickle.load(open(chain_file,"rb"))
-        if os.path.exists(burnin_chain_file):
-            self._burnin_chains = pickle.load(open(burnin_chain_file,"rb"))
+def fit_EULER_lc(planet_name, filename, filter):
 
-        self._par_names     = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
-        self.params_names   = list(self._par_names)
-
-        #reconstruct posterior from dictionary of chains
-        if hasattr(self,"_chains"):
-            posterior = np.array([ch for k,ch in self._chains.items()])
-            posterior = np.moveaxis(posterior,0,-1)
-            s = posterior.shape
-
-            #FLATTEN posterior
-            self.flat_posterior = posterior.reshape((s[0]*s[1],s[2]))
-
-        #retrieve summary statistics of the fit
-        try:
-            self._ind_para      = pickle.load(open(folder+"/.par_config.pkl","rb"))
-            self._stat_vals     = pickle.load(open(folder+"/.stat_vals.pkl","rb"))
-            self.params_median  = self._stat_vals["med"]
-            self.params_max     = self._stat_vals["max"]
-            self.params_bestfit = self._stat_vals["bf"]
-        except:
-            pass
-        
-    def __repr__(self):
-        return f'Object containing chains (main or burn-in) from mcmc. \
-                \nParameters in chain are:\n\t {self.params_names} \
-                \n\nuse `plot_chains()`, `plot_burnin_chains()`, `plot_corner()` or `plot_posterior()` methods on selected parameters to visualize results.'
-        
-    def plot_chains(self, pars=None, figsize = None, thin=1, discard=0, alpha=0.05,
-                    color=None, label_size=12, force_plot = False):
-        """
-            Plot chains of selected parameters.
-              
-            Parameters:
-            ----------
-            pars: list of str;
-                parameter names to plot. Plot less than 20 parameters at a time for clarity.
-
-            figsize: tuple of length 2;
-                Figure size. If None, optimally determined.
-        
-            thin : int;
-                factor by which to thin the chains in order to reduce correlation.
-
-            discard : int;
-                to discard first couple of steps within the chains. 
-
-            alpha : float;
-                transparency of the lines in the plot.
-
-            color : str;
-                color of the lines in the plot.
-
-            label_size : int;
-                size of the labels in the plot.
-
-            force_plot : bool;
-                if True, plot more than 20 parameters at a time.
-
-            
-            
-        """
-        assert pars is None or isinstance(pars, list) or pars == "all", \
-             f'pars must be None, "all", or list of relevant parameters.'
-        if pars is None or pars == "all": pars = [p for p in self._par_names]
-        for p in pars:
-            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
-        
-        ndim = len(pars)
-        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
-
-        if figsize is None: figsize = (12,6+int(ndim/2))
-        fig, axes = plt.subplots(ndim, sharex=True, figsize=figsize)
-        if ndim == 1: axes = np.array([axes])
-            
-        if thin > 1 and discard > 0:
-            axes[0].set_title(f"Discarded first {discard} steps & thinned by {thin}", fontsize=14)
-        elif thin > 1 and discard == 0:
-            axes[0].set_title(f"Thinned by {thin}", fontsize=14)
-        else:
-            axes[0].set_title(f"Discarded first {discard} steps", fontsize=14)
-            
-        
-        for i,p in enumerate(pars):
-            ax = axes[i]
-            ax.plot(self._chains[p][:,discard::thin].T,c = color, alpha=alpha)
-            ax.legend([pars[i]],loc="upper left")
-            ax.autoscale(enable=True, axis='x', tight=True)
-        plt.subplots_adjust(hspace=0.0)
-        axes[-1].set_xlabel("step number", fontsize=label_size);
-
-        return fig
-
-            
-    def plot_burnin_chains(self, pars=None, figsize = None, thin=1, discard=0, alpha=0.05,
-                    color=None, label_size=12, force_plot = False):
-        """
-            Plot chains of selected parameters.
-              
-            Parameters:
-            ----------
-            pars: list of str;
-                parameter names to plot. Plot less than 20 parameters at a time for clarity.
-        
-            thin : int;
-                factor by which to thin the chains in order to reduce correlation.
-
-            discard : int;
-                to discard first couple of steps within the chains. 
-        
-        """
-        self._par_names = self._burnin_chains.keys()
-        assert pars is None or isinstance(pars, list) or pars == "all", \
-             f'pars must be None, "all", or list of relevant parameters.'
-        if pars is None or pars == "all": pars = [p for p in self._par_names]
-        for p in pars:
-            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
-        
-        ndim = len(pars)
-        if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
-
-        if figsize is None: figsize = (12,6+int(ndim/2))
-        fig, axes = plt.subplots(ndim, sharex=True, figsize=figsize)
-        if ndim == 1: axes = np.array([axes])
-            
-        if thin > 1 and discard > 0:
-            axes[0].set_title(f"Burn-in\nDiscarded first {discard} steps & thinned by {thin}", fontsize=14)
-        elif thin > 1 and discard == 0:
-            axes[0].set_title(f"Burn-in\nThinned by {thin}", fontsize=14)
-        else:
-            axes[0].set_title(f"Burn-in\nDiscarded first {discard} steps", fontsize=14)
-            
-        
-        for i,p in enumerate(pars):
-            ax = axes[i]
-            ax.plot(self._burnin_chains[p][:,discard::thin].T,c = color, alpha=alpha)
-            ax.legend([pars[i]],loc="upper left")
-            ax.autoscale(enable=True, axis='x', tight=True)
-        plt.subplots_adjust(hspace=0.0)
-        axes[-1].set_xlabel("step number", fontsize=label_size);
-
-        return fig
-        
-    def plot_corner(self, pars=None, bins=20, thin=1, discard=0,
-                    q=[0.16,0.5,0.84], range=None,show_titles=True, title_fmt =".3f", titlesize=14,
-                    labelsize=20, multiply_by=1, add_value= 0, force_plot = False ):
-        """
-            Corner plot of selected parameters.
-              
-            Parameters:
-            ----------
-            pars : list of str;
-                parameter names to plot. Ideally less than 14 pars for clarity of plot
-
-            bins : int;
-                number of bins in 1d histogram
-
-            thin : int;
-                factor by which to thin the chains in order to reduce correlation.
-
-            discard : int;
-                to discard first couple of steps within the chains. 
-            
-            q : list of floats;
-                quantiles to show on the 1d histograms. defaults correspoind to +/-1 sigma
-                
-            range : iterable (same length as pars);
-                A list where each element is either a length 2 tuple containing
-                lower and upper bounds or a float in range (0., 1.)
-                giving the fraction of samples to include in bounds, e.g.,
-                [(0.,10.), (1.,5), 0.999, etc.].
-                If a fraction, the bounds are chosen to be equal-tailed.
-        """
-        assert pars is None or isinstance(pars, list) or pars == "all", \
-             f'pars must be None, "all", or list of relevant parameters.'
-        if pars is None or pars == "all": pars = [p for p in self._par_names]
-
-        ndim = len(pars)
-
-        if not force_plot: assert ndim <= 14, \
-            f'number of parameters to plot should be <=14 for clarity. Use force_plot = True to continue anyways.'
-
-        lsamp = len(self._chains[pars[0]][:,discard::thin].flatten())
-        samples = np.empty((lsamp,ndim))
-
-        #adjustments to make values more readable
-        if isinstance(multiply_by, (int,float)): multiply_by = [multiply_by]*ndim
-        elif isinstance(multiply_by, list): assert len(multiply_by) == ndim
-        if isinstance(add_value, (int,float)): add_value = [add_value]*ndim
-        elif isinstance(add_value, list): assert len(add_value) == ndim
-
-
-        for i,p in enumerate(pars):
-            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
-            samples[:,i] = self._chains[p][:,discard::thin].reshape(-1) * multiply_by[i] + add_value[i]
-        
-        
-        fig = corner.corner(samples, bins=bins, labels=pars, show_titles=show_titles, range=range,
-                    title_fmt=title_fmt,quantiles=q,title_kwargs={"fontsize": titlesize},
-                    label_kwargs={"fontsize":labelsize})
-        
-        return fig
-
-
-    def plot_posterior(self, par, thin=1, discard=0, bins=20, density=True, range=None,
-                        q = [0.0015,0.16,0.5,0.85,0.9985], multiply_by=1, add_value=0, 
-                        return_values=False):
-        """
-        Plot the posterior distribution of a single input parameter, par.
-        if return_values = True, the summary statistic for the parameter is also returned as an output.  
-
-        Parameters:
-        -----------
-        par : str;
-            parameter posterior to plot
-
-        thin : int;
-            thin samples by factor of 'thin'
-
-        discard : int;
-            to discard first couple of steps within the chains. 
-
-
-        Returns:
-        --------
-        fig: figure object
-
-        result: tuple of len 3;
-            summary statistic for the parameter, par, in the order [median, -1sigma, +1sigma] 
-
-        """
-        assert isinstance(par, str), 'par must be a single parameter of type str'
-        assert par in self._par_names, f'{par} is not one of the parameter labels in the mcmc run.'
-        assert isinstance(q, (float, list)),"q must be either a single float or list of length 1, 3 or 5"
-        if isinstance(q,float): q = [q]
-        
-        par_samples = self._chains[par][:,discard::thin].flatten() * multiply_by + add_value
-        quants = np.quantile(par_samples,q)
-
-        if len(q)==1:
-            ls = ['-']; c=["r"]
-            med = quants[0]
-        elif len(q)==3: 
-            ls = ["--","-","--"]; c = ["r"]*3 
-            med = quants[1]; sigma_1 = np.diff(quants)
-        elif len(q)==5: 
-            ls = ["--","--","-","--","--"]; c =["k",*["r"]*3,"k"] 
-            med=quants[2]; sigma_1 = np.diff(quants[1:4])
-        else: _raise(ValueError, "q must be either a single float or list of length 1, 3 or 5")
-
-        fig  = plt.figure()
-        plt.hist(par_samples, bins=bins, density=density, range=range);
-        [plt.axvline(quants[i], ls = ls[i], c=c[i], zorder=3) for i in np.arange(len(quants))]
-        if len(q)==1:
-            plt.title(f"{par}={med:.4f}")
-        else:
-            plt.title(f"{par}={med:.4f}$^{{+{sigma_1[1]:.4f}}}_{{-{sigma_1[0]:.4f}}}$")
-
-        plt.xlabel(par);
-
-        if return_values:
-            result = [med, sigma_1[0],sigma_1[1]]
-            return fig, result
-
-        return fig
-
-
-    def load_result_array(self):
-        """
-            Load result array from CONAN3 fit allowing for customised plots.
-            All files with '_out_full.dat' are loaded. 
-
-            Returns:
-            --------
-                results : dict;
-                    dictionary of holding the arrays for each output file.
-                
-            Examples
-            --------
-            >>> import CONAN3
-            >>> res=CONAN3.load_result()
-            >>> results = res.load_result_array()
-            >>> list(results.keys())
-            ['lc8det_out_full.dat', 'lc6bjd_out_full.dat']
-
-            >>> df1 = results['lc8det_out_full.dat']
-            >>> df1.keys()
-            ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
-
-            >>> #plot arrays
-            >>> plt.plot(df["time"], df["flux"],"b.")
-            >>> plt.plot(df["time"], df["gp*base"],"r")
-            >>> plt.plot(df["time"], df["transit"],"g")
-            
-        """
-        out_files_lc = sorted([ f  for f in os.listdir(self._folder) if '_out_full.dat' in f])
-        out_files_rv = sorted([ f  for f in os.listdir(self._folder) if '_out.dat' in f])
-        all_files = out_files_lc+out_files_rv
-        results = {}
-        for f in all_files:
-            df = pd.read_fwf(self._folder+"/"+f, header=0)
-            df = df.rename(columns={'# time': 'time'})
-            results[f] = df
-        print(f"Output files loaded: {all_files} ")
-        return results
-
-    def make_output_file(self, stat="median"):
-        """
-        make output model file ("*_out_full.dat") from parameters obtained using different summary statistic on the posterior.
-        if a *_out_full.dat fi""le already exists, it is overwritten (so be sure!!!).
-
-        Parameters
-        ----------
-        stat : str, optional
-            posterior summary statistic to use for model calculation, must be one of ["median","max","bestfit"], by default "median".
-            "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
-            is the parameter combination that gives the maximum joint posterior probability.
-        """
-        
-        from CONAN3.logprob_multi_sin_v4 import logprob_multi
-        from CONAN3.plots_v12 import mcmc_plots
-
-        assert stat in ["median","max","bestfit"],f'make_output_file: stat must be of ["median","max","bestfit"] but {stat} given'
-        if   stat == "median":  stat = "med"
-        elif stat == "bestfit": stat = "bf"
-
-        mval2, merr2, T0_post, p_post = logprob_multi(self._stat_vals[stat],*self._ind_para,make_out_file=True, verbose=True)
-
-        return
-    
-    def get_model(self, params=None, make_output_file=False):
-        """
-        Get model from CONAN3 fit using specified parameters. 
-        The median posterior parameters from the fit are used if params is None
-        If make_output_file is True, the output file ("*_out_full.dat") is also created.
-        """
-        from CONAN3.logprob_multi_sin_v4 import logprob_multi
-
-        if params is None: params = self.params_median
-        mod = logprob_multi(params,*self._ind_para,make_out_file=make_output_file,get_model=True)
-        return mod
-
-
-# def load_result_array():
-#     """
-#         Load result array from CONAN3 fit allowing for customised plots.
-#         All files with '_out.dat' or '_out_full.dat' are loaded. 
-
-#         Returns:
-#         --------
-#             results : dict;
-#                 dictionary of holding the arrays for each output file.
-            
-#         Examples
-#         --------
-#         >>> import CONAN3
-#         >>> results = CONAN3.load_result_array()
-#         >>> list(results.keys())
-#         ['lc8det_out_full.dat', 'lc6bjd_out_full.dat']
-
-#         >>> df1 = results['lc8det_out_full.dat']
-#         >>> df1.keys()
-#         ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
-
-#         >>> #plot arrays
-#         >>> plt.plot(df["time"], df["flux"],"b.")
-#         >>> plt.plot(df["time"], df["gp*base"],"r")
-#         >>> plt.plot(df["time"], df["transit"],"g")
-        
-#     """
-#     warn('This function call is deprecated. Use `res=CONAN3.load_result()` and then `res.load_result_array()`,\
-#         or directly from the returned result object of the fit.', DeprecationWarning, stacklevel=2)
-
-#     out_files_lc = sorted([ f  for f in os.listdir() if '_out_full.dat' in f])
-#     out_files_rv = sorted([ f  for f in os.listdir() if '_out.dat' in f])
-#     all_files = out_files_lc+out_files_rv
-#     results = {}
-#     for f in all_files:
-#         df = pd.read_fwf(f, header=0)
-#         df = df.rename(columns={'# time': 'time'})
-#         results[f] = df
-#     print(f"Output files loaded: {all_files} ")
-#     return results
+    get_pars = pd.read.csv("exoplanets.csv")
+    get_pars = get_pars[get_pars["pl_name"]==planet_name]
+    pl_pars = get_pars["T0","Period","ecc","omega",]

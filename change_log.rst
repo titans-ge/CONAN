@@ -3,9 +3,14 @@
 * added functions clip_outliers() and split_transits to the lc object.
 * get_decorr() now uses same planet parameter names ["Period", "Duration","Impact_para","RpRs",...]
 * get_decorr() also allows to exclude some columns from the decorrelation analysis while enforcing others
-* load_chain() has been renamed as load_result() which contains all the results from the MCMC run.
+* load_chain() has been renamed as load_result() which returns an object that contains all the results from the MCMC run.
+* improved results object allows to reevaluate the bestfit model at user-given times
 * use can now specify output directory for the results using the "out_folder" argument of CONAN.fit_data().
 * columns of the input data are now described by col0, col3, col4, etc. instead of the legacy xshift, yshift which dont necessarily describe the input columns
+* added shoTerm gp for celerite
+* added function get_decorr() to the rv object to find best baseline model for each rv data.
+* added 2D spline fit for decorrelation of lc and rv data
+* support for multiplanet system in lc and rv
 
 28-12-2022: version 3.0.5
 ~~~~~~~~~~~~

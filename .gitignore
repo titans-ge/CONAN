@@ -187,3 +187,7 @@ cython_debug/
 
 .DS_Store
 .vscode/
+
+#ignore folder
+docs/tutorial/
+

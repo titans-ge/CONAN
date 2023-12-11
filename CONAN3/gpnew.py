@@ -452,7 +452,7 @@ class GPnew(ModelSet):
             return np.zeros(len(vector))
         return -self.grad_log_likelihood(y, quiet=quiet)
 
-    def predict(self, y, t, args,
+    def predict(self, y, t, args=None,
                 return_cov=True,
                 return_var=False,
                 cache=True,

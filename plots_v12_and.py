@@ -46,7 +46,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
 
         
 
-        infile=names[j][:-4]+'_out_full.dat'
+        infile=names[j][:-4]+'_lcout.dat'
 
         tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
 
@@ -246,7 +246,7 @@ def mcmc_plots(yval,tarr,farr,earr,xarr,yarr,warr,aarr,sarr,barr,carr, lind, nph
 
             if filters[j] == filter:
 
-                infile=names[j][:-4]+'_out_full.dat'
+                infile=names[j][:-4]+'_lcout.dat'
 
                 tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
 

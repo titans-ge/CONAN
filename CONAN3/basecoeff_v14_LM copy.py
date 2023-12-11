@@ -1,7 +1,7 @@
 import sys
 import numpy as np
 
-def basecoeff(ibase,spline):
+def basecoeff(ibase):
     # this function returns the input arrays for the baseline coefficients
     #   only those coefficients that are used are set to be jump parameters, 
     #   all others are set == 0 value, 0 stepsize, [0,0] Boundaries.
@@ -15,6 +15,7 @@ def basecoeff(ibase,spline):
     nbc = np.copy(0)
     
     # set the baseline function
+            #offset
     #       A coeff => time:  A[0] + A[1]*t + A[2]*t^2 + A[3]*t^3 + A[4]*t^4
     #       B coeff => AM:    B[0]*AM + B[1]*AM^2    TODDO: this should not be this simple
     #       C1 coeff => lam:  C1[0]*lam + C1[1]*lam^2 
@@ -24,7 +25,14 @@ def basecoeff(ibase,spline):
     #       G coeff => sin:   G[0]*np.sin(G[1]*ts+G[2])
     #       H coeff => CNM:   H[0]*CNM + H[1]*CNM^2
    
-    # A coeff => time:  A[0] + A[1]*t + A[2]*t^2 + A[3]*t^3 + A[4]*t^4
+    #   offset
+    #   col0:  A0*col0 + B0*col0^2 + C0*col0^3 + D0*col0^4
+    #   col3:  A3*col3 + B3*col3^2
+    #   col4:  A4*col4 + B4*col4^2
+    #   col5:  A5*col5 + B5*col5^2
+    #   col6:  A6*col6 + B6*col6^2
+    #   col7:  A7*col7 + B7*col7^2
+    #   sin :  Amp*sin(2pi/pp*col0 + phi)
     
     A_in=np.zeros((4,5), dtype=float)
     #[initial guess, step, min, max]
@@ -32,8 +40,7 @@ def basecoeff(ibase,spline):
         A_in[:,0]=[0.00,0.0001,-2.,2.1]       # set the starting value and limits of the 0th-order start at 0
     else:
         A_in[:,0]=[1.,0.0001,0.8,1.2]        # no CNM: set the starting value and limits of the 0th-order start at 1        
-    if spline.use: A_in[:,0]=[1,0,0,0]       # if we use a spline, set the 0th order to 1 and fix it
-
+    
     nbc = nbc+1
     
     if ibase[0] > 0:
