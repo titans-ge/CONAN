@@ -132,11 +132,11 @@ class GPnew(ModelSet):
         """
         return self.models["mean"]
 
-    def _call_mean(self, x, args):
+    def _call_mean(self, x):
         if len(x.shape) == 2 and x.shape[1] == 1:
-            mu = self.mean.get_value(x[:, 0], args).flatten()
+            mu = self.mean.get_value(x[:, 0]).flatten()
         else:
-            mu = self.mean.get_value(x, args).flatten()
+            mu = self.mean.get_value(x).flatten()
         if not np.all(np.isfinite(mu)):
             raise ValueError("mean function returned NaN or Inf for "
                              "parameters:\n{0}".format(
@@ -238,17 +238,17 @@ class GPnew(ModelSet):
             raise ValueError("Dimension mismatch")
         return y
 
-    def _compute_alpha(self, y, args, cache):
+    def _compute_alpha(self, y, cache):
         # Recalculate alpha only if y is not the same as the previous y.
         if not cache:
             r = np.ascontiguousarray(self._check_dimensions(y) -
-                                     self._call_mean(self._x, args),
+                                     self._call_mean(self._x),
                                      dtype=np.float64)
             return self.solver.apply_inverse(r, in_place=True).flatten()
         if self._alpha is None or not np.array_equiv(y, self._y):
             self._y = y
             r = np.ascontiguousarray(self._check_dimensions(y) -
-                                     self._call_mean(self._x, args),
+                                     self._call_mean(self._x),
                                      dtype=np.float64)
             self._alpha = self.solver.apply_inverse(r, in_place=True).flatten()
         return self._alpha
@@ -269,7 +269,7 @@ class GPnew(ModelSet):
 
         # Broadcast the mean function
         m = [slice(None)] + [np.newaxis for _ in range(len(r.shape) - 1)]
-        r -= self._call_mean(self._x, args)[m]
+        r -= self._call_mean(self._x)[m]
 
         # Do the solve
         r = np.asfortranarray(r, dtype=np.float64)
@@ -337,12 +337,12 @@ class GPnew(ModelSet):
                 raise
         return True
 
-    def lnlikelihood(self, y, args, quiet=False):
+    def lnlikelihood(self, y, quiet=False):
         warnings.warn("'lnlikelihood' is deprecated. Use 'log_likelihood'",
                       DeprecationWarning)
-        return self.log_likelihood(y, args, quiet=quiet)
+        return self.log_likelihood(y, quiet=quiet)
 
-    def log_likelihood(self, y, args, quiet=False):
+    def log_likelihood(self, y, quiet=False):
         """
         Compute the logarithm of the marginalized likelihood of a set of
         observations under the Gaussian process model. You must call
@@ -361,7 +361,7 @@ class GPnew(ModelSet):
         if not self.recompute(quiet=quiet):
             return -np.inf
         try:
-            mu = self._call_mean(self._x, args)
+            mu = self._call_mean(self._x)
         except ValueError:
             if quiet:
                 return -np.inf
@@ -452,7 +452,7 @@ class GPnew(ModelSet):
             return np.zeros(len(vector))
         return -self.grad_log_likelihood(y, quiet=quiet)
 
-    def predict(self, y, t, args=None,
+    def predict(self, y, t,
                 return_cov=True,
                 return_var=False,
                 cache=True,
@@ -498,7 +498,7 @@ class GPnew(ModelSet):
 
         """
         self.recompute()
-        alpha = self._compute_alpha(y, args, cache)
+        alpha = self._compute_alpha(y, cache)
         xs = self.parse_samples(t)
 
         if kernel is None:
@@ -506,7 +506,7 @@ class GPnew(ModelSet):
 
         # Compute the predictive mean.
         Kxs = kernel.get_value(xs, self._x)
-        mu = np.dot(Kxs, alpha) + self._call_mean(xs, args)
+        mu = np.dot(Kxs, alpha) + self._call_mean(xs)
         if not (return_var or return_cov):
             return mu
 
@@ -521,7 +521,7 @@ class GPnew(ModelSet):
         return mu, cov
 
 
-    def sample_conditional(self, y, t, args, size=1):
+    def sample_conditional(self, y, t, size=1):
         """
         Draw samples from the predictive conditional distribution. You must
         call :func:`GPnew.compute` before this function.
@@ -540,7 +540,7 @@ class GPnew(ModelSet):
         coordinates given by ``t``.
 
         """
-        mu, cov = self.predict(y, t, args)
+        mu, cov = self.predict(y, t)
         return multivariate_gaussian_samples(cov, size, mean=mu)
 
     def sample(self, t=None, size=1):
@@ -566,14 +566,14 @@ class GPnew(ModelSet):
 
             # Generate samples using the precomputed factorization.
             results = self.solver.apply_sqrt(np.random.randn(size, n))
-            results += self._call_mean(self._x, args)
+            results += self._call_mean(self._x)
             return results[0] if size == 1 else results
 
         x = self.parse_samples(t)
         cov = self.get_matrix(x)
         cov[np.diag_indices_from(cov)] += TINY
         return multivariate_gaussian_samples(cov, size,
-                                             mean=self._call_mean(x, args))
+                                             mean=self._call_mean(x))
 
     def get_matrix(self, x1, x2=None):
         """

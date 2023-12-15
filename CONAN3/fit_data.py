@@ -20,15 +20,16 @@ from .outputs_v6_GP import *
 from .jitter_v1 import *
 from .GRtest_v1 import *
 
-from george import kernels
+import george
+from george import kernels, GP
 import corner
-from george import GP
+# from .gpnew import GPnew as GP
+
 import celerite
 from celerite import terms
 from celerite import GP as cGP
 # from .celeritenew import GPnew as clnGPnew
 # from .gpnew import *
-# from george.modeling import Model
 from copy import deepcopy
 
 
@@ -278,6 +279,12 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     CP  = deepcopy(lc._config_par)    #load input transit and RV parameters from dict
     npl = lc._nplanet
 
+    # # rho_star (same for all planets)
+    rho_star = CP[f"pl{1}"]["rho_star"]
+    if rho_star.step_size != 0.: njumpphot=njumpphot+1
+    if (rho_star.to_fit == 'n' and rho_star.prior == 'p'):   
+        extinpars.append('rho_star')
+        
     for n in range(1,npl+1): 
         if rv is None: #remove k as a free parameter
             CP[f"pl{n}"]['K'].to_fit = "n"
@@ -293,11 +300,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         if (CP[f"pl{n}"]['Impact_para'].to_fit == 'n' and CP[f"pl{n}"]['Impact_para'].prior == 'p'):
             extinpars.append('Impact_para')
 
-        # # duration    
-        if CP[f"pl{n}"]['Duration'].step_size != 0.: njumpphot=njumpphot+1
-        if (CP[f"pl{n}"]['Duration'].to_fit == 'n' and CP[f"pl{n}"]['Duration'].prior == 'p'):
-            extinpars.append('Duration')
-            
+
         # # T0   
         if CP[f"pl{n}"]['T_0'].step_size != 0.: 
             njumpphot=njumpphot+1
@@ -338,8 +341,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             
         CP[f"pl{n}"]["sesin(w)"], CP[f"pl{n}"]["secos(w)"] = ecc_om_par(CP[f"pl{n}"]["Eccentricity"], CP[f"pl{n}"]["omega"])
 
-        #now remove Eccentricty and omega from the dictionary
-        _ = [CP[f"pl{n}"].pop(key) for key in ["Eccentricity", "omega"]]
+        #now remove rho_star, Eccentricty and omega from the dictionary 
+        _ = [CP[f"pl{n}"].pop(key) for key in ["rho_star","Eccentricity", "omega"]]
 
         
     
@@ -558,34 +561,37 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     else:
         nddf = 0
 
-    pnames   = ['T_0', 'RpRs', 'Impact_para', 'Duration', 'Period', 'sesin(w)', 'secos(w)', 'K'] # Parameter names
+    pnames   = ['T_0', 'RpRs', 'Impact_para', 'Period', 'sesin(w)', 'secos(w)', 'K'] # Parameter names
     # reorder dictionary CP as above
     for n in range(1,npl+1): 
         CP[f"pl{n}"] = {key:CP[f"pl{n}"][key] for key in pnames}
     # set up the parameters. loop thorugh the planet number (n) and the parameter name (key) for that planet
-    params   = np.array([CP[f"pl{n}"][key].start_value    for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])  # initial guess params
-    stepsize = np.array([CP[f"pl{n}"][key].step_size      for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])  # stepsizes
-    pmin     = np.array([CP[f"pl{n}"][key].bounds_lo      for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])  # Boundaries (min)
-    pmax     = np.array([CP[f"pl{n}"][key].bounds_hi      for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])  # Boundaries (max)
-    prior    = np.array([CP[f"pl{n}"][key].prior_mean     for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])  # Prior centers
-    priorlow = np.array([CP[f"pl{n}"][key].prior_width_lo for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])  # Prior sigma low side
-    priorup  = np.array([CP[f"pl{n}"][key].prior_width_hi for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])  # Prior sigma high side
-    pnames   = np.array([nm+(f"_{n}" if npl>1 else "") for n in range(1,npl+1) for nm in pnames])
+    params   = np.concatenate(([rho_star.start_value],   [CP[f"pl{n}"][key].start_value    for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # initial guess params
+    stepsize = np.concatenate(([rho_star.step_size],     [CP[f"pl{n}"][key].step_size      for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # stepsizes
+    pmin     = np.concatenate(([rho_star.bounds_lo],     [CP[f"pl{n}"][key].bounds_lo      for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Boundaries (min)
+    pmax     = np.concatenate(([rho_star.bounds_hi],     [CP[f"pl{n}"][key].bounds_hi      for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Boundaries (max)
+    prior    = np.concatenate(([rho_star.prior_mean],    [CP[f"pl{n}"][key].prior_mean     for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Prior centers
+    priorlow = np.concatenate(([rho_star.prior_width_lo],[CP[f"pl{n}"][key].prior_width_lo for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Prior sigma low side
+    priorup  = np.concatenate(([rho_star.prior_width_hi],[CP[f"pl{n}"][key].prior_width_hi for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Prior sigma high side
+    pnames   = np.concatenate((["rho_star"],             [nm+(f"_{n}" if npl>1 else "")    for n in range(1,npl+1)  for nm in pnames]))
 
-    extcens  = np.array([CP[f"pl{n}"][key].prior_mean     for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]) # External parameter prior mean
-    extlow   = np.array([CP[f"pl{n}"][key].prior_width_lo for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]) # External parameter prior sig lo
-    extup    = np.array([CP[f"pl{n}"][key].prior_width_hi for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]) # External parameter prior sig hi
+    extcens  = np.concatenate(([rho_star.prior_mean],     [CP[f"pl{n}"][key].prior_mean     for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])) # External parameter prior mean
+    extlow   = np.concatenate(([rho_star.prior_width_lo], [CP[f"pl{n}"][key].prior_width_lo for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])) # External parameter prior sig lo
+    extup    = np.concatenate(([rho_star.prior_width_hi], [CP[f"pl{n}"][key].prior_width_hi for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])) # External parameter prior sig hi
     #set 5th(secin(w)) and 6th(secos(w)) element of each planet parameter array to 0
     for n in range(npl):
-        extcens[5+8*n : 7+8*n] = 0
-        extlow[5+8*n  : 7+8*n] = 0
-        extup[5+8*n   : 7+8*n] = 0
+        extcens[5+7*n : 7+7*n] = 0
+        extlow[5+7*n  : 7+7*n] = 0
+        extup[5+7*n   : 7+7*n] = 0
 
 
-    if (divwhite=='y'):           # do we do a divide-white? If yes, then fix all the transit shape parameters (index 0-6)
+    if (divwhite=='y'):           # do we do a divide-white? If yes, then fix all the transit shape parameters (index 0 + index 1-6)
+        #fixing index 0, rho_star 
+        stepsize[0] = 0
+        prior[0]    = 0
         for n in range(npl):
-            stepsize[0+8*n : 6+8*n] = 0
-            prior[0+8*n : 6+8*n]    = 0
+            stepsize[1+7*n : 7+7*n] = 0     #index 1-6
+            prior[1+7*n : 7+7*n]    = 0
 
     if ddfYN == 'y':   # if ddFs are fit: set the Rp/Rs to the specified value, and fix it.
         drprs_in  = np.zeros((nfilt,7))
@@ -674,7 +680,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     GPlimlo     = []
     GPnames     = []
     GPcombined  = []
-    pargps      = []
+    pargps      = []  #list to hold independent variables of GP for each lc
 
     for i in range(nphot):
         t, flux, err, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in = np.loadtxt(fpath+names[i], usecols=(0,1,2,3,4,5,6,7,8), unpack = True)  # reading in the data
@@ -731,7 +737,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                                             f"lc{i+1}_ACNM",f"lc{i+1}_BCNM"
                                             ]))        
         # note currently we have the following parameters in these arrays:
-        #   [T0,RpRs,b,dur,per,eos, eoc,K,               (8)*npl
+        #   [rho_star,                                   (1)
+        #   [T0,RpRs,b,per,eos, eoc,K,                   (7)*npl
         #   ddf_1, ..., ddf_n,                           (nddf)
         #   occ_1, ... , occ_n,                          (nocc)
         #   c1_f1,c2_f1,c3_f1,c4_f1, c1_f2, .... , c4fn, (4*n_filt)
@@ -744,10 +751,10 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         #   G0_lc1,G1_lc1,                                (3)
         #   H0_lc1,H1_lc1,H2_lc1,                         (2)
         #   A0_lc2, ...]
-        #    = 8*npl+nddf+nocc+4*n_filt+2*nRV
-        #    each lightcurve has 20 possible baseline jump parameters, starting with index  8*npl+nddf+nocc+4*n_filt+2*nRV
+        #    = 1+7*npl+nddf+nocc+4*n_filt+2*nRV
+        #    each lightcurve has 20 possible baseline jump parameters, starting with index  1+7*npl+nddf+nocc+4*n_filt+2*nRV
 
-        pargp = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
+        pargp_all = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
 
         if (useGPphot[i]=='n'):
             pargps.append([])   #to keep the indices of the lists, pargps and GPobjects, correct, append empty list if no gp
@@ -755,28 +762,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
         elif (useGPphot[i]=='y'):
             # define the index in the set of filters that this LC has:
-            k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
-            k = k[0].item()
-            # ddf of this LC:
-            if (ddfYN=='y'):           
-                ddfhere = params[8*npl+k]
-            else:
-                ddfhere = 0.
-            
-            # define the correct LDCs c1, c2:
-            c1here = params[8*npl+nddf+nocc+k*4]  
-            c2here = params[8*npl+nddf+nocc+k*4+1]
-            
-            # mean_model=Transit_Model(T0   = params[ [0+8*n  for n in range(npl)] ],  #T0 of all planets
-            #                          RpRs = params[ [1+8*n  for n in range(npl)] ],
-            #                          b    = params[ [2+8*n  for n in range(npl)] ],
-            #                          dur  = params[ [3+8*n  for n in range(npl)] ],
-            #                          per  = params[ [4+8*n  for n in range(npl)] ],
-            #                          eos  = params[ [5+8*n  for n in range(npl)] ],
-            #                          eoc  = params[ [6+8*n  for n in range(npl)] ],
-            #                          ddf  = ddfhere, occ = params[8*npl+nddf+k],
-            #                          c1   = c1here,  c2  = c2here,
-            #                          npl  = npl)
+            # k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
+            # k = k[0].item()
         
             if GPphotWNstart[i] == GPphotWNstart[0] and GPphotWNstep[i]==0.0:
                 d_combined = 1.0
@@ -796,71 +783,50 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             GPnames     = np.concatenate((GPnames,['GPphotWN_lc'+str(i+1)]),axis=0)
             GPcombined  = np.concatenate((GPcombined,[d_combined]),axis=0)
 
-            iii=0   # counter for the number of GPs that are added to the model
-
-            for ii in range(ndimGP):   # loop through the dimensions of the GP
-                if GPall[0,ii] == True:
+            nGP=0   # counter for the number of GPs that are added for this
+            dimGP_thislc = sum(GPjumping[i])
+            pargp = pargp_all[:,GPjumping[i]]  # the matrix with the inputs to the GPs for this lightcurve
+            for gpdim in range(ndimGP):   # loop through the dimensions of the GP
+                if GPall[0,gpdim] == True:
                     j = 0
                 else:
                     j = i
 
-                if GPjumping[j,ii]==True:
-                    if iii>0:   # if this is not the first GP, then add the new kernel to the previous one
+                if GPjumping[j,gpdim]==True:
+                    if nGP>0:   # if this is not the first GP, then add the new kernel to the previous one
                         k2 = kern
 
-                    if (GPphotkerns[j,ii]=='sqexp'):
-                        k1 = GPphotpars1[j,ii] * kernels.ExpSquaredKernel(GPphotpars2[j,ii], ndim=ndimGP, axes=ii)  
-                    elif (GPphotkerns[j,ii]=='mat32'):
-                        k1 = GPphotpars1[j,ii] * kernels.Matern32Kernel(GPphotpars2[j,ii], ndim=ndimGP, axes=ii)  
+                    if (GPphotkerns[j,gpdim]=='sqexp'):
+                        k1 = GPphotpars1[j,gpdim] * kernels.ExpSquaredKernel(GPphotpars2[j,gpdim], ndim=dimGP_thislc, axes=nGP)  
+                    elif (GPphotkerns[j,gpdim]=='mat32'):
+                        k1 = GPphotpars1[j,gpdim] * kernels.Matern32Kernel(GPphotpars2[j,gpdim], ndim=dimGP_thislc, axes=nGP)  
                     else:
                         _raise(ValueError, 'kernel not recognized! Must be either "sqexp" or "mat32" ')
                         
-                    if iii==0:  # if this is the first GP, then set the kernel to the first one
+                    if nGP==0:  # if this is the first GP, then set the kernel to the first one
                         kern = k1
                     else:
                         kern = k2 + k1
                         
-                    GPparams=np.concatenate((GPparams,(np.log(GPphotpars1[j,ii]),np.log(GPphotpars2[j,ii]))), axis=0)           
-                    if GPall[0,ii] == True and i == 0:         
-                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
-                    elif GPall[0,ii] == True and i != 0:
+                    GPparams=np.concatenate((GPparams,(np.log(GPphotpars1[j,gpdim]),np.log(GPphotpars2[j,gpdim]))), axis=0)           
+                    if GPall[0,gpdim] == True and i == 0:         
+                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,gpdim],GPphotstep2[j,gpdim])),axis=0)
+                    elif GPall[0,gpdim] == True and i != 0:
                         GPstepsizes=np.concatenate((GPstepsizes,(0.,0.)),axis=0)
                     else:
-                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
+                        GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,gpdim],GPphotstep2[j,gpdim])),axis=0)
                     
                     GPindex    = np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
-                    GPprior    = np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
-                    GPpriwid   = np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
-                    GPlimup    = np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
-                    GPlimlo    = np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
-                    GPnames    = np.concatenate((GPnames,(['GPphotscale_lc'+str(i+1)+'dim'+str(ii),"GPphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
-                    GPcombined = np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
+                    GPprior    = np.concatenate((GPprior,(GPphotprior1[j,gpdim],GPphotprior2[j,gpdim])),axis=0)
+                    GPpriwid   = np.concatenate((GPpriwid,(GPphotpriorwid1[j,gpdim],GPphotpriorwid2[j,gpdim])),axis=0)
+                    GPlimup    = np.concatenate((GPlimup,(GPphotlim1up[j,gpdim],GPphotlim2up[j,gpdim])),axis=0)
+                    GPlimlo    = np.concatenate((GPlimlo,(GPphotlim1lo[j,gpdim],GPphotlim2lo[j,gpdim])),axis=0)
+                    GPnames    = np.concatenate((GPnames,(['GPphotscale_lc'+str(i+1)+'dim'+str(gpdim),"GPphotmetric_lc"+str(i+1)+'dim'+str(gpdim)])),axis=0)
+                    GPcombined = np.concatenate((GPcombined,(GPall[j,gpdim],GPall[j,gpdim])),axis=0)
 
-                    iii=iii+1
+                    nGP=nGP+1
                     
             gp = GP(kern, mean=1,white_noise=GPphotWNstart[i],fit_white_noise=True)
-            
-  
-            # freeze the parameters that are not jumping!
-            # indices of the GP mean model (transit) parameters in the params model
-            pindices  = list(np.concatenate([np.arange(7)+8*n for n in range(npl)]))    #7transit parameters for each planet
-            pindices += [8*npl+k,              #ddf
-                         8*npl+nddf+k,         #occstart
-                         8*npl+nddf+nocc+k*4,  #c1 index for this lc
-                         8*npl+nddf+nocc+k*4+1 #c2 index for this lc
-                        ]
-            
-            # GPparnames=gp.get_parameter_names(include_frozen=True)
-            # frz = []
-            # for ii in range(len(pindices)):
-            #     if (stepsize[pindices[ii]]==0.):
-            #         gp.freeze_parameter(GPparnames[ii])
-            #         frz.append(ii)
-            if debug: 
-                print('\nDEBUG: In fit_data.py') 
-                print(f'GP frozen parameters:{np.array(GPparnames)[frz]}')
-                print(f'Model+GP parameters to fit: {gp.get_parameter_names()}')
-                print(f'with values: {gp.get_parameter_vector()}')
 
             gp.compute(pargp, err)
             GPobjects.append(gp)
@@ -871,29 +837,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             pargp = np.copy(t)   #
 
             # define the index in the set of filters that this LC has:
-            k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
-            k = k[0].item()
-            # ddf of this LC:
-            if (ddfYN=='y'):           
-                ddfhere=params[8*npl+k]
-            else:
-                ddfhere=0.
-            
-            # define the correct LDCs c1, c2:
-            c1here=params[8*npl+nddf+nocc+k*4]
-            c2here=params[8*npl+nddf+nocc+k*4+1]
-            
-            # mean_model=Transit_Model(T0   = params[ [0+8*n  for n in range(npl)] ],  #T0 of all planets
-            #                          RpRs = params[ [1+8*n  for n in range(npl)] ],
-            #                          b    = params[ [2+8*n  for n in range(npl)] ],
-            #                          dur  = params[ [3+8*n  for n in range(npl)] ],
-            #                          per  = params[ [4+8*n  for n in range(npl)] ],
-            #                          eos  = params[ [5+8*n  for n in range(npl)] ],
-            #                          eoc  = params[ [6+8*n  for n in range(npl)] ],
-            #                          ddf  = ddfhere, occ = params[8*npl+nddf+k],
-            #                          c1   = c1here,  c2  = c2here,
-            #                          npl  = npl)   
-                 
+            # k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
+            # k = k[0].item()
+
             if GPphotWNstart[i] == GPphotWNstart[0] and GPphotWNstep[i]==0.0:
                 d_combined = 1.0
             elif GPphotWN[0] == 'all':
@@ -950,58 +896,31 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 else: _raise(ValueError, f'Celerite kernel not recognized! Must be either "sho" or "mat32" but {GPphotkerns[i,0]} given')
                 NparGP=2
 
-            ii=0 
-            if GPall[0,ii] == True:
+            gpdim=0    #only dim0 (time) used for now
+            if GPall[0,gpdim] == True:
                 j = 0
             else:
                 j=i
 
             GPparams=np.concatenate((GPparams,[c_sigma,c_rho]), axis=0)             
-            if GPall[0,ii] == True and i == 0:         
-                GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
-            elif GPall[0,ii] == True and i != 0:
+            if GPall[0,gpdim] == True and i == 0:         
+                GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,gpdim],GPphotstep2[j,gpdim])),axis=0)
+            elif GPall[0,gpdim] == True and i != 0:
                 GPstepsizes=np.concatenate((GPstepsizes,(0.,0.)),axis=0)
             else:
-                GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,ii],GPphotstep2[j,ii])),axis=0)
+                GPstepsizes=np.concatenate((GPstepsizes,(GPphotstep1[j,gpdim],GPphotstep2[j,gpdim])),axis=0)
 
             GPindex     = np.concatenate((GPindex,(np.zeros(2)+i)),axis=0)
-            GPprior     = np.concatenate((GPprior,(GPphotprior1[j,ii],GPphotprior2[j,ii])),axis=0)
-            GPpriwid    = np.concatenate((GPpriwid,(GPphotpriorwid1[j,ii],GPphotpriorwid2[j,ii])),axis=0)
-            GPlimup     = np.concatenate((GPlimup,(GPphotlim1up[j,ii],GPphotlim2up[j,ii])),axis=0)
-            GPlimlo     = np.concatenate((GPlimlo,(GPphotlim1lo[j,ii],GPphotlim2lo[j,ii])),axis=0)
-            GPnames     = np.concatenate((GPnames,(['CEphotscale_lc'+str(i+1)+'dim'+str(ii),"CEphotmetric_lc"+str(i+1)+'dim'+str(ii)])),axis=0)
-            GPcombined  = np.concatenate((GPcombined,(GPall[j,ii],GPall[j,ii])),axis=0)
+            GPprior     = np.concatenate((GPprior,(GPphotprior1[j,gpdim],GPphotprior2[j,gpdim])),axis=0)
+            GPpriwid    = np.concatenate((GPpriwid,(GPphotpriorwid1[j,gpdim],GPphotpriorwid2[j,gpdim])),axis=0)
+            GPlimup     = np.concatenate((GPlimup,(GPphotlim1up[j,gpdim],GPphotlim2up[j,gpdim])),axis=0)
+            GPlimlo     = np.concatenate((GPlimlo,(GPphotlim1lo[j,gpdim],GPphotlim2lo[j,gpdim])),axis=0)
+            GPnames     = np.concatenate((GPnames,(['CEphotscale_lc'+str(i+1)+'dim'+str(gpdim),"CEphotmetric_lc"+str(i+1)+'dim'+str(gpdim)])),axis=0)
+            GPcombined  = np.concatenate((GPcombined,(GPall[j,gpdim],GPall[j,gpdim])),axis=0)
         
 
             # gp = clnGPnew(kern, mean=mean_model,fit_mean=True)#,log_white_noise=GPphotWNstart[i],fit_white_noise=True)
             gp = cGP(kern, mean=1)
-
-  
-            # freeze the parameters that are not jumping!
-            # indices of the GP mean model parameters in the params model
-            # pindices = [0,1,2,3,4,5,6,8+k,8+nddf+k,8+nddf+nocc+k*4,8+nddf+nocc+k*4+1]
-            pindices  = list(np.concatenate([np.arange(7)+8*n for n in range(npl)]))    #7transit parameters for each planet
-            pindices += [8*npl+k,              #ddf
-                         8*npl+nddf+k,         #occstart
-                         8*npl+nddf+nocc+k*4,  #c1 index for this lc
-                         8*npl+nddf+nocc+k*4+1 #c2 index for this lc
-                        ]
-
-            # GPparnames=gp.get_parameter_names(include_frozen=True)
-            # if debug: print(f"pindices= {pindices}\nGPparnames={GPparnames}")
-
-            # frz=[]
-            # for ii in range(len(pindices)):
-            #     if (stepsize[pindices[ii]]==0.):
-            #         _ = gp.freeze_parameter(GPparnames[ii+NparGP])
-            #         # print(f"gppars from main: {GPparnames[ii+NparGP]}")
-            #         frz.append(ii+NparGP)
-            # if debug:
-            #     print('\nDEBUG: In fit_data.py') 
-            #     print(f'frz={frz}')
-            #     print(f'GP frozen parameters:{np.array(GPparnames)[frz]}')
-            #     print(f'GP+Model parameters to fit: {gp.get_parameter_names()}')
-            #     print(f'with values: {gp.get_parameter_vector()}')
 
             gp.compute(pargp, err)
             GPobjects.append(gp)
@@ -1081,7 +1000,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         
         temp=np.ndarray([0])  # the indices of the parameters that jump for this LC
         
-        tr_ind = np.concatenate([np.arange(7)+8*n for n in range(npl)]) # the 7 common transit jump parameters for all planets (no K)
+        tr_ind = np.array([0])   #rho_star index
+        tr_ind = np.append(tr_ind, np.concatenate([np.arange(1,7)+7*n for n in range(npl)])) # add index of the 6 other transit jump parameters for all planets (no K)
         lcstep = tr_ind[np.where(stepsize[tr_ind]!=0.)[0]]
         
         if (len(lcstep) > 0): 
@@ -1094,28 +1014,28 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         #transit depth variation
         if (ddfYN=='y'):    
             if temp.shape:    
-                temp=np.concatenate((np.asarray(temp),np.asarray([8*npl+k])),axis=0)
+                temp=np.concatenate((np.asarray(temp),np.asarray([1+7*npl+k])),axis=0)
             else:
-                temp=np.asarray([8*npl+k])
+                temp=np.asarray([1+7*npl+k])
         
         #occultation
-        occind=8*npl+nddf+k                   # the index of the occultation parameter for this LC
+        occind=1+7*npl+nddf+k                   # the index of the occultation parameter for this LC
         if (stepsize[occind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[occind]),axis=0)
         
         if verbose: print(temp)
 
         #limb darkening
-        c1ind=8*npl+nddf+nocc+k*4
+        c1ind=1+7*npl+nddf+nocc+k*4
         if (stepsize[c1ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[c1ind]),axis=0)
         
-        c2ind=8*npl+nddf+nocc+k*4+1
+        c2ind=1+7*npl+nddf+nocc+k*4+1
         if (stepsize[c2ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[c2ind]),axis=0)
     
         #baseline
-        bfstart= 8*npl+nddf+nocc+nfilt*4 + nRV*2  # the first index in the param array that refers to a baseline function    
+        bfstart= 1+7*npl+nddf+nocc+nfilt*4 + nRV*2  # the first index in the param array that refers to a baseline function    
         blind = np.asarray(list(range(bfstart+i*20,bfstart+i*20+20)))  # the indices for the coefficients for the base function  #TODO why 20, not 21  
         if verbose: print(bfstart, blind, nocc, nfilt)
 
@@ -1142,7 +1062,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         
         temp=np.ndarray([])
         
-        rv_ind  = np.concatenate([np.arange(8)+8*n for n in range(npl)]) # the common RV jump parameters: transit + K for all planets
+        rv_ind  = np.array([0])     #rho_star
+        rv_ind  = np.append(rv_ind, np.concatenate([np.arange(1,8)+7*n for n in range(npl)])) # the common RV jump parameters: transit + K for all planets
         rvstep1 = np.where(stepsize[rv_ind]!=0.)  
         rvstep = rvstep1[0]
         
@@ -1150,12 +1071,12 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             temp=np.copy(rvstep)
 
         # identify the gamma index of this RV (note: each gamma comes with a jitter, so 2 indices needed per rvdata)
-        gammaind = 8*npl+nddf+nocc+nfilt*4+i*2
+        gammaind = 1+7*npl+nddf+nocc+nfilt*4+i*2
         
         if (stepsize[gammaind]!=0.):           
             temp=np.concatenate((temp,[gammaind]),axis=0)
 
-        bfstart= 8*npl+nddf+nocc+nfilt*4 + nRV*2 + nphot*20  # the first index in the param array that refers to an RV baseline function    
+        bfstart= 1+7*npl+nddf+nocc+nfilt*4 + nRV*2 + nphot*20  # the first index in the param array that refers to an RV baseline function    
         blind = np.asarray(list(range(bfstart+i*8,bfstart+i*8+8)))  # the indices for the coefficients for the base function    
 
         rvstep1 = np.where(stepsize[blind]!=0.)
@@ -1215,8 +1136,6 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    # T0_init  = [CP[f"pl{n}"]["T_0"].start_value for n in range(1, npl+1)]
-    # per_init = [CP[f"pl{n}"]["Period"].start_value for n in range(1, npl+1)]
     mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',initial,T0_init,per_init,Dur_init)
     if debug: print(f'finished mcmc_plots, took {(time.time() - debug_t2)} secs')
 
@@ -1305,7 +1224,6 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
 
 
     GRvals = grtest_emcee(chains)
-
     gr_print(jnames,GRvals,out_folder)
 
     nijnames = np.where(steps == 0.)     #indices of the fixed parameters

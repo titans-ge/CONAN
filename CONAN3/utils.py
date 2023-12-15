@@ -1,4 +1,6 @@
 import numpy as np
+import astropy.constants as c
+import astropy.units as u
 
 def phase_fold(t, per, t0,phase0=-0.5):
     """Phase fold a light curve.
@@ -108,3 +110,99 @@ def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_c
         return x[ok], y[ok], yerr[ok], ~ok
     
     return x[ok], y[ok], yerr[ok]
+
+
+
+def rho_to_aR(rho, P):
+    """
+    convert stellar density to semi-major axis of planet with a particular period
+
+    Parameters:
+    -----------
+    rho: float, ufloat, array-like;
+        The density of the star in g/cm^3.
+        
+    P: float, ufloat, array-like;
+        The period of the planet in days.
+        
+    Returns:
+    --------
+    aR: array-like;
+        The scaled semi-major axis of the planet.
+    """
+
+    G = (c.G.to(u.cm**3/(u.g*u.second**2))).value
+    Ps = P*(u.day.to(u.second))
+    aR = ((rho*G*Ps**2)/(3*np.pi)) **(1/3.)
+
+    return aR
+
+
+def aR_to_Tdur(aR, b, Rp, P,e=0,w=90):
+    """
+    convert scaled semi-major axis to transit duration in days 
+    eq 1 of https://doi.org/10.1093/mnras/stu318, eq 14,16 of https://arxiv.org/pdf/1001.2010.pdf
+
+    Parameters:
+    -----------
+    aR: float, ufloat, array-like;
+        The scaled semi-major axis of the planet.
+        
+    b: float, ufloat, array-like;
+        The impact parameter.
+        
+    Rp: float, ufloat, array-like;
+        planet-to-star radius ratio.
+
+    P: float, ufloat, array-like;
+        The period of the planet in days.
+
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit.
+
+    w: float, ufloat, array-like;
+        The argument of periastron in degrees.
+        
+    Returns:
+    --------
+    Tdur: array-like;
+        The transit duration in days.
+    """
+    factr =  ((1+Rp)**2 - b**2)/(aR**2-b**2)
+    ecc_fac = np.sqrt(1-e**2)/(1+e*np.sin(np.deg2rad(w)))
+    Tdur = (P/np.pi)*np.arcsin( np.sqrt(factr) ) * ecc_fac
+    return Tdur
+
+
+def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
+    """
+    convert stellar density to transit duration in days https://doi.org/10.1093/mnras/stu318
+
+    Parameters:
+    -----------
+    rho: float, ufloat, array-like;
+        The density of the star in g/cm^3.
+
+    b: float, ufloat, array-like;
+        The impact parameter.
+    
+    Rp: float, ufloat, array-like;
+        planet-to-star radius ratio.
+
+    P: float, ufloat, array-like;
+        The period of the planet in days.
+
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit.
+
+    w: float, ufloat, array-like;
+        The argument of periastron in degrees.
+
+    Returns:
+    --------
+    Tdur: array-like;
+        The transit duration in days.
+    """
+    aR = rho_to_aR(rho, P)
+    Tdur = aR_to_Tdur(aR, b, Rp, P,e,w)
+    return Tdur

@@ -11,7 +11,7 @@ from lmfit import minimize, Parameters, Parameter
 import batman
 from warnings import warn
 from ldtk import SVOFilter
-from .utils import outlier_clipping
+from .utils import outlier_clipping, rho_to_aR, rho_to_tdur
 from copy import deepcopy
 
 __all__ = ["load_lightcurves", "load_rvs", "mcmc_setup", "load_result", "__default_backend__","load_result_array"]
@@ -95,7 +95,7 @@ def _reversed_dict(d):
 def _raise(exception_type, msg):
     raise exception_type(msg)
 
-def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=None, Eccentricity=0, omega=90, u1=0, u2=0,
+def _decorr(file, T_0=None, Period=None, rho_star=None, L=0, Impact_para=0, RpRs=None, Eccentricity=0, omega=90, u1=0, u2=0,
                 mask=False, decorr_bound=(-1,1),
                 offset=None, A0=None, B0=None, A3=None, B3=None,
                 A4=None, B4=None, A5=None, B5=None,
@@ -111,15 +111,15 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
     file : str;
         path to data file with columns 0 to 8 (col0-col8).
     
-    T_0, Period, Duration, L, Impact_para, RpRs, Eccentricity, omega : floats, None;
-        transit/eclipse parameters of the planet. T_0, P, and dur must be in same units as the time axis (cols0) in the data file.
+    T_0, Period, rho_star, L, Impact_para, RpRs, Eccentricity, omega : floats, None;
+        transit/eclipse parameters of the planet. T_0 and P must be in same units as the time axis (cols0) in the data file. rho_star is the stellar density in g/cm^3.
         if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
         
     u1,u2 : float  (optional);
         standard quadratic limb darkening parameters.
 
     mask : bool ;
-        if True, transits and eclipses are masked using T_0, P and dur which must be float/int.                    
+        if True, transits and eclipses are masked using T_0, P and rho_star which must be float/int.                    
         
     offset, Ai, Bi; floats [-1,1] or None;
         coefficients of linear model where offset is the intercept. they have large bounds [-1,1].
@@ -154,7 +154,7 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
                           
     if mask:
         print("masking transit/eclipse phases")
-        for tp in ["T_0", "Period", "Duration"]:
+        for tp in ["T_0", "Period", "rho_star"]:
             if isinstance(in_pars[tp], tuple):
                 if len(in_pars[tp])==2:   in_pars[tp]=in_pars[tp][0]
                 elif len(in_pars[tp])==3: in_pars[tp]=in_pars[tp][1]
@@ -162,16 +162,17 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
         #use periodicity of 0.5*P to catch both transits and eclipses
         E = np.round(( cols0_med - in_pars['T_0'])/(0.5*in_pars["Period"]) )
         Tc = E*(0.5*in_pars["Period"]) + in_pars['T_0']
-        mask = abs(df["cols0"] - Tc) > 0.5*in_pars["Duration"]
+        duration = rho_to_tdur(in_pars["rho_star"], in_pars["Impact_para"], in_pars["RpRs"],in_pars["Period"], in_pars["Eccentricity"], in_pars["omega"])
+        mask = abs(df["cols0"] - Tc) > 0.5*duration
         df = df[mask]
         
     
 
     #transit variables
-    for p in ["T_0", "Period", "Duration", "L", "Impact_para","RpRs", "Eccentricity", "omega", "u1","u2"]:
+    for p in ["T_0", "Period", "rho_star", "L", "Impact_para","RpRs", "Eccentricity", "omega", "u1","u2"]:
         for n in range(npl):
-            lbl = f"_{n+1}" if npl>1 else ""   #numbering to add to parameter names of each planet
-            if p not in ["u1","u2"]:
+            lbl = f"_{n+1}" if npl>1 else ""      # numbering to add to parameter names of each planet
+            if p not in ["u1","u2","rho_star"]:   # parameters common to all planet
                 tr_pars[p+lbl]= DA[p][n]  #transit/eclipse pars
             else:
                 tr_pars[p] = DA[p]        #limb darkening pars
@@ -202,7 +203,7 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
         if isinstance(tr_pars[key], (float,int)):
             tr_params.add(key, value=tr_pars[key], vary=False)
         if tr_pars[key] == None:
-            vs = ["RpRs","Period","Duration"]
+            vs = ["RpRs","Period","rho_star"]
             vs = [v+(f"_{n+1}" if npl>1 else "") for n in range(npl) for v in vs]    
             val = 1e-10 if key in vs else 0 #allows to obtain transit/eclipse with zero depth
             tr_params.add(key, value=val, vary=False)
@@ -221,10 +222,9 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
             bt.fp  = tr_params["L"+lbl]
             bt.rp  = tr_params["RpRs"+lbl]
             b      = tr_params["Impact_para"+lbl]
-            dur    = tr_params["Duration"+lbl]
             bt.ecc = tr_params["Eccentricity"+lbl]
             bt.w   = tr_params["omega"+lbl]
-            bt.a   = np.sqrt( (1+bt.rp)**2 - b**2)/(np.pi*dur/bt.per)
+            bt.a   = rho_to_aR(tr_params["rho_star"], bt.per)
             bt.fp  = tr_params["L"+lbl]                                        
             ecc_factor=(1-bt.ecc**2)/(1+bt.ecc*np.sin(np.deg2rad(bt.w)))  
             
@@ -236,8 +236,6 @@ def _decorr(file, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs
             bt.u   = [u1,u2]
 
             bt.t_secondary = bt.t0 + 0.5*bt.per*(1 + 4/np.pi * bt.ecc * np.cos(np.deg2rad(bt.w))) #eqn 33 (http://arxiv.org/abs/1001.2010)
-            
-
             m_tra = batman.TransitModel(bt, t,transittype="primary")
             m_ecl = batman.TransitModel(bt, t,transittype="secondary")
 
@@ -496,17 +494,26 @@ def _print_output(self, section: str, file=None):
         DA = self._config_par
         _print_transit_rv_pars = f"""#=========== jump parameters (Jump0value step lower_limit upper_limit priors) ====================== """+\
                                   f"""\n{'name':12s}\tfit\tstart_val\tstepsize\tlow_lim\tup_lim\tprior\t{"value   ":8s}\tsig_lo\tsig_hi"""
-
         #define print out format
         txtfmt = "\n{0:12s}\t{1:3s}\t{2:8.5f}\t{3:.7f}\t{4:4.2f}\t{5:4.2f}\t{6:5s}\t{7:8.5f}\t{8:6.1e}\t{9:6.1e} "
+        #print line for stellar density
+        p = "rho_star"
+        _print_transit_rv_pars +=  txtfmt.format( p,
+                                                DA[f'pl{1}'][p].to_fit, DA[f'pl{1}'][p].start_value,
+                                                DA[f'pl{1}'][p].step_size, DA[f'pl{1}'][p].bounds_lo, 
+                                                DA[f'pl{1}'][p].bounds_hi, DA[f'pl{1}'][p].prior, DA[f'pl{1}'][p].prior_mean,
+                                                DA[f'pl{1}'][p].prior_width_lo, DA[f'pl{1}'][p].prior_width_hi)
+        _print_transit_rv_pars +=  "---------------------"
+        #then cycle through parameters for each planet       
         for n in range(1,self._nplanet+1):        
             for i,p in enumerate(self._TR_RV_parnames):
-                t = txtfmt.format(  p+(f"_{n}" if self._nplanet>1 else ""),
-                                    DA[f'pl{n}'][p].to_fit, DA[f'pl{n}'][p].start_value,
-                                    DA[f'pl{n}'][p].step_size, DA[f'pl{n}'][p].bounds_lo, 
-                                    DA[f'pl{n}'][p].bounds_hi, DA[f'pl{n}'][p].prior, DA[f'pl{n}'][p].prior_mean,
-                                    DA[f'pl{n}'][p].prior_width_lo, DA[f'pl{n}'][p].prior_width_hi)
-                _print_transit_rv_pars += t
+                if p != "rho_star":
+                    t = txtfmt.format(  p+(f"_{n}" if self._nplanet>1 else ""),
+                                        DA[f'pl{n}'][p].to_fit, DA[f'pl{n}'][p].start_value,
+                                        DA[f'pl{n}'][p].step_size, DA[f'pl{n}'][p].bounds_lo, 
+                                        DA[f'pl{n}'][p].bounds_hi, DA[f'pl{n}'][p].prior, DA[f'pl{n}'][p].prior_mean,
+                                        DA[f'pl{n}'][p].prior_width_lo, DA[f'pl{n}'][p].prior_width_hi)
+                    _print_transit_rv_pars += t
             if n!=self._nplanet: _print_transit_rv_pars += "---------------------"
         print(_print_transit_rv_pars, file=file)
 
@@ -581,7 +588,7 @@ def _print_output(self, section: str, file=None):
         f"""\n{'# parameter':13s}  value  sig_lo  sig_hi """+\
         f"""\n{'Radius_[Rsun]':13s}  {DA['R_st'][0]:.3f}  {DA['R_st'][1]:.3f}  {DA['R_st'][2]:.3f} """+\
             f"""\n{'Mass_[Msun]':13s}  {DA['M_st'][0]:.3f}  {DA['M_st'][1]:.3f}  {DA['M_st'][2]:.3f}"""+\
-            f"""\nStellar_para_input_method:_R+rho_(Rrho),_M+rho_(Mrho),_M+R_(MR): {DA['par_input']}"""
+            f"""\nStellar_para_input_method:_R+rho_(Rrho),_M+rho_(Mrho): {DA['par_input']}"""
         print(_print_stellar_pars, file=file)           
 
     if section == "mcmc":
@@ -749,12 +756,12 @@ class load_lightcurves:
 
         self._show_guide = show_guide
         self._clipped_data = False
-        self.lc_baseline(verbose=False)
+        self.lc_baseline(re_init = hasattr(self,"_bases"), verbose=False)
 
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def get_decorr(self, T_0=None, Period=None, Duration=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, K=0,u1=0, u2=0, 
+    def get_decorr(self, T_0=None, Period=None, rho_star=None, L=0, Impact_para=0, RpRs=1e-5,Eccentricity=0, omega=90, K=0,u1=0, u2=0, 
                    mask=False, delta_BIC=-3, decorr_bound =(-1,1),cheops=False, exclude=[],enforce=[],verbose=True, 
                    show_steps=False, plot_model=True, use_result=True):
         """
@@ -767,8 +774,8 @@ class load_lightcurves:
 
             Parameters:
             -----------
-            T_0, Period, Duration, L, Impact_para, RpRs, Eccentricity, omega: floats,tuple, None;
-                transit/eclipse parameters of the planet. T_0, Period, and Duration must be in same units as the time axis (cols0) in the data file.
+            T_0, Period, rho_star, L, Impact_para, RpRs, Eccentricity, omega: floats,tuple, None;
+                transit/eclipse parameters of the planet. T_0 and Period must be in same units as the time axis (cols0) in the data file.
                 if float/int, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
                 
             u1,u2 : float,tuple, list  (optional);
@@ -828,16 +835,19 @@ class load_lightcurves:
         blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[], "dcol6":[], "dcol7":[],"gp":[]}  #inputs to lc_baseline method
         self._decorr_result = []   #list of decorr result for each lc.
         
-        input_pars = dict(T_0=T_0, Period=Period, Duration=Duration, Impact_para=Impact_para, \
+        input_pars = dict(T_0=T_0, Period=Period, rho_star=rho_star, Impact_para=Impact_para, \
                         RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
 
-        self._tra_occ_pars = dict(T_0=T_0, Period=Period, Duration=Duration, L=L, Impact_para=Impact_para, \
+        self._tra_occ_pars = dict(T_0=T_0, Period=Period, rho_star=rho_star, L=L, Impact_para=Impact_para, \
                               RpRs=RpRs, Eccentricity=Eccentricity, omega=omega)#, u1=u1,u2=u2)  #transit/occultation parameters
         
         for p in self._tra_occ_pars:
-            if isinstance(self._tra_occ_pars[p], (int,float,tuple)): self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
-            if isinstance(self._tra_occ_pars[p], (list)): assert len(self._tra_occ_pars[p]) == self._nplanet, \
-                f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
+            if p != "rho_star":
+                if isinstance(self._tra_occ_pars[p], (int,float,tuple)): self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
+                if isinstance(self._tra_occ_pars[p], (list)): assert len(self._tra_occ_pars[p]) == self._nplanet, \
+                    f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
+            else:
+                assert isinstance(self._tra_occ_pars[p],(int,float,tuple)),f"get_decorr(): {p} must be one of int/float/tuple but {self._tra_occ_pars[p]} given "
 
         ld_u1, ld_u2 = {},{}
         for i,fil in enumerate(self._filnames):
@@ -917,7 +927,7 @@ class load_lightcurves:
             #calculate determined trend and tra/occ model over all data(no mask)
             pps = result.params.valuesdict()
             #convert result transit parameters to back to a list
-            for p in ['RpRs', 'Impact_para', 'Duration', 'T_0', 'Period', 'Eccentricity', 'omega','L']:
+            for p in ['RpRs', 'Impact_para', 'T_0', 'Period', 'Eccentricity', 'omega','L']:
                 if self._nplanet==1:
                     pps[p] = [pps[p]]  
                 else:      
@@ -960,7 +970,7 @@ class load_lightcurves:
             else:
                 self.setup_occultation(verbose=False)
             
-            if all([p in self._tra_occ_pars for p in["Period","Duration","Impact_para","RpRs","Eccentricity", "omega", "T_0"]]):
+            if all([p in self._tra_occ_pars for p in["Period","rho_star","Impact_para","RpRs","Eccentricity", "omega", "T_0"]]):
                 if verbose: print(_text_format.BOLD + "\nSetting-up transit pars from input values" +_text_format.END)
                 self.setup_transit_rv(**input_pars, verbose=verbose)
             
@@ -1208,7 +1218,8 @@ class load_lightcurves:
                 # self._filnames   = np.array(list(sorted(set(self._filters),key=self._filters.index)))
 
                 self._lamdas.append(_lbd)
-        self.lc_baseline(re_init=True,verbose=False)
+        # self.lc_baseline(re_init=True,verbose=False)
+        self.__init__(self._names, self._fpath, self._filters, self._lamdas, self._nplanet)
 
             
     def lc_baseline(self, dcol0=None, dcol3=None, dcol4=None,  dcol5=None, dcol6=None, 
@@ -1520,7 +1531,7 @@ class load_lightcurves:
 
         if self._show_guide: print("\nNext: use method `setup_transit_rv` to configure transit parameters.")
 
-    def setup_transit_rv(self, RpRs=0., Impact_para=0, Duration=0, T_0=0, Period=0, 
+    def setup_transit_rv(self, RpRs=0., Impact_para=0, rho_star=0, T_0=0, Period=0, 
                  Eccentricity=0, omega=90, K=0, verbose=True):
         """
             Define parameters an priors of model parameters.
@@ -1539,8 +1550,8 @@ class load_lightcurves:
             Impact_para : float, tuple;
                 Impact parameter of the transit. Default is 0.
 
-            Duration : float, tuple;
-                Duration of the transit in days. Default is 0.
+            rho_star : float, tuple;
+                density of the star in g/cm^3. Default is 0.
 
             T_0 : float, tuple;
                 Mid-transit time in days. Default is 0.
@@ -1565,7 +1576,7 @@ class load_lightcurves:
         _ = DA.pop("self")                            #remove self from dictionary
         _ = DA.pop("verbose")
         #sort to specific order
-        key_order = ["RpRs","Impact_para","Duration", "T_0", "Period", "Eccentricity","omega", "K"]
+        key_order = ["RpRs","Impact_para","rho_star", "T_0", "Period", "Eccentricity","omega", "K"]
         DA = {key:DA[key] for key in key_order if key in DA} 
             
         self._TR_RV_parnames  = [nm for nm in DA.keys()] 
@@ -1580,7 +1591,8 @@ class load_lightcurves:
             self._config_par[f"pl{n+1}"] = {}
 
             for par in DA.keys():
-                if par in ["RpRs","Duration", "Eccentricity"]: up_lim = 1
+                if par in ["RpRs", "Eccentricity"]: up_lim = 1
+                elif par == "rho_star":    up_lim = 4
                 elif par == "Impact_para": up_lim = 1.5
                 elif par == "omega":       up_lim = 360
                 else: up_lim = 10000
@@ -1591,7 +1603,7 @@ class load_lightcurves:
                 if isinstance(DA[par][n], tuple):
                     #gaussian       
                     if len(DA[par][n]) == 2:
-                        if par in ["T_0","Duration"]: up_lim = DA[par][n][0]+20*DA[par][n][1]    #uplim is mean+20*sigma   
+                        if par in ["T_0","rho_star"]: up_lim = DA[par][n][0]+20*DA[par][n][1]    #uplim is mean+20*sigma   
                         DA[par][n] = _param_obj(["y", DA[par][n][0], 0.1*DA[par][n][1], "p", DA[par][n][0],    #TODO: for code clarity, use argument names instead of index (e.g. to_fit="y",)
                                                         DA[par][n][1], DA[par][n][1], 0, up_lim])
                     #uniform
@@ -1616,7 +1628,7 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_occultation` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
 
 
-    def update_setup_transit_rv(self, RpRs=0., Impact_para=0, Duration=0, T_0=0, Period=0, 
+    def update_setup_transit_rv(self, RpRs=0., Impact_para=0, rho_star=0, T_0=0, Period=0, 
                  Eccentricity=0, omega=90, K=0, verbose=True):
         """
             Define parameters an priors of model parameters.
@@ -1635,8 +1647,8 @@ class load_lightcurves:
             Impact_para : float, tuple;
                 Impact parameter of the transit. Default is 0.
 
-            Duration : float, tuple;
-                Duration of the transit in days. Default is 0.
+            rho_star : float, tuple;
+                density of the star in g/cm^3. Default is 0.
 
             T_0 : float, tuple;
                 Mid-transit time in days. Default is 0.
@@ -1674,7 +1686,7 @@ class load_lightcurves:
         for n in range(self._nplanet):    #n is planet number
 
             for par in DA.keys():
-                if par in ["RpRs","Duration", "Eccentricity"]: up_lim = 1
+                if par in ["RpRs","rho_star", "Eccentricity"]: up_lim = 1
                 elif par == "Impact_para": up_lim = 1.5
                 elif par == "omega":       up_lim = 360
                 else: up_lim = 10000
@@ -1685,7 +1697,7 @@ class load_lightcurves:
                 if isinstance(DA[par][n], tuple):
                     #gaussian       
                     if len(DA[par][n]) == 2:
-                        if par in ["T_0","Duration"]: up_lim = DA[par][n][0]+20*DA[par][n][1]    #uplim is mean+20*sigma   
+                        if par in ["T_0","rho_star"]: up_lim = DA[par][n][0]+20*DA[par][n][1]    #uplim is mean+20*sigma   
                         DA[par][n] = _param_obj(["y", DA[par][n][0], 0.1*DA[par][n][1], "p", DA[par][n][0],    #TODO: for code clarity, use argument names instead of index (e.g. to_fit="y",)
                                                         DA[par][n][1], DA[par][n][1], 0, up_lim])
                     #uniform
@@ -2078,7 +2090,7 @@ class load_lightcurves:
         self._contfact_dict = DA
         if verbose: _print_output(self,"contamination")
 
-    def stellar_parameters(self,R_st=None, M_st=None, par_input = "MR", verbose=True):
+    def stellar_parameters(self,R_st=None, M_st=None, par_input = "Rrho", verbose=True):
         """
             input parameters of the star
 
@@ -2090,10 +2102,11 @@ class load_lightcurves:
                 First tuple element is the value and the second is the uncertainty. use a third element if asymmetric uncertainty
             
             par_input : str;
-                input method of stellar parameters. It can be "Rrho","Mrho" or "MR", to use the combination of 2 stellar params to get the third.
+                input method of stellar parameters. It can be one of  ["Rrho","Mrho"], to use the fitted stellar density and one stellar parameter (M_st or R_st) to compute the other stellar parameter (R_st or M_st).
+                Default is 'Rrho' to use the fitted stellar density and stellar radius to compute the stellar mass.
 
         """
-
+    
 
         DA = _reversed_dict(locals().copy())
         _ = DA.pop("self")            #remove self from dictionary
@@ -2106,7 +2119,7 @@ class load_lightcurves:
                 assert len(DA[par])==2 or len(DA[par]) <=3, f"stellar_parameters: length of {par} tuple must be 2 or 3 "
                 if len(DA[par])== 2: DA[par]= (DA[par][0], DA[par][1], DA[par][1])
         
-        assert DA["par_input"] in ["Rrho","Mrho", "MR"], f"stellar_parameters: par_input must be one of 'Rrho','Mrho' or 'MR'. "
+        assert DA["par_input"] in ["Rrho","Mrho"], f"stellar_parameters: par_input must be one of ['Rrho','Mrho']."
             
         self._stellar_dict = DA
          

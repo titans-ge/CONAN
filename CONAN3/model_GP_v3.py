@@ -20,27 +20,29 @@ from george.modeling import Model
 import mc3
 from occultquad import *
 from occultnl import *
+from .utils import rho_to_aR
 
 #plt.ion()
 
 
 class Transit_Model(Model):
 
-    def __init__(self, T0, RpRs, b, dur, per, eos, eoc, ddf, occ, c1, c2,npl):
-        self.T0   = T0
-        self.RpRs = RpRs
-        self.b    = b
-        self.dur  = dur
-        self.per  = per
-        self.eos  = eos
-        self.eoc  = eoc
-        self.ddf  = ddf
-        self.occ  = occ
-        self.c1   = c1
-        self.c2   = c2
-        self.npl  = npl
+    def __init__(self, rho_star, T0, RpRs, b, per, eos, eoc, ddf, occ, c1, c2,npl):
+        self.rho_star = rho_star
+        self.T0       = T0
+        self.RpRs     = RpRs
+        self.b        = b
+        # self.dur      = dur
+        self.per      = per
+        self.eos      = eos
+        self.eoc      = eoc
+        self.ddf      = ddf
+        self.occ      = occ
+        self.c1       = c1
+        self.c2       = c2
+        self.npl      = npl
 
-        self.parameter_names = ['T0', 'RpRs', 'b', 'dur', 'per', 'eos', 'eoc', 'ddf', 'occ', 'c1', 'c2']
+        self.parameter_names = ['rho_star','T0', 'RpRs', 'b', 'per', 'eos', 'eoc', 'ddf', 'occ', 'c1', 'c2']
     # Parameter names - these are all scalars: this works only for one lc 
 
     def get_value(self, tarr, args=None,transit_only=False):
@@ -122,7 +124,8 @@ class Transit_Model(Model):
             # calculate the ars 
             efac1 = np.sqrt(1.-ecc**2)/(1.+ecc*np.sin(ome))
             efac2 = self.b[n]*(1.-ecc**2)/(1.+ecc*np.sin(ome))
-            ars   = np.sqrt(((1.+self.RpRs[n])**2 - efac2**2 * (1.-(np.sin(self.dur[n]*np.pi/self.per[n]))**2))/(np.sin(self.dur[n]*np.pi/self.per[n]))**2) * efac1
+            # ars   = np.sqrt(((1.+self.RpRs[n])**2 - efac2**2 * (1.-(np.sin(self.dur[n]*np.pi/self.per[n]))**2))/(np.sin(self.dur[n]*np.pi/self.per[n]))**2) * efac1
+            ars   = rho_to_aR(self.rho_star,self.per[n])
             #print ars, self.RpRs[n], self.b[n], self.dur[n], self.per[n], self.c4, params[27]#, params[14], params[15], params[16], params[17], params[18], params[19]
             #time.sleep(0.05) # delays for 5 seconds
             

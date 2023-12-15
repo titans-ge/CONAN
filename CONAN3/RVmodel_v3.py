@@ -144,7 +144,7 @@ def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None
     if get_model:
         return mod_RV-Gamma_in, model_components
 
-    bfstartRV= 8*npl + nddf + nocc + nfilt*4 + 2*nRV + nphot*20 #TODO: nRV*2, no? the first index in the param array that refers to a baseline function
+    bfstartRV= 1+7*npl + nddf + nocc + nfilt*4 + 2*nRV + nphot*20 #TODO: nRV*2, no? the first index in the param array that refers to a baseline function
     incoeff = list(range(bfstartRV+j*12,bfstartRV+j*12+12))  # the indices for the coefficients for the base function        
 
     ts = tt-np.mean(tt)

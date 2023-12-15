@@ -13,6 +13,7 @@ from celerite import terms
 import celerite
 from CONAN3.celeritenew import *
 from types import SimpleNamespace
+from .utils import rho_to_tdur
 
 from .RVmodel_v3 import *
 
@@ -177,59 +178,63 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
         k = k[0]  
         vcont = cont[k,0]
 
-        occind = 8*npl+nddf+k           # index in params of the occultation depth value
-        u1ind  = 8*npl+nddf+nocc+4*k    # index in params of the first LD coeff of this filter
-        u2ind  = 8*npl+nddf+nocc+4*k+1  # index in params of the second LD coeff of this filter
+        occind = 1+7*npl+nddf+k           # index in params of the occultation depth value
+        u1ind  = 1+7*npl+nddf+nocc+4*k    # index in params of the first LD coeff of this filter
+        u2ind  = 1+7*npl+nddf+nocc+4*k+1  # index in params of the second LD coeff of this filter
         gg     = int(groups[j]-1)
 
         # get the index of pp that is 
         # adapt the RpRs value used in the LC creation to any ddfs
 
         ppcount = 0   # the index of the jumping parameter in the pp array
-        T0in, RpRsin, bbin, durin, perin, eosin, eocin, Kin = [], [], [], [], [], [], [], []
+        T0in, RpRsin, bbin, perin, eosin, eocin, Kin = [], [], [], [], [], [], []
+
+        if 0 in jumping[0]:
+            rhoin = pp[ppcount]
+            ppcount = ppcount+1
+        else:
+            rhoin = params[0]
+
         for n in range(npl):
-            if (0+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 T0in.append(pp[ppcount])        # the first element of pp is the T0 value
                 ppcount = ppcount+1 
             else:
-                T0in.append(params[0+8*n])
+                T0in.append(params[1+7*n])
                 
-            if (1+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (2+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 RpRsin.append(pp[ppcount])
                 ppcount = ppcount+1   
             else:
-                RpRsin.append(params[1])
+                RpRsin.append(params[2+7*n])
 
-            if (2+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (3+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 bbin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                bbin.append(params[2+8*n])
+                bbin.append(params[3+7*n])
                     
-            if (3+8*n in jumping[0]):   # same for all LCs -> check in jumping array
-                durin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                durin.append(params[3+8*n])
-                    
-            if (4+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (4+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 perin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                perin.append(params[4+8*n])
+                perin.append(params[4+7*n])
 
-            if (5+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (5+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 eosin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                eosin.append(params[5+8*n])
+                eosin.append(params[5+7*n])
 
-            if (6+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (6+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 eocin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                eocin.append(params[6+8*n])
-
+                eocin.append(params[6+7*n])
+        
+        #calculate transit duration for each planet
+        durin = list( rho_to_tdur(rhoin, np.array(bbin), np.array(RpRsin), np.array(perin),
+                     e=np.array(eosin)**2+np.array(eocin)**2, w=np.degrees(np.arctan2(eosin,eocin)) ))
 
         if nddf>0:   
             ddf0 = pp[ppcount]
@@ -269,13 +274,13 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
             c2in = params[u2ind]
 
         if get_model:
-            TM = Transit_Model(T0=T0in, RpRs=RpRsin, b=bbin, dur=durin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
+            TM = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
             LCmod,compo = TM.get_value(t_in, transit_only=True)
             model_outputs.lc[name] = LCmod, compo
             continue
             
 
-        bfstart = 8*npl+nddf+nocc+4*nfilt+nRV*2+ j*20  # index in params of the first baseline param of this light curve
+        bfstart = 1+7*npl+nddf+nocc+4*nfilt+nRV*2+ j*20  # index in params of the first baseline param of this light curve
         blind = np.asarray(list(range(bfstart,bfstart+20))) # the indices of the baseline params of this light curve
         basesin = np.zeros(20)
         
@@ -335,7 +340,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
             # gp.set_parameter_vector(para, include_frozen=True)
             gp.set_parameter_vector(GPuse)
 
-            mean_model = Transit_Model(T0=T0in, RpRs=RpRsin, b=bbin, dur=durin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
+            mean_model = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
             argu = [t_in,f_in,col3_in,col4_in,col6_in,col5_in,col7_in,bis_in,contra_in,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,e_in,bvar,useSpline_lc[j]]
             trans_base = mean_model.get_value(t_in, argu)  #transit* baseline(w/wo spl)
 
@@ -355,11 +360,11 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
                     print(f"GP vector: {gp.get_parameter_vector()}")
                 
 
-                bfunc_gp, pred_var = gp.predict(f_in/trans_base, t=pargp, return_var=True) #gp_fit to residual
+                bfunc_gp= gp.predict(f_in/trans_base, t=pargp, return_cov=False, return_var=False) #gp_fit to residual
                 pred = bfunc_gp*trans_base    #gp*transit*baseline(w/wo spl)
                 
                 mod = np.concatenate((mod,pred))        #append the model to the output array
-                emod = np.concatenate((emod,pred_var))
+                emod = np.concatenate((emod,np.zeros(len(pred)))) #append the model error to the output array
                 
                 # return the transit model
                 # mo = gp.mean.get_value(t_in, args=argu)  #transit*baseline
@@ -401,7 +406,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
 
         else:
 
-            mean_model = Transit_Model(T0=T0in, RpRs=RpRsin, b=bbin, dur=durin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
+            mean_model = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
             argu = [t_in,f_in,col3_in,col4_in,col6_in,col5_in,col7_in,bis_in,contra_in,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,e_in,bvar,useSpline_lc[j]]     
             mt=mean_model.get_value(t_in, argu)   #transit*base
 
@@ -482,62 +487,62 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
         pp=p[pindices[j+nphot]]  # the elements of the p array jumping in this RV curve
 
         ppcount = 0 
-        T0in, RpRsin, bbin, durin, perin, eosin, eocin, Kin = [], [], [], [], [], [], [], []
+        T0in, RpRsin, bbin, perin, eosin, eocin, Kin = [], [], [], [], [], [],[]
+        if 0 in jumping[0]:
+            rhoin = pp[ppcount]
+            ppcount = ppcount+1
+        else:
+            rhoin = params[0]
+
         for n in range(npl):
-            if (0+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 T0in.append(pp[ppcount])        # the first element of pp is the T0 value
                 ppcount = ppcount+1 
             else:
-                T0in.append(params[0+8*n])
+                T0in.append(params[1+7*n])
                 
-            if (1+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (2+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 RpRsin.append(pp[ppcount])
                 ppcount = ppcount+1   
             else:
-                RpRsin.append(params[1])
+                RpRsin.append(params[2+7*n])
 
-            if (2+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (3+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 bbin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                bbin.append(params[2+8*n])
+                bbin.append(params[3+7*n])
                     
-            if (3+8*n in jumping[0]):   # same for all LCs -> check in jumping array
-                durin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                durin.append(params[3+8*n])
-                    
-            if (4+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (4+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 perin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                perin.append(params[4+8*n])
+                perin.append(params[4+7*n])
 
-            if (5+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (5+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 eosin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                eosin.append(params[5+8*n])
+                eosin.append(params[5+7*n])
 
-            if (6+8*n in jumping[0]):   # same for all LCs -> check in jumping array
+            if (6+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 eocin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                eocin.append(params[6+8*n])
+                eocin.append(params[6+7*n])
 
-            if (7+8*n in jumping[0]):   # #TODO check if this can be in lc jumping part. same for all data -> check in jumping array
+            if (7+7*n in jumping[0]):   # #TODO check if this can be in lc jumping part. same for all data -> check in jumping array
                 Kin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                Kin.append(params[7+8*n])
+                Kin.append(params[7+7*n])
         
         paraminRV = params
         jupind = jumping_noGP[0]
         
         nGPjump = len(p) - len(jupind)
         paraminRV[jupind] = p[0:-nGPjump] if nGPjump > 0 else p
-        gammaind = 8*npl + nddf + nocc+ nfilt*4 + j*2   #pass the right gamma index for each file (Akin)
+        gammaind = 1+7*npl + nddf + nocc+ nfilt*4 + j*2   #pass the right gamma index for each file (Akin)
         Gamma_in = paraminRV[gammaind]
         RVargs   = [paraminRV,f_in,e_in,bis_in,col6_in,contra_in,nfilt,baseLSQ,inmcmc,
                     nddf,nocc,nRV,nphot,j,RVnames,bvarsRV,gammaind]
@@ -553,7 +558,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
                           make_out_file=make_out_file,get_model=False,out_folder=out_folder)
 
         if (jit_apply == 'y'):
-            jitterind = 8*npl + nddf+nocc + nfilt*4 + j*2 + 1
+            jitterind = 1+7*npl + nddf+nocc + nfilt*4 + j*2 + 1
             jit = paraminRV[jitterind]
         else:
             jit = 0.
