@@ -121,6 +121,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
     npl         = args[58]
     useSpline_lc= args[59]
     useSpline_rv= args[60]
+    s_samp      = args[61]
     
     lnprob      = 0.
 
@@ -178,9 +179,12 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
         k = k[0]  
         vcont = cont[k,0]
 
-        occind = 1+7*npl+nddf+k           # index in params of the occultation depth value
-        u1ind  = 1+7*npl+nddf+nocc+4*k    # index in params of the first LD coeff of this filter
-        u2ind  = 1+7*npl+nddf+nocc+4*k+1  # index in params of the second LD coeff of this filter
+        occind    = 1+7*npl+nddf+k           # index in params of the occultation depth value
+        Apc_ind   = 1+7*npl+nddf+nocc+k           # index in params of the occultation depth value
+        phoff_ind = 1+7*npl+nddf+nocc*2+k           # index in params of the occultation depth value
+
+        u1ind  = 1+7*npl+nddf+nocc*3+4*k    # index in params of the first LD coeff of this filter
+        u2ind  = 1+7*npl+nddf+nocc*3+4*k+1  # index in params of the second LD coeff of this filter
         gg     = int(groups[j]-1)
 
         # get the index of pp that is 
@@ -251,15 +255,25 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
             ppcount = ppcount+1
         else:
             occin = params[occind]
+
+        if (Apc_ind in jumping[0]):   
+            Apc_in = pp[ppcount]
+            ppcount = ppcount+1
+        else:
+            Apc_in = params[Apc_ind]
+
+        if (phoff_ind in jumping[0]):   
+            phoff_in = pp[ppcount]
+            ppcount = ppcount+1
+        else:
+            phoff_in = params[phoff_ind]
             
 
         ##########
-        if occin < 0.0:
-            occin = 0.0
+        if occin < 0.0:   occin = 0.0
+        if Apc_in < 0.0: Apc_in = 0.0 
 
         #########
-
-
         #now check the correct LD coeffs
         if (u1ind in jumping[0]):    # index of specific LC LD in jumping array -> check in jumping array
             c1in    = pp[ppcount]
@@ -274,13 +288,14 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
             c2in = params[u2ind]
 
         if get_model:
-            TM = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
-            LCmod,compo = TM.get_value(t_in, transit_only=True)
+            TM = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, 
+                               occ=occin, A=Apc_in, delta=phoff_in, c1=c1in, c2=c2in,npl=npl)
+            LCmod,compo = TM.get_value(t_in, planet_only=True,ss=s_samp[j])
             model_outputs.lc[name] = LCmod, compo
             continue
             
 
-        bfstart = 1+7*npl+nddf+nocc+4*nfilt+nRV*2+ j*20  # index in params of the first baseline param of this light curve
+        bfstart = 1+7*npl+nddf+nocc*3+4*nfilt+nRV*2+ j*20  # index in params of the first baseline param of this light curve
         blind = np.asarray(list(range(bfstart,bfstart+20))) # the indices of the baseline params of this light curve
         basesin = np.zeros(20)
         
@@ -328,21 +343,14 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
                 else:
                     GPuse = np.concatenate((GPuse,[GPparams[GPthisLC[jj]]]),axis=0)   # otherwise, set it to the value in GPparams
 
-           # if (GPphotWN[j] == 'n'):
-           #     GPuse = np.concatenate(([-50.],GPuse),axis=0)   # a crude solution: set WN to very very low
-            # here: define the correct para array
-            # para=[T0in,RpRsin, bbin, durin, perin, eosin, eocin, ddf0, occin, c1in, c2in,npl]
-            # para=np.concatenate((para,(GPuse)),axis=0) if useGPphot[j]=='y' else np.concatenate(((GPuse),para),axis=0)
-                        
-            # here we need to call the correct GP objects
             gp = GPobjects[j]
-
             # gp.set_parameter_vector(para, include_frozen=True)
             gp.set_parameter_vector(GPuse)
 
-            mean_model = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
+            mean_model = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, 
+                                       occ=occin, A=Apc_in, delta=phoff_in, c1=c1in, c2=c2in,npl=npl)
             argu = [t_in,f_in,col3_in,col4_in,col6_in,col5_in,col7_in,bis_in,contra_in,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,e_in,bvar,useSpline_lc[j]]
-            trans_base = mean_model.get_value(t_in, argu)  #transit* baseline(w/wo spl)
+            trans_base = mean_model.get_value(t_in, argu,ss=s_samp[j])  #transit* baseline(w/wo spl)
 
             if inmcmc == 'y':
             # trans_base = trans_base if np.all(np.isfinite(trans_base)) else np.ones_like(t_in)
@@ -374,7 +382,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
                 basesin_non = np.zeros(20)
                 basesin_non[0] = 1.
                 argu2 = [t_in,f_in,col3_in,col4_in,col6_in,col5_in,col7_in,bis_in,contra_in,isddf,rprs0,grprs_here,inmcmc,'n',basesin_non,vcont,name,e_in,bvar,useSpline_lc[j]]
-                mt0,_ = mean_model.get_value(t_in, argu2,transit_only=True)  #transit only
+                mt0,_ = mean_model.get_value(t_in, argu2,planet_only=True,ss=s_samp[j])  #transit only
 
                 #get parametric baseline and spline
                 ts=t_in-t_in[0]
@@ -406,9 +414,10 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
 
         else:
 
-            mean_model = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, occ=occin, c1=c1in, c2=c2in,npl=npl)
+            mean_model = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, 
+                                       occ=occin, A=Apc_in, delta=phoff_in, c1=c1in, c2=c2in,npl=npl)
             argu = [t_in,f_in,col3_in,col4_in,col6_in,col5_in,col7_in,bis_in,contra_in,isddf,rprs0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,e_in,bvar,useSpline_lc[j]]     
-            mt=mean_model.get_value(t_in, argu)   #transit*base
+            mt=mean_model.get_value(t_in, argu,ss=s_samp[j])   #transit*base
 
             if inmcmc == 'y':
                 lnprob_thislc = -1./2. * np.sum( (mt-f_in)**2/e_in**2 + np.log(e_in**2))
@@ -423,7 +432,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
                 basesin_non = np.zeros(20)
                 basesin_non[0] = 1.
                 argu2 = [t_in,f_in,col3_in,col4_in,col6_in,col5_in,col7_in,bis_in,contra_in,isddf,rprs0,grprs_here,inmcmc,'n',basesin_non,vcont,name,e_in,bvar,useSpline_lc[j]]
-                mt0,_=mean_model.get_value(t_in, argu2,transit_only=True)  #transit only/ baseline set to 1
+                mt0,_=mean_model.get_value(t_in, argu2,planet_only=True)  #transit only/ baseline set to 1
                 
                 # #### Monika modificatons for outputs without GPs #####
                 #
@@ -542,7 +551,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
         
         nGPjump = len(p) - len(jupind)
         paraminRV[jupind] = p[0:-nGPjump] if nGPjump > 0 else p
-        gammaind = 1+7*npl + nddf + nocc+ nfilt*4 + j*2   #pass the right gamma index for each file (Akin)
+        gammaind = 1+7*npl + nddf + nocc*3 + nfilt*4 + j*2   #pass the right gamma index for each file (Akin)
         Gamma_in = paraminRV[gammaind]
         RVargs   = [paraminRV,f_in,e_in,bis_in,col6_in,contra_in,nfilt,baseLSQ,inmcmc,
                     nddf,nocc,nRV,nphot,j,RVnames,bvarsRV,gammaind]
@@ -558,7 +567,7 @@ def logprob_multi(p, *args,t=None,make_out_file=False,verbose=False,debug=False,
                           make_out_file=make_out_file,get_model=False,out_folder=out_folder)
 
         if (jit_apply == 'y'):
-            jitterind = 1+7*npl + nddf+nocc + nfilt*4 + j*2 + 1
+            jitterind = 1+7*npl + nddf+nocc*3 + nfilt*4 + j*2 + 1
             jit = paraminRV[jitterind]
         else:
             jit = 0.

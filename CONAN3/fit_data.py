@@ -131,7 +131,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     
     nfilt      = len(filnames)                                              # the number of unique filters
     ngroup     = len(grnames)                                               # the number of unique groups
-    useSpline_lc  = lc._lcspline                                                 # use spline to interpolate the light curve
+    useSpline_lc  = lc._lcspline                                            # use spline to interpolate the light curve
+    s_samp        = lc._ss
 
  #============GP Setup=============================
     #from load_lightcurves.add_GP()
@@ -368,23 +369,37 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             dwCNMind.append(indices)        
 
    
-#============occultation setup=============
-    #from load_lightcurves.setup_occultation()
+#============phasecurve setup=============
+    #from load_lightcurves.setup_phasecurve()
 
-    DA_occ = lc._occ_dict
-    nocc = len(DA_occ["filters_occ"])
-    occ_in = np.zeros((nocc,7))
+    DA_occ = lc._PC_dict["D_occ"]
+    DA_Apc = lc._PC_dict["A_pc"]
+    DA_off = lc._PC_dict["ph_off"]
 
-    for i, f in enumerate(DA_occ["filters_occ"]):
-        j = np.where(filnames == f )                #   
+    nocc     = len(filnames) #len(DA_occ["filters_occ"])
+    occ_in   = np.zeros((nocc,7))
+    Apc_in   = np.zeros((nocc,7))
+    phoff_in = np.zeros((nocc,7))
+
+    for i, f in enumerate(filnames):
         k = np.where(np.array(lc._filters)== f)     #  get indices where the filter name is the same as the one in the input file
 
-        occ_in[j,:] = [DA_occ["start_value"][i], DA_occ["step_size"][i], DA_occ["bounds_lo"][i], DA_occ["bounds_hi"][i],
-                        DA_occ["prior_mean"][i], DA_occ["prior_width_lo"][i], DA_occ["prior_width_hi"][i] ]           
+        occ_in[i,:] = [DA_occ[f].start_value, DA_occ[f].step_size, DA_occ[f].bounds_lo, DA_occ[f].bounds_hi,
+                        DA_occ[f].prior_mean, DA_occ[f].prior_width_lo, DA_occ[f].prior_width_hi ]           
+        if DA_occ[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
 
-        if occ_in[j,1] != 0.:
-            njumpphot[k]=njumpphot[k]+1
+
+        Apc_in[i,:] = [DA_Apc[f].start_value, DA_Apc[f].step_size, DA_Apc[f].bounds_lo, DA_Apc[f].bounds_hi,
+                        DA_Apc[f].prior_mean, DA_Apc[f].prior_width_lo, DA_Apc[f].prior_width_hi ]           
+        if DA_Apc[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
     
+
+        phoff_in[i,:] = [DA_off[f].start_value, DA_off[f].step_size, DA_off[f].bounds_lo, DA_off[f].bounds_hi,
+                        DA_off[f].prior_mean, DA_off[f].prior_width_lo, DA_off[f].prior_width_hi ]           
+        if DA_off[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+    
+    
+
 
 #============limb darkening===============
     #from load_lightcurves.limb_darkening()
@@ -531,6 +546,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     GPrvwnstart = np.log((GPrvwnstartms/1e3)**2)  # in km/s
     GPrvWNstep = np.array([0.1])
 
+    
     #============================= SETUP ARRAYS =======================================
     print('Setting up photometry arrays ...')
     if np.any([spl.use for spl in useSpline_lc]): print('Setting up Spline fitting for LCS ...')                            
@@ -618,6 +634,27 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         priorlow   = np.concatenate((priorlow, [occ_in[i,5]]))
         priorup    = np.concatenate((priorup,  [occ_in[i,6]]))
         pnames     = np.concatenate((pnames,   [filnames[i]+'_DFocc']))
+
+    for i in range(nfilt):  # add the pc amplitudes
+        params     = np.concatenate((params,   [Apc_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [Apc_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [Apc_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [Apc_in[i,3]]))
+        prior      = np.concatenate((prior,    [Apc_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [Apc_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [Apc_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_Apc']))
+
+    for i in range(nfilt):  # add the phase offsets
+        params     = np.concatenate((params,   [phoff_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [phoff_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [phoff_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [phoff_in[i,3]]))
+        prior      = np.concatenate((prior,    [phoff_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [phoff_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [phoff_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_ph_off']))
+
 
     for i in range(nfilt):  # add the LD coefficients for the filters to the parameters
         params     = np.concatenate((params,   [c1_in[i,0], c2_in[i,0], c3_in[i,0], c4_in[i,0]]))
@@ -740,7 +777,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         #   [rho_star,                                   (1)
         #   [T0,RpRs,b,per,eos, eoc,K,                   (7)*npl
         #   ddf_1, ..., ddf_n,                           (nddf)
-        #   occ_1, ... , occ_n,                          (nocc)
+        #   (occ_1,Apc_1,phoff_1),...,occ_n,Apc_n,phoff_n(3*nocc)
         #   c1_f1,c2_f1,c3_f1,c4_f1, c1_f2, .... , c4fn, (4*n_filt)
         #   Rv_gamma, RV_jit                              (2*nRVs)         
         #   A0_lc1,A1_lc1,A2_lc1,A3_lc1,A4_lc1,           (5)
@@ -751,8 +788,8 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         #   G0_lc1,G1_lc1,                                (3)
         #   H0_lc1,H1_lc1,H2_lc1,                         (2)
         #   A0_lc2, ...]
-        #    = 1+7*npl+nddf+nocc+4*n_filt+2*nRV
-        #    each lightcurve has 20 possible baseline jump parameters, starting with index  1+7*npl+nddf+nocc+4*n_filt+2*nRV
+        #    = 1+7*npl+nddf+nocc*3+4*n_filt+2*nRV
+        #    each lightcurve has 20 possible baseline jump parameters, starting with index  1+7*npl+nddf+nocc*3+4*n_filt+2*nRV
 
         pargp_all = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
 
@@ -976,12 +1013,6 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                                                 f"rv{i+1}_A4",f"rv{i+1}_B4",
                                                 f"rv{i+1}_A5",f"rv{i+1}_B5",
                                                 f"rv{i+1}_sin_amp",f"rv{i+1}_sin_per",f"rv{i+1}_sin_off",f"rv{i+1}_sin_off2"]))            
-            # note currently we have the following parameters in these arrays:
-            #   [T0,RpRs,b,dur,per,eos, eoc,K,ddf_1, ..., ddf_n, c1_f1,c2_f1,c3_f1,c4_f1, c1_f2, .... , c4fn, A0_lc1,A1_lc1,A2_lc0,A3_lc0,A4_lc0, B0_lc1,B1_lc1,C0_lc1,C1_lc1,C2_lc1,C3_lc1,C4_lc1,D0_lc1,D1_lc1,E0_lc1,E1_lc1,G0_lc1,G1_lc1,H0_lc1,H1_lc1,H2_lc1,A0_lc2, ...]
-            #    0  1    2  3   4  5   6    |  7 - 4+nddf     |          [7+nddf -- 6+nddf+4*n_filt]       |                           7+nddf+4*n_filt -- 7+nddf+4*n_filt + 15                                                |    7+nddf+4*n_filt + 16
-            #    p a r a m e t e r s   |  d d F s        | Limb Darkening                             | const.  time  (5)     |      AM (2)  |     coordinate shifts   (5)      |     FWHM  (2) |   sky  (2)   | SIN (3)  | CNM (2) | time_rv (2) | bisector (2) | fwhm_rv (2) | contrast (2)   | sinus (3)
-            # each rv curve has 8 baseline jump parameters, starting with index  8+nddf+nocc+4*n_filt+2*nRV + nphot* 21
-
 
     # calculate the weights for the lightcurves to be used for the CNM calculation later: do this in a function!
     #ewarr=grweights(earr,indlist,grnames,groups,ngroup)
@@ -1022,20 +1053,28 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         occind=1+7*npl+nddf+k                   # the index of the occultation parameter for this LC
         if (stepsize[occind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[occind]),axis=0)
-        
-        if verbose: print(temp)
 
+        #pc
+        Apc_ind=1+7*npl+nddf+nocc+k                   # the index of the first pc amplitude for this LC
+        if (stepsize[Apc_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
+            temp=np.concatenate((np.asarray(temp),[Apc_ind]),axis=0)
+        
+        #phpff
+        phoff_ind=1+7*npl+nddf+nocc*2+k                   # the index of the first pc amplitude for this LC
+        if (stepsize[phoff_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
+            temp=np.concatenate((np.asarray(temp),[phoff_ind]),axis=0)
+             
         #limb darkening
-        c1ind=1+7*npl+nddf+nocc+k*4
+        c1ind=1+7*npl+nddf+nocc*3+k*4
         if (stepsize[c1ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[c1ind]),axis=0)
         
-        c2ind=1+7*npl+nddf+nocc+k*4+1
+        c2ind=1+7*npl+nddf+nocc*3+k*4+1
         if (stepsize[c2ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[c2ind]),axis=0)
     
         #baseline
-        bfstart= 1+7*npl+nddf+nocc+nfilt*4 + nRV*2  # the first index in the param array that refers to a baseline function    
+        bfstart= 1+7*npl+nddf+nocc*3+nfilt*4 + nRV*2  # the first index in the param array that refers to a baseline function    
         blind = np.asarray(list(range(bfstart+i*20,bfstart+i*20+20)))  # the indices for the coefficients for the base function  #TODO why 20, not 21  
         if verbose: print(bfstart, blind, nocc, nfilt)
 
@@ -1071,12 +1110,12 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
             temp=np.copy(rvstep)
 
         # identify the gamma index of this RV (note: each gamma comes with a jitter, so 2 indices needed per rvdata)
-        gammaind = 1+7*npl+nddf+nocc+nfilt*4+i*2
+        gammaind = 1+7*npl+nddf+nocc*3+nfilt*4+i*2
         
         if (stepsize[gammaind]!=0.):           
             temp=np.concatenate((temp,[gammaind]),axis=0)
 
-        bfstart= 1+7*npl+nddf+nocc+nfilt*4 + nRV*2 + nphot*20  # the first index in the param array that refers to an RV baseline function    
+        bfstart= 1+7*npl+nddf+nocc*3+nfilt*4 + nRV*2 + nphot*20  # the first index in the param array that refers to an RV baseline function    
         blind = np.asarray(list(range(bfstart+i*8,bfstart+i*8+8)))  # the indices for the coefficients for the base function    
 
         rvstep1 = np.where(stepsize[blind]!=0.)
@@ -1129,7 +1168,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 nocc,0,0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, 
                 cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
                 pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
-                jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined,npl,useSpline_lc,useSpline_rv]
+                jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined,npl,useSpline_lc,useSpline_rv,s_samp]
     
     debug_t1 = time.time()
     mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],*indparams,make_out_file=True,verbose=True,debug=debug,out_folder=out_folder)
@@ -1148,7 +1187,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
                 nocc,0,0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV,
                 cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
                 pindices,jumping,pnames,LCjump,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
-                jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined,npl,useSpline_lc,useSpline_rv]
+                jumping_noGP,GPphotWN,jit_apply,jumping_GP,GPstepsizes,GPcombined,npl,useSpline_lc,useSpline_rv,s_samp]
 
     print('No of dimensions: ', ndim)
     if nchains < 2*ndim:
@@ -1156,6 +1195,9 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         nchains = 2*ndim
     print('No of chains: ', nchains)
     print('fitting parameters: ', pnames_all[jumping])
+    if debug: 
+        starting = {k:v for k,v in zip(pnames_all[jumping],initial[jumping])}
+        print(f'initial: {starting}')
 
 
     ijnames = np.where(steps != 0.)    #indices of the jumping parameters
@@ -1251,11 +1293,12 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
         fig.savefig(out_folder+"/chains.png", bbox_inches="tight")
     except:
         if ndim<=30:
-            nplotpars = int(ndim/2)
+            nplotpars = int(np.ceil(ndim/2))
             nplot     = 2
         else:
             nplotpars = 14
             nplot = int(np.ceil(ndim/14))
+
         for i in range(nplot):
             fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
             fig = result.plot_chains(fit_pars)
@@ -1316,7 +1359,7 @@ verbose=False, debug=False, save_burnin_chains=True, **kwargs):
               baseLSQ, bvars, bvarsRV, cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,
                   useGPphot,useGPrv,GPobjects,GPparams,GPindex,pindices,jumping,pnames,LCjump, 
                       priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps, 
-                          jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes,GPcombined,npl,useSpline_lc,useSpline_rv]
+                          jumping_noGP,GPphotWN,jumping_GP,jit_apply,GPstepsizes,GPcombined,npl,useSpline_lc,useSpline_rv,s_samp]
     
     #AKIN: save config parameters indparams and summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values

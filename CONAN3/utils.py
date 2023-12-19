@@ -1,6 +1,7 @@
 import numpy as np
 import astropy.constants as c
 import astropy.units as u
+from types import SimpleNamespace
 
 def phase_fold(t, per, t0,phase0=-0.5):
     """Phase fold a light curve.
@@ -206,3 +207,136 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
     aR = rho_to_aR(rho, P)
     Tdur = aR_to_Tdur(aR, b, Rp, P,e,w)
     return Tdur
+
+
+def cosine_atm_variation(phase, Fd=0, A=0, delta_deg=0):
+    """
+    Calculate the phase curve of a planet approximated by a cosine function with peak-to-peak amplitude  A=F_max-F_min.
+    The equation is given as F = Fmin + A/2(1-cos(phi + delta)) where
+    phi is the phase angle in radians = 2pi*phase
+    delta is the hotspot offset (in radians)
+
+    Parameters
+    ----------
+    phase : array-like
+        Phases.
+    Fd : float
+        Dayside flux/occultation depth
+    A : float
+        peak-to-peak amplitude
+    delta_deg : float
+        hotspot offset in degrees.
+        
+    Returns
+    -------
+    F : array-like
+        planetary flux as a function of phase
+    """
+    res        = SimpleNamespace()
+    res.delta  = np.deg2rad(delta_deg)
+    res.phi    = 2*np.pi*phase
+
+    res.Fmin   = Fd - A/2*(1-np.cos(np.pi+res.delta))
+    res.Fnight = Fd - A * np.cos(res.delta)
+    res.pc     = res.Fmin + A/2*(1-np.cos(res.phi+res.delta))
+    return res    
+    
+def reflection_atm_variation(phase, Fd=0, A=0, delta_deg=0):
+    """
+    Calculate the phase curve of a planet approximated by a cosine function with peak-to-peak amplitude  A=F_max-F_min.
+    The equation is given as F = Fmin + A/2(1-cos(phi + delta)) where
+    phi is the phase angle in radians = 2pi*phase
+    delta is the hotspot offset (in radians)
+
+    Parameters
+    ----------
+    phase : array-like
+        Phases.
+    Fd : float
+        Dayside flux/occultation depth
+    A : float
+        peak-to-peak amplitude
+    delta_deg : float
+        hotspot offset in degrees.
+        
+    Returns
+    -------
+    F : array-like
+        planetary flux as a function of phase
+    """
+    NotImplementedError("This function is not yet implemented")
+    # res        = SimpleNamespace()
+    # res.delta  = np.deg2rad(delta_deg)
+    # res.phi    = 2*np.pi*phase
+
+    # res.Fmin   = Fd - A/2*(1-np.cos(np.pi+res.delta))
+    # res.Fnight = Fd - A * np.cos(res.delta)
+    # res.pc     = res.Fmin + A/2*(1-np.cos(res.phi+res.delta))
+    # return res   
+
+def rescale0_1(x):
+    """Rescale an array to the range [0,1]."""
+    return ((x - np.min(x))/np.ptp(x) ) if np.all(min(x) != max(x)) else x
+
+def convert_LD(coeff1, coeff2,conv="c2u"):
+    assert conv in ["c2u","u2c"], "conv must be either c2u or u2c"
+    if conv == "c2u":
+        u1 = (coeff1 + coeff2)/3
+        u2 = (coeff1 - 2.*coeff2)/3.
+        return u1,u2
+    else:
+        c1 = 2*coeff1 + coeff2
+        c2 = coeff1 - coeff2
+        return c1,c2
+    
+
+class supersampling:
+    def __init__(self, exp_time=0, supersample_factor=1):
+        """
+        supersample long integration timestamps and rebin the data after computation with supersampled time 
+        
+        Parameters:
+        -----------
+        supersample_factor : int;
+            number of points subdividing exposure
+        
+        exp_time: float;
+            exposure time of current data in same units as input time
+
+        Returns:
+        --------
+        ss : supersampling object with attributes containing supersampled_time (t_ss) and function to rebin the dependent data back to original cadence.
+        
+        Example:
+        --------
+        >>> t = np.array([0,30,60,90])
+
+        some function to generate data based on t
+        >>> fxn = lambda t: t**2 + 5*t + 10
+
+        #divide each 10min point in t into 30 observations
+        >>> ss = supersampling(30, 10 )
+        >>> ss.supersample(t)
+        >>> t_supersampled = ss.t_ss
+
+        #generate value of function at the supersampled time points
+        >>> f_ss = fxn(t_supersampled)
+        #then rebin f_ss back to cadence of observation t
+        >>> f = ss.rebin_flux(f_ss)
+
+        """
+        self.supersample_factor = supersample_factor
+        self.exp_time = exp_time
+        self.config   = f"x{exp_time*24*60:.2f}d{supersample_factor}" if exp_time !=0 else "None"
+
+    def supersample(self,time):
+        assert isinstance(time, np.ndarray), f'time must be a numpy array and not {type(time)}'
+        self.t = time
+        t_offsets = np.linspace(-self.exp_time/2., self.exp_time/2., self.supersample_factor)
+        self.t_ss = (t_offsets + self.t.reshape(self.t.size, 1)).flatten()
+        return self.t_ss
+
+    def rebin_flux(self, flux):
+        rebinned_flux = np.mean(flux.reshape(-1,self.supersample_factor), axis=1)
+        return rebinned_flux
+

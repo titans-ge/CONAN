@@ -61,7 +61,7 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         ax[1].plot(tt, fco,'.',c='skyblue',ms=2, zorder=1, label="Detrended data")
         ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
         ax[1].errorbar(tbin, fcobin, yerr=etbin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
-        ax[1].set_ylim([min(fco)-0.1*(1-min(fco)), max(ft)+0.1*(max(fco)-1)])
+        ax[1].set_ylim([min(fco)-0.1*(1-min(fco)), max(fco)+0.1*(max(fco)-1)])
         ax[1].legend()
 
         ax[2].set_ylabel("O – C [ppm]")

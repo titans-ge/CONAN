@@ -1,33 +1,66 @@
 # this is the transit model as used together with GPs. 
 #    it returns model values for ONE transit light curve
 #      (will need to be called several times for several light curves)
-# 
 
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 import scipy
 import scipy.stats
 from scipy.interpolate import LSQUnivariateSpline, LSQBivariateSpline
 
 from numpy import (array, size, argmin, abs, diag, log, median,  where, zeros, exp, pi, double)
-
-# GP packages
-import george
 from george.modeling import Model
 
-import mc3
 from occultquad import *
 from occultnl import *
-from .utils import rho_to_aR
-
-#plt.ion()
+from .utils import rho_to_aR, cosine_atm_variation, reflection_atm_variation, phase_fold
 
 
 class Transit_Model(Model):
+    """
+    computes the transit model for a given set of parameters along with the baseline
 
-    def __init__(self, rho_star, T0, RpRs, b, per, eos, eoc, ddf, occ, c1, c2,npl):
+    Parameters
+    ----------
+    rho_star : float
+        Stellar density [g/cm^3]
+    T0 : float
+        Mid-transit time [days]
+    RpRs : float
+        Planet-to-star radius ratio
+    b : float
+        Impact parameter
+    per : float
+        Orbital period [days]
+    eos : float
+        sqrt(ecc)*sin(omega)
+    eoc : float
+        sqrt(ecc)*cos(omega)
+    ddf : float
+        if ddf is not None, then depth variation being used and the RpRs is the group rprs.
+    c1 : float
+        LD coefficient 1
+    c2 : float
+        LD coefficient 2
+    occ : float
+        Occultation depth
+    A : float
+        Amplitude of the atmospheric variation
+    delta : float
+        hotspot shift of the atmospheric variation in degrees
+    npl : int
+        number of planets
+
+    Returns
+    -------
+    marr : array-like
+        The lightcurve model for the given parameters
+    
+
+    """
+
+    def __init__(self, rho_star, T0, RpRs, b, per, eos, eoc, ddf, c1, c2, occ=0, A=None, delta=None, npl=1):
         self.rho_star = rho_star
         self.T0       = T0
         self.RpRs     = RpRs
@@ -41,11 +74,31 @@ class Transit_Model(Model):
         self.c1       = c1
         self.c2       = c2
         self.npl      = npl
+        self.A        = A
+        self.delta    = delta
 
-        self.parameter_names = ['rho_star','T0', 'RpRs', 'b', 'per', 'eos', 'eoc', 'ddf', 'occ', 'c1', 'c2']
-    # Parameter names - these are all scalars: this works only for one lc 
+        self.parameter_names = ['rho_star','T0', 'RpRs', 'b', 'per', 'eos', 'eoc', 'ddf', 'c1', 'c2', 'occ', 'A','delta']
 
-    def get_value(self, tarr, args=None,transit_only=False):
+    def get_value(self, tarr, args=None,planet_only=False,ss=None):
+        """ 
+        computes the transit/occultation/phase curve model for a given set of parameters along with the baseline
+        
+        Parameters
+        ----------
+        tarr : array-like
+            The timestamps of the lightcurve
+        args : array-like
+            The arguments of the model
+        planet_only : bool
+            If True, only return the planet model (no baseline)
+
+        Returns
+        -------
+        marr : array-like
+            The lightcurve model for the given parameters
+        model_components : dict
+            The components of the model for each planet in a system
+        """
 
 # Parameters to add
         if args is not None:
@@ -72,22 +125,18 @@ class Transit_Model(Model):
             isddf = "n"
             vcont = 0
 
-        #pmin, pmax        =  args[i], args[i+1] ; i+=2
-        #c1_in, c2_in      = args[i], args[i+1] ; i+=2 
-        #c3_in, c4_in      = args[i], args[i+1] ; i+=2 
-        #params, Files_path = args[i], args[i+1] ; i+=2     
-
-        # earrmod=np.copy(ee)
-        mean_mod = np.zeros_like(tt)      #transit/occ model
-        model_components = {}   #components of the model lc for each planet
+        f_trans  = np.ones_like(tt)       #transit
+        f_occ    = np.ones_like(tt)       #occultation
+        pl_mod   = np.zeros_like(tt)      #total lc model
+        model_components = {}           #components of the model lc for each planet
+        rescale = lambda x: ((x - np.min(x))/np.ptp(x) ) if np.all(min(x) != max(x)) else x
+        
+        tt_ss   = ss.supersample(tt) if ss is not None else tt   #supersample the timestamps if ss is not None
 
         for n in range(self.npl):    #iterate through all planets
             # ==============================================================
             # calculate the z values for the lightcurve and put them into a z array. Then below just extract them from that array
             # --------
-
-            # ph = np.modf((np.modf((tt-self.T0[n])/self.per[n])[0])+1.0)[0] #calculate phase
-
             # calculate eccentricity and omega
             ecc = self.eos[n]**2+self.eoc[n]**2
 
@@ -126,8 +175,6 @@ class Transit_Model(Model):
             efac2 = self.b[n]*(1.-ecc**2)/(1.+ecc*np.sin(ome))
             # ars   = np.sqrt(((1.+self.RpRs[n])**2 - efac2**2 * (1.-(np.sin(self.dur[n]*np.pi/self.per[n]))**2))/(np.sin(self.dur[n]*np.pi/self.per[n]))**2) * efac1
             ars   = rho_to_aR(self.rho_star,self.per[n])
-            #print ars, self.RpRs[n], self.b[n], self.dur[n], self.per[n], self.c4, params[27]#, params[14], params[15], params[16], params[17], params[18], params[19]
-            #time.sleep(0.05) # delays for 5 seconds
             
             # calculate the true -> eccentric -> mean anomaly at transit -> perihelion time
             TA_tra = np.pi/2. - ome
@@ -141,7 +188,7 @@ class Transit_Model(Model):
             
             # =========== Transit model calculation =======================
             # now, for all lightcurves, calculate the z values for the timestamps
-            MA_lc = (tt-T_peri)*mmotio
+            MA_lc = (tt_ss - T_peri)*mmotio
             MA_lc = np.mod(MA_lc,2*np.pi)
             # source of the below equation: http://alpheratz.net/Maple/KeplerSolve/KeplerSolve.pdf
             EA_lc = MA_lc + np.sin(MA_lc)*ecc + 1./2.*np.sin(2.*MA_lc)*ecc**2 + \
@@ -161,13 +208,9 @@ class Transit_Model(Model):
             z     = np.copy(z_ma)
             y     = np.copy(y_lc)
             
-
             npo=len(z)                # number of lc points
-            
             m0  = np.zeros(npo)
             mm0 = np.zeros(npo)
-            mm  = np.zeros(npo)
-            # mod = np.zeros(npo)
 
             # convert the LD coefficients to u1 and u2
             u1 = (self.c1 + self.c2)/3.
@@ -177,41 +220,48 @@ class Transit_Model(Model):
             # MONIKA: replaced the y coordinate as defining value for
             #    choice of occultation or transit to be robust for eccentric orbits
             #    old:   ph_transit = np.where((ph <= 0.25) | (ph >= 0.75))
-
             ph_transit  = np.where((y >= 0))
             npo_transit = len(z[ph_transit])
 
-            # delta = np.round(np.divide((tt[0]-self.T0[n]),self.per[n]))
-            # T0_lc=self.T0[n]+delta*self.per[n]  
-            ts=tt-tt[0]
-            
             # adapt the RpRs value used in the LC creation to any ddfs
             if isddf=='y':
-                RR=grprs_here+self.ddf    # the specified GROUP rprs + the respective ddf
+                RR=grprs_here+self.ddf    # the specified GROUP rprs + the respective ddf (deviation)
             else:
                 RR=np.copy(self.RpRs[n])
-
             mm0[ph_transit],m0[ph_transit] = occultquad(z[ph_transit],u1,u2,RR,npo_transit)   # mm0 is the transit model
             
             #============= OCCULTATION ==========================
             ph_occultation  = np.where((y < 0))
             npo_occultation = len(z[ph_occultation])
 
-            # delta = np.round(np.divide((tt[0]-self.T0[n]),self.per[n])) + 0.5   # offset by half a period
-            # T0_lc=self.T0[n]+delta*self.per[n]  
-            RR=np.sqrt(self.occ)    # the occultation depth converted into a radius ratio
-            u1, u2 = 0., 0.         # no limb darkening
-
+            Fp = self.occ       # the occultation depth or dayside flux
+            RR = np.sqrt(Fp)    # the occultation depth converted into a radius ratio
+            u1, u2 = 0., 0.     # no limb darkening
             mm0[ph_occultation],m0[ph_occultation] = occultquad(z[ph_occultation],u1,u2,RR,npo_occultation)   # mm0 is the occultation model
+
+            if self.A not in [None,0]:    
+                #sepate the transit and occultation models and add the atmospheric variation
+                f_trans[ph_transit]   = mm0[ph_transit]
+                f_occ[ph_occultation] = mm0[ph_occultation]
+                f_occ                 = rescale(f_occ)  #rescale the occultation model to be between 0 and 1
+                
+                phase  = phase_fold(tt_ss,self.per[n],self.T0[n])
+                atm    = cosine_atm_variation(phase, Fp, self.A, self.delta)
+                lc_mod = f_trans + f_occ*atm.pc
+            else:
+                lc_mod = mm0.copy()
+
+            lc_mod = ss.rebin_flux(lc_mod)   #rebin the model to the original cadence
             
-            model_components[f"pl_{n+1}"] = mm0.copy()
-            mm0 -= 1      #zero baseline
-            mean_mod += mm0    #add planet transit/occ model to mean mod
+            #save the model components
+            model_components[f"pl_{n+1}"] = lc_mod.copy()
+            lc_mod -= 1      #zero baseline
+            pl_mod += lc_mod    #add each planet transit/occ model to total mod
 
         #correct for the contamination
-        mm = mean_mod/(vcont+1) + 1
+        mm = pl_mod/(vcont+1) + 1
 
-        if transit_only:
+        if planet_only:
             return mm, model_components
 
 
@@ -221,6 +271,8 @@ class Transit_Model(Model):
         col4 = np.copy(col4_in)
         col6 = np.copy(col6_in)
         col7 = np.copy(col7_in)
+        ts   = tt-tt[0]
+
         # MONIKA: added least square optimisation for baselines
         if (baseLSQ == 'y'):
             #bvar contains the indices of the non-fixed baseline variables        
@@ -279,16 +331,6 @@ def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
             knots1  = np.arange(min(x1)+kn, max(x1), kn )
             knots2  = np.arange(min(x2)+kn, max(x2), kn )
             ys      = (res/bfunc)
-            
-            # if np.any(per):
-            #     ys    = np.hstack([ys,ys,ys])
-            # if per[0] > 0:
-            #     x1s    = np.hstack([x1-per,x1,x1+per])
-            #     knots1 = np.hstack([knots1-per,knots1,knots1+per])
-            # if per[1] > 0:
-            #     x2s    = np.hstack([x2-per,x2,x2+per])
-            #     knots2 = np.hstack([knots2-per,knots2,knots2+per])
-
 
             splfunc = LSQBivariateSpline(x1, x2, ys, knots1, knots2, kx=useSpline.deg[0], ky=useSpline.deg[1])
             spl = splfunc(x1,x2,grid=False)     #evaluate the spline at the original x values
