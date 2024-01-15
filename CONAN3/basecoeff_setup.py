@@ -36,69 +36,69 @@ def basecoeff(ibase,spline,init=None):
      # dcol0 coeff:   A0*dcol0 + B0*dcol0^2 + C0*dcol0^3 + D0*dcol0^4
     dcol0 = np.zeros((4,4), dtype=float)
     if ibase[0] > 0:  #A0
-        dcol0[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order A_in
+        dcol0[:,0]=[0.,0.001,-10,10]  # set the starting value and limits of the first-order A_in
         nbc = nbc+1
         
     if ibase[0] > 1:  #B0
-        dcol0[:,1]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the second-order A_in
+        dcol0[:,1]=[0.,0.001,-10,10]  # set the starting value and limits of the second-order A_in
         nbc = nbc+1
          
     if ibase[0] > 2:  #C0
-        dcol0[:,2]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the second-order A_in
+        dcol0[:,2]=[0.,0.001,-10,10]  # set the starting value and limits of the second-order A_in
         nbc = nbc+1       
 
     if ibase[0] > 3:   #D0
-        dcol0[:,3]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the second-order A_in
+        dcol0[:,3]=[0.,0.001,-10,10]  # set the starting value and limits of the second-order A_in
         nbc = nbc+1      
         
     # dcol3 coeff:   A3*dcol3 + B3*dcol3^2
     dcol3=np.zeros((4,2), dtype=float)
     if ibase[1] > 0:
-        dcol3[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order B_in
+        dcol3[:,0]=[0.,0.001,-10,10]  # set the starting value and limits of the first-order B_in
         nbc = nbc+1
         
     if ibase[1] > 1:
-        dcol3[:,1]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the second-order B_in
+        dcol3[:,1]=[0.,0.001,-10,10]  # set the starting value and limits of the second-order B_in
         nbc = nbc+1
 
     # dcol4 coeff:   A4*dcol4 + B4*dcol4^2
     dcol4=np.zeros((4,2), dtype=float)
     if ibase[2] > 0:
-        dcol4[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order B_in
+        dcol4[:,0]=[0.,0.001,-10,10]  # set the starting value and limits of the first-order B_in
         nbc = nbc+1
         
     if ibase[2] > 1:
-        dcol4[:,1]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the second-order B_in
+        dcol4[:,1]=[0.,0.001,-10,10]  # set the starting value and limits of the second-order B_in
         nbc = nbc+1
 
     # dcol5 coeff:   A5*dcol5 + B5*dcol5^2
     dcol5=np.zeros((4,2), dtype=float)
     if ibase[3] > 0:
-        dcol5[:,0]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the first-order B_in
+        dcol5[:,0]=[0.,0.001,-10,10]  # set the starting value and limits of the first-order B_in
         nbc = nbc+1
         
     if ibase[3] > 1:
-        dcol5[:,1]=[0.,0.001,-1.e7,1.e7]  # set the starting value and limits of the second-order B_in
+        dcol5[:,1]=[0.,0.001,-10,10]  # set the starting value and limits of the second-order B_in
         nbc = nbc+1
 
     # dcol6 coeff:   A6*dcol6 + B6*dcol6^2
     dcol6=np.zeros((4,2), dtype=float)
     if ibase[4] > 0:
-        dcol6[:,0]=[0.,0.001,-1.e7,1.e7]
+        dcol6[:,0]=[0.,0.001,-10,10]
         nbc = nbc+1
 
     if ibase[4] > 1:
-        dcol6[:,1]=[0.,0.001,-1.e7,1.e7]
+        dcol6[:,1]=[0.,0.001,-10,10]
         nbc = nbc+1
 
     # dcol7 coeff:   A7*dcol7 + B7*dcol7^2
     dcol7=np.zeros((4,2), dtype=float)
     if ibase[5] > 0:
-        dcol7[:,0]=[0.,0.001,-1.e7,1.e7]
+        dcol7[:,0]=[0.,0.001,-10,10]
         nbc = nbc+1
 
     if ibase[5] > 1:
-        dcol7[:,1]=[0.,0.001,-1.e7,1.e7]
+        dcol7[:,1]=[0.,0.001,-10,10]
         nbc = nbc+1
 
     # dsin  coeff:   Amp*sin(2pi(dcol0)/P + phi)

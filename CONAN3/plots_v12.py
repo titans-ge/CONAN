@@ -54,7 +54,8 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         ax[0].plot(tt, mt, "-r", lw=2,zorder=5,label='Full Model fit')
         ax[0].plot(tt, bfunc, "g--",  zorder=5,label='Baseline')
         ax[0].errorbar(tbin, ftbin, yerr=etbin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
-        ax[0].set_ylim([min(ft)-0.1*(1-min(ft)), max(ft)+0.1*(max(ft)-1)])
+        ax[0].set_ylim([min([min(ft),min(mt)])-0.1*np.ptp(min(ft)), 
+                        max([max(ft),max(mt)])+0.1*np.ptp(max(ft))])
         ax[0].legend()
 
         ax[1].set_ylabel("Flux - baseline")
@@ -151,42 +152,61 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         ax[1].set_ylabel('Residuals [ppm]')
         plt.subplots_adjust(hspace=0.02)
 
-        fig.savefig(prefix+f'Phasefolded_LC{n}.png')
+        fig.savefig(prefix+f'Phasefolded_LC{n}.png',bbox_inches="tight")
 
 
     ############ RVs#####################
-        
     for j in range(nRV):
-        mod  = yval[indlist[nphot+j][0]]
-        time = tarr[indlist[nphot+j][0]]
-        flux = farr[indlist[nphot+j][0]]
-        err  = earr[indlist[nphot+j][0]]
-        
-        # normalize the timestamps to the center of the transit
-        timenorm = np.divide((time-params[0]),params[4]) -  np.round(np.divide((time-params[0]),params[4]))
-        indsort = np.unravel_index(np.argsort(timenorm, axis=None), timenorm.shape)
+        infile  = prefix.split("/")[0] + "/" + RVnames[j][:-4]+'_rvout.dat'
+        outname = prefix+RVnames[j][:-4]+'_fit.png'
+        tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV, _, phase = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6,7,8),unpack = True)  # reading in the rvcurve data
+        srt    = np.argsort(phase)
 
-        
-        infile=prefix.split("/")[0] + "/" + RVnames[j][:-4]+'_rvout.dat'
-        tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the rvcurve data
-        
-        outname=prefix+RVnames[j][:-4]+'_fit.png'
         fig,ax = plt.subplots(3,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title('Fit for RV curve '+RVnames[j][:-4])
         ax[0].set_ylabel("RV [km/s]")
-        ax[0].errorbar(timenorm[indsort], flux[indsort], yerr=err[indsort], fmt=".",c='skyblue', label='Data')
-        ax[0].plot(timenorm[indsort], mod[indsort], "-r", label='Full Model fit')
+        ax[0].errorbar(phase, y_rv, yerr=e_rv, fmt="o",capsize=2, label=RVnames[j])
+        ax[0].plot(phase[srt], full_mod[srt], "-r", label='Full Model fit')
         ax[0].set_ylabel("RV [km/s]")
+        ax[0].legend()
 
-        ax[1].errorbar(timenorm[indsort], fco[indsort], yerr=err[indsort], fmt=".g", label='Data')
-        ax[1].plot(timenorm[indsort], mm[indsort], "-r", label='MCMC best fit')
+        ax[1].errorbar(phase, det_RV, e_rv, fmt="o",capsize=2) 
+        ax[1].plot(phase[srt], rv_mod[srt], "-r", label='MCMC best fit') 
         ax[1].set_ylabel("RV [km/s]")
 
-        ax[2].errorbar(timenorm[indsort], (flux[indsort]-mod[indsort]), yerr=err[indsort], fmt=".",c='skyblue', label='Data')
+        ax[2].errorbar(phase, (y_rv-full_mod), yerr=e_rv, fmt="o",capsize=2)
         ax[2].axhline(0,ls="--", color="k", alpha=0.3)
         ax[2].set_xlabel("Orbital phase")
         ax[2].set_ylabel("O – C [km/s]")
-        fig.savefig(outname, bbox_inches='tight')  
+
+        plt.subplots_adjust(hspace=0.02,wspace=0.02)
+        fig.savefig(outname, bbox_inches='tight')              
+
+    #joint plot
+    if nRV > 0:
+        fig,ax = plt.subplots(2,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,1)})
+        
+        ax[0].set_title('Fit for RV curve')
+        ax[0].set_ylabel("RV [km/s]")
+        ax[1].axhline(0,ls="--", color="k", alpha=0.3)
+        ax[1].set_xlabel("Orbital phase")
+        ax[1].set_ylabel("O – C [km/s]")
+        rv_all = []
+        phase_all = []
+
+        for j in range(nRV):
+            infile  = prefix.split("/")[0] + "/" + RVnames[j][:-4]+'_rvout.dat'
+            tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV, _, phase = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6,7,8), unpack = True)  # reading in the rvcurve data
+            ax[0].errorbar(phase, det_RV, yerr=e_rv, fmt="o",capsize=2, label=RVnames[j])
+            ax[1].errorbar(phase, (y_rv-full_mod), yerr=e_rv, fmt="o",capsize=2)
+            rv_all.append(rv_mod)
+            phase_all.append(phase)
+        
+        srt = np.argsort(np.concatenate(phase_all)) if nRV>1 else np.argsort(phase_all[0])
+        ax[0].plot(np.concatenate(phase_all)[srt], np.concatenate(rv_all)[srt], "-r", label='MCMC best fit')
+        ax[0].legend()
+        plt.subplots_adjust(hspace=0.02,wspace=0.02)
+        fig.savefig(prefix+f'Phasefolded_RV.png',bbox_inches="tight") 
 
     matplotlib.use(__default_backend__)
 

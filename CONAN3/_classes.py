@@ -102,7 +102,7 @@ def _raise(exception_type, msg):
 
 def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None, Eccentricity=0, omega=90, 
                 D_occ=0, A_pc=0, ph_off=0, q1=0, q2=0,
-                mask=False, decorr_bound=(-1,1), spline=None,
+                mask=False, decorr_bound=(-1,1), spline=None,s_samp=None,
                 offset=None, A0=None, B0=None, A3=None, B3=None,
                 A4=None, B4=None, A5=None, B5=None,
                 A6=None, B6=None, A7=None, B7=None,
@@ -174,7 +174,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
     for p in ["T_0", "Period", "rho_star", "D_occ", "Impact_para","RpRs", "Eccentricity", "omega", "A_pc", "ph_off", "q1","q2"]:
         for n in range(npl):
             lbl = f"_{n+1}" if npl>1 else ""                      # numbering to add to parameter names of each planet
-            if p not in ["q1","q2","rho_star","A_pc","ph_off"]:   # parameters common to all planet or not used in multi-planet fit
+            if p not in ["q1","q2","rho_star","A_pc","ph_off","D_occ"]:   # parameters common to all planet or not used in multi-planet fit
                 tr_pars[p+lbl]= DA[p][n]  #transit/eclipse pars
             else:
                 tr_pars[p] = DA[p]        #limb darkening pars
@@ -209,9 +209,12 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
             tr_params.add(key, value=val, vary=False)
                 
     
-    def transit_occ_model(tr_params,t=None,npl=1):
+    def transit_occ_model(tr_params,t=None,s_samp=s_samp,npl=1):
         if t is None: t = df["col0"].values
-        model_flux = np.zeros_like(t)
+        ss = supersampling(s_samp["exp_time"]/(60*24),s_samp["supersample_factor"]) if s_samp is not None else None
+        tt_ss   = ss.supersample(t) if ss is not None else t
+
+        model_flux = np.zeros_like(tt_ss)
 
         for n in range(1,npl+1):
             lbl = f"_{n}" if npl>1 else ""
@@ -224,7 +227,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
             bt.ecc = tr_params["Eccentricity"+lbl]
             bt.w   = tr_params["omega"+lbl]
             bt.a   = rho_to_aR(tr_params["rho_star"], bt.per)
-            bt.fp  = tr_params["D_occ"+lbl]                                        
+            bt.fp  = tr_params["D_occ"]                                        
             ecc_factor=(1-bt.ecc**2)/(1+bt.ecc*np.sin(np.deg2rad(bt.w)))  
             
             bt.inc = np.rad2deg(np.arccos(b/(bt.a * ecc_factor)))
@@ -234,20 +237,22 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
             bt.u   = [u1,u2]
 
             bt.t_secondary = bt.t0 + 0.5*bt.per*(1 + 4/np.pi * bt.ecc * np.cos(np.deg2rad(bt.w))) #eqn 33 (http://arxiv.org/abs/1001.2010)
-            m_tra = batman.TransitModel(bt, t,transittype="primary")
-            m_ecl = batman.TransitModel(bt, t,transittype="secondary")
+            m_tra = batman.TransitModel(bt, tt_ss,transittype="primary")
+            m_ecl = batman.TransitModel(bt, tt_ss,transittype="secondary")
 
             f_tra = m_tra.light_curve(bt)
             if tr_params["A_pc"] != 0:
                 f_occ = rescale0_1(m_ecl.light_curve(bt))
 
-                phase  = phase_fold(t, bt.per, bt.t0)
+                phase  = phase_fold(tt_ss, bt.per, bt.t0)
                 atm    = cosine_atm_variation(phase,bt.fp, tr_params["A_pc"], tr_params["ph_off"])
             
                 model_flux += (f_tra + f_occ*atm.pc)-1           #transit, eclipse, atm model
             else:
                 f_occ = m_ecl.light_curve(bt)
                 model_flux += f_tra + (f_occ - (1+bt.fp)) - 1                   #transit, eclipse, no PC
+
+            model_flux = ss.rebin_flux(model_flux) if ss is not None else model_flux #rebin the model to the original cadence
 
         return np.array(1+model_flux)
 
@@ -501,7 +506,8 @@ def _print_output(self, section: str, file=None):
         assert section == "mcmc",  f"The only valid section for an mcmc object is 'mcmc' but {section} given."
 
     if section == "lc_baseline":
-        _print_lc_baseline = f"""#--------------------------------------------- \n# Input lightcurves filters baseline function--------------""" +\
+        _print_lc_baseline = f"""#--------------------------------------------- \n"""
+        _print_lc_baseline += """# ===========Input lightcurves filters baseline function ===========""" +\
                             f""" \n{"name":{max_name_len}s}  {"filt":{max_filt_len}s}  {"lamda":8s} {"col0":4s}  {"col3":4s}  {"col4":4s}  {"col5":4s}  {"col6":4s}  {"col7":4s}  {"sin":3s}  {"grp":3s}  {"id":2s}  {"GP":2s}  {"spl_config     ":15s} {"s_samp":6s}"""
         #define print out format
         txtfmt = f"\n{{0:{max_name_len}s}}  {{1:{max_filt_len}s}}"+"  {2:8s} {3:4d}  {4:4d}  {5:4d}  {6:4d}  {7:4d}  {8:4d}  {9:3d}  {10:3d}  {11:2d}  {12:2s}  {13:15s} {14:6s}"        
@@ -513,10 +519,10 @@ def _print_output(self, section: str, file=None):
     if section == "gp":
         DA = self._GP_dict
         _print_gp = f"""# ==================== Photometry GP properties ==================== """+\
-                     f"""\n{"name":{max_name_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1_ppm':18s} {'length_scale':15s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2_ppm':18s} {'length_scale2':15s}"""
+                     f"""\n{"name":{max_name_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1_ppm':18s} {'length_scale':17s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2_ppm':18s} {'length_scale2':17s}"""
         if DA != {}: 
             #define gp print out format
-            txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:15s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:15s} "        
+            txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:17s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:17s} "        
 
             for lc in DA.keys():
                 ngp = DA[lc]["ngp"]
@@ -649,16 +655,15 @@ def _print_output(self, section: str, file=None):
         DA = self._mcmc_dict
         _print_mcmc_pars = f"""#=========== MCMC setup =============================================================================="""+\
         f"""\n{'Total_no_steps':23s}  {DA['n_steps']*DA['n_chains']} \n{'Number_chains':23s}  {DA['n_chains']} \n{'Number_of_processes':23s}  {DA['n_cpus']} """+\
-            f"""\n{'Burnin_length':23s}  {DA['n_burn']} \n{'Walk_(snooker/demc/mrw)':23s}  {DA['sampler']} \n{'GR_test_(y/n)':23s}  {DA['GR_test']} """+\
-                f"""\n{'Make_plots_(y/n)':23s}  {DA['make_plots']} \n{'leastsq_(y/n)':23s}  {DA['leastsq']} \n{'Savefile':23s}  {DA['savefile']} \n{'Savemodel':23s}  {DA['savemodel']} """+\
-                    f"""\n{'Adapt_base_stepsize':23s}  {DA['adapt_base_stepsize']} \n{'Remove_param_for_CNM':23s}  {DA['remove_param_for_CNM']} \n{'leastsq_for_basepar':23s}  {DA['leastsq_for_basepar']} """+\
-                        f"""\n{'lssq_use_Lev-Marq':23s}  {DA['lssq_use_Lev_Marq']} \n{'apply_CFs':23s}  {DA['apply_CFs']} \n{'apply_jitter':23s}  {DA['apply_jitter']}"""
-
+            f"""\n{'Burnin_length':23s}  {DA['n_burn']} \n{'n_live':23s}  {DA['n_live']} \n{'d_logz':23s}  {DA['dyn_dlogz']} \n{'Sampler':23s}  {DA['sampler']} \n{'emcee_move':23s}  {DA['emcee_move']} """+\
+                    f"""\n{'leastsq_for_basepar':23s}  {DA['leastsq_for_basepar']} """+\
+                        f"""\n{'apply_jitter':23s}  {DA['apply_jitter']} \n{'apply_LCjitter':23s}  {DA['apply_LCjitter']} """
+        
         print(_print_mcmc_pars, file=file)
 
     if section == "rv_baseline":
         _print_rv_baseline = f"""# ------------------------------------------------------------\n# Input RV curves, baseline function, gamma  """+\
-                                    f"""\n{'name':{max_name_len}s} {'col0':4s} {'col3':4s} {'col4':4s} {"col5":4s} {'sin':3s} {"GP":2s}  {"spl_config     ":15s} | {'gamma_kms':9s} {'stepsize':8s} {'prior':5s} {'    value':9s} {'sig_lo':6s} {'sig_hi':6s}"""
+                                    f"""\n{'name':{max_name_len}s} {'col0':4s} {'col3':4s} {'col4':4s} {"col5":4s} {'sin':3s} {"GP":2s} {"spl_config     ":15s} | {'gamma_kms':9s} {'stepsize':8s} {'prior':5s} {'    value':9s} {'sig_lo':6s} {'sig_hi':6s}"""
         
         if self._names != []:
             DA = self._rvdict
@@ -874,7 +879,7 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def rescale_data_columns(self,method="sub_median"):
+    def rescale_data_columns(self,method="sub_median", verbose=True):
 
         """
             Function to rescale the data columns of the lightcurves. This can be important when decorrelating the data with polynomials.
@@ -888,6 +893,7 @@ class load_lightcurves:
             return None
         
         for lc in self._names:
+            if verbose: print(f"Rescaling data columns of {lc}...")
             for i in range(9):
                 if i not in [0,1,2]:
                     if not (min(self._input_lc[lc][f"col{i}"]) <= 0 <=  max(self._input_lc[lc][f"col{i}"])):     #if zero not in array
@@ -900,7 +906,7 @@ class load_lightcurves:
 
     def get_decorr(self, T_0=None, Period=None, rho_star=None, D_occ=0, Impact_para=0, RpRs=1e-5,
                     Eccentricity=0, omega=90, A_pc=0, ph_off=0, K=0, q1=0, q2=0, 
-                    mask=False, spline=None,delta_BIC=-3, decorr_bound =(-1,1),
+                    mask=False, spline=None,s_samp =None,delta_BIC=-3, decorr_bound =(-1,1),
                     exclude=[], enforce=[],verbose=True, 
                     show_steps=False, plot_model=True, use_result=True):
         """
@@ -909,7 +915,7 @@ class load_lightcurves:
             It uses columns 0,3,4,5,6,7 to construct the polynomial trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order coefficients in column i.
             A spline can also be included to decorrelate against any column.
             
-            Decorrelation parameters that reduces the BIC by 3(i.e delta_BIC = -3) are iteratively selected. This implies bayes_factor=exp(-0.5*-3) = 4.5 or more is required for a parameter to be selected.
+            Decorrelation parameters that reduce the BIC by 3(i.e delta_BIC = -3) are iteratively selected. This implies bayes_factor=exp(-0.5*-3) = 4.5 or more is required for a parameter to be selected.
             The result can then be used to populate the `lc_baseline` method, if use_result is set to True. The transit, limb darkening and phase curve parameters can also be setup from the inputs to this function.
 
             Parameters:
@@ -936,7 +942,10 @@ class load_lightcurves:
                 spline configuration to use in decorrelation an axis of the data. Default is None which implies no spline is used.
                 the config is given as a dict with keys "col", "knot_spacing", "degree" specifying the column, the knot spacing and the degree of the spline.
                 e.g. spline = {"col":0, "knot_spacing":0.1, "degree":3} will fit a spline the flux as a function ofcolumn 0 with knot spacing of 0.1 and degree 3.
-                        
+
+            s_samp : list of dict;
+                spline configuration to use in sampling the transit/occ. Default is None which implies no supersampling.
+
             exclude : list of int;
                 list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is [].
 
@@ -981,7 +990,7 @@ class load_lightcurves:
                                     RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, A_pc=A_pc, ph_off=ph_off,)#, u1=u1,u2=u2)  #transit/occultation parameters
         
         for p in self._tra_occ_pars:
-            if p not in ["rho_star","A_pc","ph_off"]:
+            if p not in ["rho_star","A_pc","ph_off","D_occ"]:
                 if isinstance(self._tra_occ_pars[p], (int,float,tuple)): self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
                 if isinstance(self._tra_occ_pars[p], (list)): assert len(self._tra_occ_pars[p]) == self._nplanet, \
                     f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
@@ -1004,10 +1013,28 @@ class load_lightcurves:
         else: _raise(TypeError, f"get_decorr(): `spline` must be dict or list of dict with same length as number of input files but {type(spline)} given.")
 
         for sp in spline:
-            assert isinstance(sp, dict), f"get_decorr(): all elements in spline list must be dict but {sp} given"
-            assert "col" in sp.keys(), f"get_decorr(): spline dict must have key 'col' "
-            assert "knot_spacing" in sp.keys(), f"get_decorr(): spline dict must have key 'knot_spacing' "
-            assert "degree" in sp.keys(), f"get_decorr(): spline dict must have key 'degree' "
+            if isinstance(sp, dict): 
+                assert "col" in sp.keys(), f"get_decorr(): spline dict must have key 'col' "
+                assert "knot_spacing" in sp.keys(), f"get_decorr(): spline dict must have key 'knot_spacing' "
+                assert "degree" in sp.keys(), f"get_decorr(): spline dict must have key 'degree' "
+            elif sp is None: pass
+            else: _raise(TypeError, f"get_decorr(): all elements in spline list must be dict or None but {sp} given")
+
+        #check supersampling input
+        if s_samp is None: s_samp = [None]*self._nphot
+        elif isinstance(s_samp, dict): s_samp = [s_samp]*self._nphot
+        elif isinstance(s_samp, list): 
+            if len(s_samp) == 1: spline = s_samp*self._nphot
+            assert len(s_samp) == self._nphot,f"get_decorr(): list given for spline must have same length as number of input lcs but {len(spline)} given."
+        else: _raise(TypeError, f"get_decorr(): `spline` must be dict or list of dict with same length as number of input files but {type(spline)} given.")
+
+        for ss in s_samp:
+            if isinstance(ss, dict): 
+                assert "exp_time" in ss.keys(), f"get_decorr(): spline dict must have key 'exp_time' "
+                assert "supersample_factor" in ss.keys(), f"get_decorr(): s_samp dict must have key 'supersample_factor' "
+            elif ss is None: pass
+            else: _raise(TypeError, f"get_decorr(): all elements in s_samp list must be dict or None but {ss} given")
+
 
 
         self._tmodel = []  #list to hold determined trendmodel for each lc
@@ -1017,11 +1044,11 @@ class load_lightcurves:
 
         for j,file in enumerate(self._names):
             df = self._input_lc[file]
-            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for lc: {file} (spline={spline[j] is None})" + _text_format.END)
+            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for lc: {file} (spline={spline[j] is not None},s_samp={s_samp[j] is not None})" + _text_format.END)
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
 
             out = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]], mask=mask,
-                            offset=0, decorr_bound=decorr_bound,spline=spline[j], npl=self._nplanet)    #no trend, only offset
+                            offset=0, decorr_bound=decorr_bound,spline=spline[j],s_samp=s_samp[j], npl=self._nplanet)    #no trend, only offset
             best_bic  = out.bic
             best_pars = {"offset":0} if spline[j] is None else {}          #parameter always included
             for cp in enforce: best_pars[cp]=0                             #add enforced parameters
@@ -1037,7 +1064,7 @@ class load_lightcurves:
                     dtmp = best_pars.copy()   #always include offset
                     dtmp[p] = 0
                     out = _decorr(self._input_lc[file], **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
-                                    decorr_bound=decorr_bound,spline=spline[j], npl=self._nplanet)
+                                    decorr_bound=decorr_bound,spline=spline[j],s_samp=s_samp[j], npl=self._nplanet)
                     if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                     pars_bic[p] = out.bic
 
@@ -1054,7 +1081,7 @@ class load_lightcurves:
                     all_par.remove(par_in)            
 
             result = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
-                                **best_pars, decorr_bound=decorr_bound,spline=spline[j], npl=self._nplanet)
+                                **best_pars, decorr_bound=decorr_bound,spline=spline[j],s_samp=s_samp[j], npl=self._nplanet)
 
             self._decorr_result.append(result)
             print(f"BEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
@@ -1062,14 +1089,14 @@ class load_lightcurves:
             #calculate determined trend and tra/occ model over all data(no mask)
             pps = result.params.valuesdict()
             #convert result transit parameters to back to a list
-            for p in ['RpRs', 'Impact_para', 'T_0', 'Period', 'Eccentricity', 'omega','D_occ']:
+            for p in ['RpRs', 'Impact_para', 'T_0', 'Period', 'Eccentricity', 'omega']:
                 if self._nplanet==1:
                     pps[p] = [pps[p]]  
                 else:      
                     pps[p] = [pps[p+f"_{n}"] for n in range(1,self._nplanet+1)]
                     _ = [pps.pop(f"{p}_{n}") for n in range(1,self._nplanet+1)]
     
-            self._tmodel.append(_decorr(df,**pps, spline=spline[j],npl=self._nplanet, return_models=True))
+            self._tmodel.append(_decorr(df,**pps, spline=spline[j],s_samp=s_samp[j],npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -1087,7 +1114,7 @@ class load_lightcurves:
         if use_result:
             if spline != [None]*self._nphot: 
                 print(_text_format.BOLD + f"\nSetting-up spline for decorrelation."+ _text_format.END +\
-                        " Use `.add_spline(None)` method to remove")
+                        " Use `.add_spline(None)` method to remove/modify")
                 spl_lcs,spl_par,spl_knots,spl_deg = [],[],[],[]
                 for j,file in enumerate(self._names):
                     if spline[j] is not None: 
@@ -1096,6 +1123,17 @@ class load_lightcurves:
                         spl_knots.append(spline[j]['knot_spacing'])
                         spl_deg.append(spline[j]['degree'])
                 self.add_spline(lc_list=spl_lcs, par = spl_par, knot_spacing=spl_knots, degree=spl_deg,verbose=False)
+
+            if s_samp != [None]*self._nphot:
+                print(_text_format.BOLD + f"\nSetting-up supersampling."+ _text_format.END +\
+                        " Use `.supersample(None)` method to remove/modify")
+                ss_lcs,ss_exp,ss_fac = [],[],[]
+                for j,file in enumerate(self._names):
+                    if s_samp[j] is not None: 
+                        ss_lcs.append(file)
+                        ss_exp.append(s_samp[j]['exp_time'])
+                        ss_fac.append(s_samp[j]['supersample_factor'])
+                self.supersample(lc_list=ss_lcs, exp_time = ss_exp, supersample_factor=ss_fac,verbose=False)
 
             if verbose: print(_text_format.BOLD + "Setting-up baseline model from result" +_text_format.END)
             self.lc_baseline(**blpars, verbose=verbose)
@@ -1106,7 +1144,7 @@ class load_lightcurves:
             self.setup_transit_rv(**input_pars, verbose=verbose)
 
             if np.any([self._tra_occ_pars["D_occ"],self._tra_occ_pars["A_pc"],self._tra_occ_pars["ph_off"]] != 0): 
-                if verbose: print(_text_format.BOLD + "\nSetting-up occultation pars from input values" +_text_format.END)
+                if verbose: print(_text_format.BOLD + "\nSetting-up Phasecurve pars from input values" +_text_format.END)
                 self.setup_phasecurve(D_occ=self._tra_occ_pars["D_occ"], A_pc=self._tra_occ_pars["A_pc"],
                                         ph_off=self._tra_occ_pars["ph_off"], verbose=verbose)
             else:
@@ -1122,8 +1160,7 @@ class load_lightcurves:
     def clip_outliers(self, lc_list="all", clip=5, width=15, show_plot=True, verbose=True):
 
         """
-        First divide the data by its median to normalise it.
-        Then remove outliers using a running median method. Points > clip*M.A.D are removed
+        Remove outliers using a running median method. Points > clip*M.A.D are removed
         where M.A.D is the mean absolute deviation from the median in each window
 
         Parameters:
@@ -1220,6 +1257,8 @@ class load_lightcurves:
         assert filename in self._names, f"split_transits(): filename {filename} not in loaded lightcurves."
         
         data = np.loadtxt(self._fpath+filename)
+        # data = self._input_lc[filename]
+        #TODO allow to split data at any given points or with user defined gap size
         
         t = data.transpose()[0]
         flux = data.transpose()[1]
@@ -2396,6 +2435,7 @@ class load_rvs:
                     self._names[self._names.index(f)] = nf
             
             for f in self._names:
+                fdata = np.loadtxt(self._fpath+f)
                 self._input_rv[f] = {}
                 for i in range(6): self._input_rv[f][f"col{i}"] = fdata[:,i]
         
@@ -2623,6 +2663,8 @@ class load_rvs:
         
         self._rvdict   = DA
         if not hasattr(self,"_rvspline"):  self.add_spline(None, verbose=False)
+        if np.all(np.array(self._useGPrv) == "n") or self._useGPrv==[]:        #if gp is "n" for all input lightcurves, run add_GP with None
+            self.add_rvGP(None, verbose=verbose)
 
         if verbose: _print_output(self,"rv_baseline")
     
@@ -2675,7 +2717,7 @@ class load_rvs:
 
         if rv_list is None:
             if len(self._gp_rvs)>0: print(f"\nWarning: GP was expected for the following rvs {self._gp_rvs} \nMoving on ...")
-            if verbose:_print_output(self,"rvGP")
+            if verbose:_print_output(self,"rv_gp")
             return
         elif isinstance(rv_list, str):
             if rv_list == "same": 

@@ -58,7 +58,7 @@ class get_TESS_data(object):
         if sectors is not None: self.sectors = sectors
         if author  is not None: self.author  = author
         if exptime is not None: self.exptime = exptime
-        assert select_flux in ["pdcsap_flux","sap_flux"], "select_flux must be either 'pdcsap_flux' or 'sap_flux'"
+        # assert select_flux in ["pdcsap_flux","sap_flux"], "select_flux must be either 'pdcsap_flux' or 'sap_flux'"
 
         if isinstance(self.sectors,int): self.sectors = [self.sectors]
 
@@ -85,17 +85,28 @@ class get_TESS_data(object):
         #TODO: implement this
         NotImplemented
 
-    def save_CONAN_lcfile(self):
+    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data"):
         """
         Save TESS light curves as a CONAN light curve file.
+
+        Parameters
+        ----------
+        bjd_ref : float
+            BJD reference time to use for the light curve file.
+        folder : str
+            Folder to save the light curve file in.
         """
 
         assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
-        if not os.path.exists("data"): os.mkdir("data")
+        if not os.path.exists(folder): os.mkdir(folder)
 
         for s in self.sectors:
-            t, f, e = self.lc[s]["time"].value, self.lc[s]["flux"].value.unmasked, self.lc[s]["flux_err"].value.unmasked    
-            file = f"data/{self.planet_name}_S{s}.dat"
+            try:
+                t, f, e = self.lc[s]["time"].value, self.lc[s]["flux"].value.unmasked, self.lc[s]["flux_err"].value.unmasked   
+            except AttributeError:
+                t, f, e = self.lc[s]["time"].value, self.lc[s]["flux"].value, self.lc[s]["flux_err"].value
+            t = t + 2457000 - bjd_ref
+            file = f"{folder}/{self.planet_name}_S{s}.dat"
             np.savetxt(file,np.stack((t,f,e),axis=1),fmt='%.8f')
             print(f"saved file as: {file}")
 

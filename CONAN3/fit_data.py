@@ -31,7 +31,7 @@ from celerite import terms
 from celerite import GP as cGP
 from copy import deepcopy
 from .utils import gp_params_convert
-from scipy.stats import norm, uniform, lognorm, loguniform
+from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
 
 from ._classes import _raise, mcmc_setup, __default_backend__, load_result
@@ -668,7 +668,8 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
         if (useGPphot[i]=='n'):
             GPobjects.append([])
-            pargps.append([]) 
+            pargps.append([])
+            gpkerns.append([]) 
 
         elif useGPphot[i] in ['y','ce']:     #George or Celerite GP
             gp_conv  = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
@@ -809,6 +810,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         if useGPrv[i]=='n':
             rvGPobjects.append([])
             rv_pargps.append([]) 
+            rv_gpkerns.append([])
 
         if useGPrv[i] in ["y","ce"]:         #George or Celerite GP
             gp_conv  = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
@@ -1058,7 +1060,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     uni_up     = lim_up[jumping]
     ppm        = 1e-6
 
-    uni = lambda lowlim,uplim: uniform(lowlim, uplim-lowlim)               # uniform prior between lowlim and uplim
+    uni    = lambda lowlim,uplim: uniform(lowlim, uplim-lowlim)               # uniform prior between lowlim and uplim
     t_norm = lambda a,b,mu,sig: truncnorm((a-mu)/sig, (b-mu)/sig, mu, sig) # normal prior(mu,sig) truncated  between a and b
 
     prior_distr = []      # list of prior distributions for the jumping parameters
@@ -1075,7 +1077,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         
         else:
             if (norm_sigma[jj]>0.):  #normal prior
-                lpri = norm(norm_mu[jj],norm_sigma[jj])
+                lpri = t_norm(uni_low[jj],uni_up[jj],norm_mu[jj],norm_sigma[jj])
                 prior_distr.append(lpri)
             else:                    #uniform prior
                 llim = uni(uni_low[jj],uni_up[jj])
