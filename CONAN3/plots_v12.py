@@ -77,7 +77,7 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
 
         for n in range(npl):
         #phase folded plot
-            ph = np.modf((np.modf((tt-T0[n])/period[n])[0])+1.0)[0] #calculate phase   #TODO: modify for multiplanetary
+            ph = np.modf((np.modf((tt-T0[n])/period[n])[0])+1.0)[0] #calculate phase
 
             #Add data to array to phasefold them later
             phase_phasefold[n] = np.append(phase_phasefold[n], ph)

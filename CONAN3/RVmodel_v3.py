@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 import time
 import scipy
 from scipy.interpolate import LSQUnivariateSpline,LSQBivariateSpline
+from types import SimpleNamespace
 
 #plt.ion()
 
 def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None,RVerr=None,bis=None,fwhm=None,contra=None,
               nfilt=None,baseLSQ=None,inmcmc=None,nddf=None,nocc=None,nRV=None,nphot=None,j=None,RVnames=None,bvarsRV=None,gammaind=None,
-              useSpline=None,npl=None,make_out_file=False,get_model=False,out_folder=""):
+              useSpline=None,npl=None,planet_only=False):
     """ 
     Model the radial velocity curve of planet(s). 
     T0, per, K_in, sesinw, secosw are given as lists of the same length (npl), each element corresponding to a planet.
@@ -22,15 +23,15 @@ def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None
         transit time of each planet
     per : float, list;
         period of each planet
+    K_in : float, list;
+        RV semi-amplitude of each planet
     sesinw : float, list;
         sqrt(ecc) * sin(omega)
     secosw : float, list;
         sqrt(ecc) * cos(omega)
-    K_in : float, list;
-        RV semi-amplitude of each planet
     npl : int
         number of planets. Default: 1
-    make_out_file : bool
+    make_outfile : bool
         write the RV curve to file. Default: False
     get_model : bool
         return the model RV curve only. Default: False
@@ -141,24 +142,20 @@ def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None
 
     mod_RV += Gamma_in #add gamma to the total RV
 
-    if get_model:
+    if planet_only:
         return mod_RV-Gamma_in, model_components
 
-    bfstartRV= 1+7*npl + nddf + nocc + nfilt*4 + 2*nRV + nphot*20 #TODO: nRV*2, no? the first index in the param array that refers to a baseline function
-    incoeff = list(range(bfstartRV+j*12,bfstartRV+j*12+12))  # the indices for the coefficients for the base function        
+    bfstartRV= 1+7*npl + nddf + nocc + nfilt*2 + nphot+ 2*nRV + nphot*20 +j*12  #the first index in the param array that refers to a baseline function
+    incoeff = list(range(bfstartRV,bfstartRV+12))  # the indices for the coefficients for the base function        
 
     ts = tt-np.mean(tt)
 
     if (baseLSQ == 'y'):
-        RVmres=RVmes/mod_RV
         #get the indices of the variable baseline parameters via bvar (0 for fixed, 1 for variable)
         ivars = np.copy(bvarsRV[j][0])
-        #print ivars
-        #print incoeff
-        #print params
-        #time.sleep(100)
+
         incoeff=np.array(incoeff)
-        coeffstart = np.copy(params[incoeff[ivars]])   # RANDOM NOTE: you can use lists as indices to np.arrays but not np.arrays to lists or lists to lists
+        coeffstart = np.copy(params[incoeff[ivars]]) 
         if len(ivars) > 0:
             icoeff,dump = scipy.optimize.leastsq(para_minfuncRV, coeffstart, args=(ivars, mod_RV, RVmes, ts, bis, fwhm, contra))
             coeff = np.copy(params[incoeff])   # the full coefficients -- set to those defined in params (in case any are fixed non-zero)
@@ -169,44 +166,21 @@ def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None
     else:        
         coeff = np.copy(params[incoeff])   # the coefficients for the base function
       
-    bfuncRV,spl_comp,spl_x=basefuncRV(coeff, ts, bis, fwhm, contra,RVmes/mod_RV ,useSpline)
+    bfuncRV,spl_comp=basefuncRV(coeff, ts, bis, fwhm, contra,RVmes-mod_RV ,useSpline)
 
     mod_RVbl = mod_RV + bfuncRV
 
-    indsort = np.unravel_index(np.argsort(TA_rv, axis=None), TA_rv.shape) 
-    plt.clf()
-    #plt.errorbar(ts,RVmes,yerr=RVerr,fmt='g*',ecolor='g')
-    #plt.plot(ts,mod_RVbl,'r-')
-    #plt.plot(ts,bfuncRV,'y-')
- #   plt.errorbar(EA_rv[indsort],RVmes[indsort],yerr=RVerr[indsort],fmt='g*',ecolor='g')
- #   plt.plot(EA_rv[indsort],mod_RV[indsort],'r-')
- #   plt.show(block=False)
- #   plt.pause(0.001)
+    rv_result = SimpleNamespace(planet_RV=mod_RV-Gamma_in, full_RVmod=mod_RVbl, RV_bl=bfuncRV, spline=spl_comp ) 
 
-# write the RVcurve and the model to file if we're not inside the MCMC
-    if (inmcmc == 'n'):
-        outfile    = out_folder+"/"+RVnames[j][:-4]+'_rvout.dat'
-        out_data   = np.stack((tt,RVmes,RVerr,mod_RVbl,bfuncRV,mod_RV-Gamma_in,RVmes-bfuncRV-Gamma_in,spl_x,spl_comp),axis=1)
-        header     = ["time","RV","error","full_mod","base","Rvmodel","det_RV","spl_x","spl_fit"]
-        header_fmt = "{:14s}\t"*len(header)
-        phases     = np.zeros((len(tt),npl))
+    return rv_result
 
-        for n in range(npl):
-            phases[:,n] = ((tt-T0[n])/per[n]) - np.round( ((tt-T0[n])/per[n]))
-            header_fmt += "{:14s}\t"
-            header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
-        if make_out_file:   
-            out_data = np.hstack((out_data,phases))
-            np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
-
-    return mod_RVbl
-
+    # indsort = np.unravel_index(np.argsort(TA_rv, axis=None), TA_rv.shape) 
 
 
 def para_minfuncRV(icoeff, ivars, mod_RV, RVmes, ts, bis, fwhm, contra):
     icoeff_full = np.zeros(21)
     icoeff_full[ivars] = np.copy(icoeff)
-    return (RVmes - mod_RV * basefuncRV(icoeff_full, ts, bis, fwhm, contra,0,False))       
+    return (RVmes - (mod_RV + basefuncRV(icoeff_full, ts, bis, fwhm, contra,0,False)) )      
 
 def basefuncRV(coeff, ts, col3, col4, col5,res, useSpline):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
@@ -220,20 +194,15 @@ def basefuncRV(coeff, ts, col3, col4, col5,res, useSpline):
     bfunc += coeff[6]*col5 + coeff[7]*np.power(col5,2) 
     bfunc += coeff[8]*np.sin(coeff[9]*ts+coeff[10])
 
-    if isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to ones
-        spl= x = np.ones_like(ts)
+    if isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to zeros
+        spl= x = np.zeros_like(ts)
     else:
-        kn, per,s_par,dim = useSpline.knots, useSpline.period, useSpline.par,useSpline.dim   #knot_spacing,periodicity,param
-
+        kn,s_par,dim = useSpline.knots, useSpline.par,useSpline.dim   #knot_spacing,param
         if dim == 1:
             x      = np.copy(DA[s_par])
             knots  = np.arange(min(x), max(x), kn )
             srt    = np.argsort(x)
-            xs, ys = x[srt], (res/bfunc)[srt]
-            if per > 0 and np.ptp(x) < per:
-                xs    = np.hstack([xs-per,xs,xs+per])
-                ys    = np.hstack([ys,ys,ys])
-                knots = np.hstack([knots-per,knots,knots+per])
+            xs, ys = x[srt], (res-bfunc)[srt]
 
             splfunc = LSQUnivariateSpline(xs, ys, knots, k=useSpline.deg, ext="const")
             spl = splfunc(x)     #evaluate the spline at the original x values
@@ -244,18 +213,9 @@ def basefuncRV(coeff, ts, col3, col4, col5,res, useSpline):
             x       = x1 #np.vstack([x1,x2]).T
             knots1  = np.arange(min(x1)+kn, max(x1), kn )
             knots2  = np.arange(min(x2)+kn, max(x2), kn )
-            ys      = (res/bfunc)
+            ys      = (res-bfunc)
 
-            if np.any(per):
-                ys    = np.hstack([ys,ys,ys])
-            if per[0] > 0:
-                x1s    = np.hstack([x1-per[0],x1,x1+per[0]])
-                knots1 = np.hstack([knots1-per[0],knots1,knots1+per[0]])
-            if per[1] > 0:
-                x2s    = np.hstack([x2-per[1],x2,x2+per[1]])
-                knots2 = np.hstack([knots2-per[1],knots2,knots2+per[1]])
-
-            splfunc = LSQBivariateSpline(x1s, x2s, ys, knots1, knots2, kx=useSpline.deg[0], ky=useSpline.deg[1])
+            splfunc = LSQBivariateSpline(x1, x2, ys, knots1, knots2, kx=useSpline.deg[0], ky=useSpline.deg[1])
             spl = splfunc(x1,x2,grid=False)     #evaluate the spline at the original x values
 
-    return bfunc,spl,x    
+    return bfunc+spl,spl    

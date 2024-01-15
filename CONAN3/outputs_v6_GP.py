@@ -4,10 +4,7 @@ from .plots_v12 import *
 import subprocess
 import scipy.stats as stats
 import scipy.interpolate as si
-from .utils import rho_to_tdur, rho_to_aR
-
-# sys.path.append("/home/lendl/Work/OurCode/transit_fit/")
-
+from .utils import rho_to_tdur, rho_to_aR, convert_LD,aR_to_Tdur
 from .credibleregion_ML import *
 
 
@@ -144,35 +141,35 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
             K_PDF = np.squeeze(extind_PDF[:,inde])
 
         dur_PDF = rho_to_tdur(rho_PDF, b_PDF, RpRs_PDF, Period_PDF,
-                               e=esinw_PDF**2+ecosw_PDF**2, w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
+                                e=esinw_PDF**2+ecosw_PDF**2, w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
         dur_bp  = rho_to_tdur(rho_bp, b_bp, RpRs_bp, Period_bp,
-                               e=esinw_bp**2+ecosw_bp**2, w=np.degrees(np.arctan2(esinw_bp,ecosw_bp)))
+                                e=esinw_bp**2+ecosw_bp**2, w=np.degrees(np.arctan2(esinw_bp,ecosw_bp)))
             
-        c1_PDF = np.zeros((npoint,nfilt))
-        c2_PDF = np.zeros((npoint,nfilt))
-        c1_bp  = np.zeros(nfilt)
-        c2_bp  = np.zeros(nfilt)
+        q1_PDF = np.zeros((npoint,nfilt))
+        q2_PDF = np.zeros((npoint,nfilt))
+        q1_bp  = np.zeros(nfilt)
+        q2_bp  = np.zeros(nfilt)
         
         for i in range(nfilt):
-            ind = np.where(np.char.find(jnames, filnames[i]+'_c1')==0)[0]
-            indn = np.where(np.char.find(njnames, filnames[i]+'_c1')==0)[0]
+            ind = np.where(np.char.find(jnames, filnames[i]+'_q1')==0)[0]
+            indn = np.where(np.char.find(njnames, filnames[i]+'_q1')==0)[0]
             if (len(ind) > 0):
-                c1_PDF[:,i] = posterior[:,ind[0]]
-                c1_bp[i] = bp[ijnames[0][ind]]
+                q1_PDF[:,i] = posterior[:,ind[0]]
+                q1_bp[i] = bp[ijnames[0][ind]]
             else:
-                c1_PDF[:,i] = bp[nijnames[0][indn]]
-                c1_bp[i] = bp[nijnames[0][indn]]
-            ind = np.where(np.char.find(jnames, filnames[i]+'_c2')==0)[0]
-            indn = np.where(np.char.find(njnames, filnames[i]+'_c2')==0)[0]
+                q1_PDF[:,i] = bp[nijnames[0][indn]]
+                q1_bp[i] = bp[nijnames[0][indn]]
+            ind = np.where(np.char.find(jnames, filnames[i]+'_q2')==0)[0]
+            indn = np.where(np.char.find(njnames, filnames[i]+'_q2')==0)[0]
             if (len(ind) > 0):
-                c2_PDF[:,i] = posterior[:,ind[0]]
-                c2_bp[i] = bp[ijnames[0][ind]]
+                q2_PDF[:,i] = posterior[:,ind[0]]
+                q2_bp[i] = bp[ijnames[0][ind]]
             else:
-                c2_PDF[:,i] = bp[nijnames[0][indn]]
-                c2_bp[i] = bp[nijnames[0][indn]]
+                q2_PDF[:,i] = bp[nijnames[0][indn]]
+                q2_bp[i] = bp[nijnames[0][indn]]
         
-        pnames, PDFs, starstring = derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF,rho_PDF, ecosw_PDF, esinw_PDF, K_PDF, c1_PDF, c2_PDF, howstellar) 
-        _,   bp_PDFs, _          = derive_parameters(filnames, nm, Rs_in, Ms_in, RpRs_bp, Period_bp, b_bp, dur_bp, rho_bp, ecosw_bp, esinw_bp, K_bp, c1_bp, c2_bp, howstellar)
+        pnames, PDFs, starstring = derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF,rho_PDF, ecosw_PDF, esinw_PDF, K_PDF, q1_PDF, q2_PDF, howstellar) 
+        _,   bp_PDFs, _          = derive_parameters(filnames, nm, Rs_in,  Ms_in,  RpRs_bp,  Period_bp,  b_bp,  dur_bp, rho_bp,  ecosw_bp,  esinw_bp,  K_bp,  q1_bp,  q2_bp,  howstellar)
 
         derived_pnames.extend(pnames)
         derived_PDFs.extend(PDFs)
@@ -180,22 +177,21 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
 
         
         nderived = len(derived_pnames)
-     
-   # =============================================================================================================
-   #                  START OUTPUT SECTION 
-   # =============================================================================================================
 
-   
-   # =============== write out the medians, best values and distributions of the jump parameters =================
+    # =============================================================================================================
+    #                  START OUTPUT SECTION 
+    # =============================================================================================================
+
+    # =============== write out the medians, best values and distributions of the jump parameters =================
     outfile  = out_folder+"/"+'results_med.dat'
     outfile2 = out_folder+"/"+'results_max.dat'
     outfile3 = out_folder+"/"+'results_bf.dat'
 
-    of=open(outfile,'w')
-    of2=open(outfile2,'w')
-    of3=open(outfile3,'w')
+    of  = open(outfile,'w')
+    of2 = open(outfile2,'w')
+    of3 = open(outfile3,'w')
 
-# posterior has the burned-in, thinned parameter states
+    # posterior has the burned-in, thinned parameter states
     
     n1sig = np.round(0.34134*npoint)  # number of points for 1 sigma (on one side)
     n3sig = np.round(0.49865*npoint)  # number of points for 3 sigma (on one side)
@@ -510,24 +506,6 @@ def gr_print(jnames,GRvals, out_folder):
          
     of.close()
 
-def get_BIC(npar,ndat):
-    
-    chi2 = float(subprocess.check_output("cat MCMC.log | grep Best-parameter | awk '{print $3}' ", shell=True))
-    BIC = chi2 + npar * np.log(ndat)
-    RCHI = chi2 /(ndat-npar)
-    
-    outfile=out_folder+'/BIC.dat'
-    of=open(outfile,'w')
-    of.write('data points: ')
-    of.write('%10.0f \n' % (ndat))
-    of.write('free parameters: ')
-    of.write('%10.0f \n' % (npar))
-    of.write('BIC            reduced CHI2\n')
-    of.write('%10.3f %10.2f \n' % (BIC, RCHI))
-    of.close()
-    
-    return BIC
-
 
 def get_BIC_emcee(npar,ndat,chi2,out_folder):
     
@@ -562,6 +540,24 @@ def get_AIC_emcee(npar,ndat,chi2,out_folder):
     
     return AIC
 
+
+def dyn_summary(res,out_folder):
+    """Return a formatted string giving a quick summary
+    of the results."""
+
+    res_print = ("nlive: {:d}\n"
+                    "niter: {:d}\n"
+                    "ncall: {:d}\n"
+                    "eff(%): {:6.3f}\n"
+                    "logz: {:6.3f} +/- {:6.3f}"
+                    .format(res.nlive, res.niter, sum(res.ncall),
+                            res.eff, res.logz[-1], res.logzerr[-1]))
+    f = open(f"{out_folder}/evidence.dat", "w")
+    print('Summary\n=======\n'+res_print, file=f)
+    f.close()
+    return
+
+
 def get_PDF_Gauss(cen,sig1,sig2,dim):
     
     sig = (sig1 + sig2)/2.
@@ -570,7 +566,7 @@ def get_PDF_Gauss(cen,sig1,sig2,dim):
    
     return val_PDF
 
-def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, rhoS_PDF, ecosw_PDF, esinw_PDF, K_PDF, c1_PDF, c2_PDF, howstellar):
+def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, rhoS_PDF, ecosw_PDF, esinw_PDF, K_PDF, q1_PDF, q2_PDF, howstellar):
     
     import scipy.constants as cn
 
@@ -578,24 +574,24 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     
     secondsperday = 24.*3600.
     
-    Rsolar = 6.957e8   # IAU value
-    Rjup = 7.1492e7    # IAU value
-    Rearth = 6.3781e6  # IAU value
+    Rsolar  = 6.957e8   # IAU value
+    Rjup    = 7.1492e7    # IAU value
+    Rearth  = 6.3781e6  # IAU value
     
     GMsolar = 1.3271244e20 # IAU value
-    GMjup = 1.2668653e17   # IAU value
+    GMjup   = 1.2668653e17   # IAU value
     GMearth = 3.986004e14  # IAU value
     
     Msolar = GMsolar / cn.G # IAU suggestion
-    Mjup = GMjup / cn.G     # IAU suggestion
+    Mjup   = GMjup / cn.G     # IAU suggestion
     Mearth = GMearth / cn.G # IAU suggestion
     
     rhoSolar = 3. / (4. * np.pi) * Msolar / Rsolar**3 
-    rhoJup = 3. / (4. * np.pi) * Mjup / Rjup**3 
+    rhoJup   = 3. / (4. * np.pi) * Mjup / Rjup**3 
     rhoEarth = 3. / (4. * np.pi) * Mearth / Rearth**3 
         
-    Rp_PDF = RpRs_PDF * (Rs_PDF * Rsolar) / Rjup
-    dF_PDF = RpRs_PDF**2
+    Rp_PDF  = RpRs_PDF * (Rs_PDF * Rsolar) / Rjup
+    dF_PDF  = RpRs_PDF**2
     ecc_PDF = ecosw_PDF**2 + esinw_PDF**2
     ome_PDF = np.arctan(np.abs(esinw_PDF / ecosw_PDF))
     
@@ -659,42 +655,39 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     rhoP_PDF = Mp_PDF / Rp_PDF**3 
     gP_PDF =  cn.G * (Mp_PDF*Mjup) / (Rp_PDF*Rjup)**2 
     
-    durocc_PDF = Period_PDF / np.pi * np.arcsin(1. / aRs_PDF * np.sqrt( (1. + RpRs_PDF)**2 - b_PDF**2 ) / (np.sin(inc_PDF)) ) * efac3_PDF 
+    durocc_PDF = aR_to_Tdur(aRs_PDF,b_PDF,RpRs_PDF,Period_PDF,ecc_PDF,ome_PDF)
     durocc_PDF[np.isfinite(durocc_PDF)==False] = 0.
     
-    if len(c1_PDF.shape)<2:
-        nfil = c1_PDF.shape
+    if len(q1_PDF.shape)<2:
+        nfil = q1_PDF.shape
         pnames_LD = []
         LD_PDFs = []
         #print(nfil[0])
         for i in range(nfil[0]):
-            u1 = (c1_PDF[i] + c2_PDF[i]) / 3.
-            u2 = (c1_PDF[i] - 2. * c2_PDF[i]) / 3.
+            u1,u2 = convert_LD(q1_PDF[i], q2_PDF[i],conv="q2u")
             name1 = filnames[i]+'_u1'
             name2 = filnames[i]+'_u2'
             pnames_LD = pnames_LD + [name1] + [name2]
             LD_PDFs.append(u1)
             LD_PDFs.append(u2)
     else:
-        npo, nfil = c1_PDF.shape
+        npo, nfil = q1_PDF.shape
         u1_PDF = np.zeros((npo,nfil))
         u2_PDF = np.zeros((npo,nfil))
         pnames_LD = []
         LD_PDFs = []
     
         for i in range(nfil):
-            u1 = (c1_PDF[:,i] + c2_PDF[:,i]) / 3.
-            u2 = (c1_PDF[:,i] - 2. * c2_PDF[:,i]) / 3.
+            u1,u2 = convert_LD(q1_PDF[:,i], q2_PDF[:,i],conv="q2u")
             name1 = filnames[i]+'_u1'
             name2 = filnames[i]+'_u2'
             pnames_LD = pnames_LD + [name1] + [name2]
             LD_PDFs.append(u1)
             LD_PDFs.append(u2)
 
-     
-         
+
     derived_pnames = [f"Rp{nm}_[Rjup]",f"Mp{nm}_[Mjup]", f"rho{nm}_p_[rhoJup]", f"g_p{nm}_[SI]", f"dF{nm}", f"aRs{nm}", f"a{nm}_[au]", f"rhoS{nm}_[rhoSun]", "Ms_[Msun]", "Rs_[Rsun]",
-                       f"inclination{nm}_[deg]", f"eccentricity{nm}", f"omega{nm}_[deg]", f"Occult_dur{nm}", f"Rs_a{nm}", "MF_PDF_[Msun]",f"Dur{nm}_[d]"]
+                        f"inclination{nm}_[deg]", f"eccentricity{nm}", f"omega{nm}_[deg]", f"Occult_dur{nm}", f"Rs_a{nm}", "MF_PDF_[Msun]",f"Dur{nm}_[d]"]
     
     derived_pnames =  derived_pnames + pnames_LD
         

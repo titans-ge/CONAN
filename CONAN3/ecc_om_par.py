@@ -69,7 +69,7 @@ def ecc_om_par(ecc, omega):
     eoc_in=[to_fit,secoso,secosostep,pri,secosop,secosoplo,secosopup,secosolo,secosoup]
 
     from ._classes import _param_obj
-    eos_in = _param_obj(eos_in)
-    eoc_in = _param_obj(eoc_in)
+    eos_in = _param_obj(*eos_in)
+    eoc_in = _param_obj(*eoc_in)
 
     return eos_in, eoc_in

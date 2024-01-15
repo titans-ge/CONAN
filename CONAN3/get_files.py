@@ -126,7 +126,7 @@ def get_parameters(planet_name, database="exoplanetarchive"):
     if database == "exoplanetarchive":
         from astroquery.ipac.nexsci.nasa_exoplanet_archive import NasaExoplanetArchive
 
-        print("getting parameters from NASA exoplanet archive")
+        print("Getting system parameters from NASA exoplanet archive ...")
         df = NasaExoplanetArchive.query_object(planet_name,table="pscomppars")
         df = df.to_pandas()
 

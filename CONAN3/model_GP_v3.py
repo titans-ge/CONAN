@@ -14,7 +14,8 @@ from george.modeling import Model
 
 from occultquad import *
 from occultnl import *
-from .utils import rho_to_aR, cosine_atm_variation, reflection_atm_variation, phase_fold
+from .utils import rho_to_aR, cosine_atm_variation, reflection_atm_variation, phase_fold,convert_LD
+from types import SimpleNamespace
 
 
 class Transit_Model(Model):
@@ -60,7 +61,7 @@ class Transit_Model(Model):
 
     """
 
-    def __init__(self, rho_star, T0, RpRs, b, per, eos, eoc, ddf, c1, c2, occ=0, A=None, delta=None, npl=1):
+    def __init__(self, rho_star, T0, RpRs, b, per, eos, eoc, ddf, q1, q2, occ=0, A=None, delta=None, npl=1):
         self.rho_star = rho_star
         self.T0       = T0
         self.RpRs     = RpRs
@@ -71,13 +72,13 @@ class Transit_Model(Model):
         self.eoc      = eoc
         self.ddf      = ddf
         self.occ      = occ
-        self.c1       = c1
-        self.c2       = c2
+        self.q1       = q1
+        self.q2       = q2
         self.npl      = npl
         self.A        = A
         self.delta    = delta
 
-        self.parameter_names = ['rho_star','T0', 'RpRs', 'b', 'per', 'eos', 'eoc', 'ddf', 'c1', 'c2', 'occ', 'A','delta']
+        self.parameter_names = ['rho_star','T0', 'RpRs', 'b', 'per', 'eos', 'eoc', 'ddf', 'q1', 'q2', 'occ', 'A','delta']
 
     def get_value(self, tarr, args=None,planet_only=False,ss=None):
         """ 
@@ -213,8 +214,7 @@ class Transit_Model(Model):
             mm0 = np.zeros(npo)
 
             # convert the LD coefficients to u1 and u2
-            u1 = (self.c1 + self.c2)/3.
-            u2 = (self.c1 - 2.*self.c2)/3.
+            u1,u2 = convert_LD(self.q1,self.q2,conv="q2u")
 
             #============= TRANSIT ===========================
             # MONIKA: replaced the y coordinate as defining value for
@@ -251,7 +251,7 @@ class Transit_Model(Model):
             else:
                 lc_mod = mm0.copy()
 
-            lc_mod = ss.rebin_flux(lc_mod)   #rebin the model to the original cadence
+            lc_mod = ss.rebin_flux(lc_mod) if ss is not None else lc_mod  #rebin the model to the original cadence
             
             #save the model components
             model_components[f"pl_{n+1}"] = lc_mod.copy()
@@ -279,17 +279,16 @@ class Transit_Model(Model):
             coeffstart  = np.copy(bases[bvar])   
             icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, col5, col3, col4, col6, col7))
             coeff = np.copy(bases)
-            coeff[bvar] = np.copy(icoeff)
-            
+            coeff[bvar] = np.copy(icoeff)   
         else:        
             coeff = np.copy(bases)  # the input coefficients 
 
-        bfunc,_,_ =basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,ft/mm,useSpline)
+        bfunc,spl_comp = basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,ft/mm,useSpline)
         mod=mm*bfunc
         
-        marr=np.copy(mod)
+        lc_result = SimpleNamespace(planet_LC=mm, full_LCmod=mod, LC_bl=bfunc, spline=spl_comp )
 
-        return marr
+        return lc_result
 
 
 def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
@@ -309,17 +308,12 @@ def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
     if isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to ones
         spl= x = np.ones_like(ts)
     else:
-        kn, per,s_par,dim = useSpline.knots, useSpline.period, useSpline.par,useSpline.dim   #knot_spacing,periodicity,param
+        kn,s_par,dim = useSpline.knots, useSpline.par,useSpline.dim   #knot_spacing,param
         if dim == 1:
             x      = np.copy(DA[s_par])
             knots  = np.arange(min(x)+kn, max(x), kn )
             srt    = np.argsort(x)
             xs, ys = x[srt], (res/bfunc)[srt]
-
-            if per > 0 and np.ptp(x)<per:
-                xs    = np.hstack([xs-per,xs,xs+per])
-                ys    = np.hstack([ys,ys,ys])
-                knots = np.hstack([knots-per,knots,knots+per])
 
             splfunc = LSQUnivariateSpline(xs, ys, knots, k=useSpline.deg, ext="const")
             spl = splfunc(x)     #evaluate the spline at the original x values
@@ -335,7 +329,7 @@ def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
             splfunc = LSQBivariateSpline(x1, x2, ys, knots1, knots2, kx=useSpline.deg[0], ky=useSpline.deg[1])
             spl = splfunc(x1,x2,grid=False)     #evaluate the spline at the original x values
 
-    return bfunc*spl, spl, x
+    return bfunc*spl, spl
 
 def para_minfunc(icoeff, ivars, mm, ft, ts, col5, col3, col4, col6, col7):
     icoeff_full = np.zeros(20)

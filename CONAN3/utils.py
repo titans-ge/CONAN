@@ -138,6 +138,31 @@ def rho_to_aR(rho, P):
 
     return aR
 
+def aR_to_rho(P,aR):
+    """
+    Compute the transit derived stellar density from the planet period and 
+    scaled semi major axis
+    
+    
+    Parameters:
+    -----------
+    P: float, ufloat, array-like;
+        The planet period in days
+    
+    aR: float, ufloat, array-like;
+        The scaled semi-major axis of the planet orbit
+        
+    Returns:
+    --------
+    rho: array-like;
+        The stellar density in cgs units
+    """
+
+    G = (c.G.to(u.cm**3/(u.g*u.second**2))).value
+    Ps = P*(u.day.to(u.second))
+    
+    st_rho=3*np.pi*aR**3 / (G*Ps**2) 
+    return st_rho
 
 def aR_to_Tdur(aR, b, Rp, P,e=0,w=90):
     """
@@ -278,17 +303,28 @@ def rescale0_1(x):
     """Rescale an array to the range [0,1]."""
     return ((x - np.min(x))/np.ptp(x) ) if np.all(min(x) != max(x)) else x
 
-def convert_LD(coeff1, coeff2,conv="c2u"):
-    assert conv in ["c2u","u2c"], "conv must be either c2u or u2c"
+def convert_LD(coeff1, coeff2,conv="q2u"):
+    """ 
+    convert 2 parameter limb darkening coefficients between different parameterizations.
+    conversion is done as described in https://arxiv.org/pdf/1308.0009.pdf
+    """
+    assert conv in ["c2u","u2c","q2u","u2q"], "conv must be either c2u or u2c"
     if conv == "c2u":
         u1 = (coeff1 + coeff2)/3
         u2 = (coeff1 - 2.*coeff2)/3.
         return u1,u2
-    else:
+    elif conv=="u2c":
         c1 = 2*coeff1 + coeff2
         c2 = coeff1 - coeff2
         return c1,c2
-    
+    elif conv=="u2q":
+        q1 = (coeff1 + coeff2)**2
+        q2 = coeff1/(2*(coeff1 + coeff2))
+        return q1,q2
+    elif conv=="q2u":
+        u1 = 2*np.sqrt(coeff1)*coeff2
+        u2 = np.sqrt(coeff1)*(1-2*coeff2)
+        return u1,u2
 
 class supersampling:
     def __init__(self, exp_time=0, supersample_factor=1):
@@ -340,3 +376,147 @@ class supersampling:
         rebinned_flux = np.mean(flux.reshape(-1,self.supersample_factor), axis=1)
         return rebinned_flux
 
+
+class gp_params_convert:
+    """
+    object to convert gp amplitude and lengthscale to required value for different kernels
+    """
+        
+    def get_values(self, kernels, data, pars):
+        """
+        transform pars into required values for given kernels.
+        
+        Parameters:
+        -----------
+        kernels: list,str
+            kernel for which parameter transformation is performed. Must be one of ["any_george","sho","mat32","real"]
+        data: str,
+            one of ["lc","rv"]
+        pars: iterable,
+            parameters (amplitude,lengthscale) for each kernel in kernels.
+            
+        Returns:
+        --------
+        log_pars: iterable,
+            log parameters to be used to set parameter vector of the gp object.
+            
+        """
+        assert data in ["lc","rv"],f'data can only be one of ["lc","rv"]'
+        if isinstance(kernels, str): kernels= [kernels]
+            
+        log_pars = []
+        for i,kern in enumerate(kernels):
+            assert kern in ["g_mat32","g_mat52","g_expsq","g_exp","sho","mat32","real"],  \
+                f'gp_params_convert(): kernel to convert must be one of ["any_george","sho","mat32","real"] but "{kern}" given'
+
+            # call class function with the name kern
+            p = self.__getattribute__(kern)(data,pars[i*2],pars[i*2+1])
+            log_pars.append(p)
+            
+        return np.concatenate(log_pars)
+            
+        
+    def any_george(self, data, amplitude,lengthscale):
+        """
+        simple conversion where amplitude corresponds to the standard deviation of the process
+        """        
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_var    = np.log(amplitude**2)
+        log_metric = np.log(lengthscale)
+        return log_var, log_metric
+    
+    
+    #celerite kernels  
+    def sho(self, data, amplitude, lengthscale):
+        """
+        amplitude: the standard deviation of the process
+        lengthscale: the undamped period of the oscillator
+        
+        see transformation here: https://celerite2.readthedocs.io/en/latest/api/python/#celerite2.terms.SHOTerm
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        Q  = 1/np.sqrt(2)
+        w0 = 2*np.pi/lengthscale
+        S0 = amplitude**2/(w0*Q)
+        
+        log_S0, log_w0 = np.log(S0), np.log(w0)
+        return log_S0, log_w0
+    
+    def real(self, data, amplitude, lengthscale):
+        """
+        really an exponential kernel like in George
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        c     = 1/lengthscale
+        log_c = np.log(c)
+        log_a = np.log(amplitude**2)     #log_variance
+        return log_a, log_c
+    
+    def mat32(self, data, amplitude, lengthscale):
+        """
+        celerite mat32
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_sigma  = np.log(amplitude)
+        rho        = lengthscale
+        log_rho    = np.log(rho)
+        return log_sigma, log_rho
+    
+
+    #george kernels
+    def g_mat32(self, data, amplitude, lengthscale):
+        """
+        George mat32
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_var    = np.log(amplitude**2)
+        metric     = lengthscale**2
+        log_metric = np.log(metric)
+        return log_var, log_metric
+    
+    def g_mat52(self, data, amplitude, lengthscale):
+        """
+        George mat52
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_var    = np.log(amplitude**2)
+        metric     = lengthscale**2
+        log_metric = np.log(metric)
+        return log_var, log_metric
+    
+    def g_expsq(self, data, amplitude, lengthscale):
+        """
+        George expsq
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_var    = np.log(amplitude**2)
+        metric     = lengthscale
+        log_metric = np.log(metric)
+        return log_var, log_metric
+    
+    def g_exp(self, data, amplitude, lengthscale):
+        """
+        George exp
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_var    = np.log(amplitude**2)
+        metric     = lengthscale**2
+        log_metric = np.log(metric)
+        return log_var, log_metric
+    
+    def g_cos(self, data, amplitude, lengthscale):
+        """
+        George cosine
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_var    = np.log(amplitude**2)
+        period     = lengthscale
+        log_period = np.log(period)
+        return log_var, log_period
+    
+    def __repr__(self):
+        return 'object to convert gp amplitude and lengthscale to required value for different kernels'
+        
+    
+
+        

@@ -11,7 +11,6 @@ def basecoeff(ibase,spline):
     # each of the _in arrays have 4 coefficients, for each parameter: [initial guess, step, min, max]  -- perhaps 5 in the future if I use priors
     #
     # nbc is the number of non-fixed baseline coefficients
-    #TODO allow to give initial guesses for the baseline parameters, 
     nbc = np.copy(0)
     
     # set the baseline function
