@@ -32,15 +32,20 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
     cols = plot_cols+(1,) if len(plot_cols)==2 else plot_cols
     input_data = obj._input_lc if obj._obj_type=="lc_obj" else obj._input_rv
 
+    if plot_cols[1] == "res": 
+        cols = (cols[0],1,2)
+        col_labels = (col_labels[0],"residuals")
+
     if n_data == 1:
         # p1, p2, p3 = np.loadtxt(obj._fpath+obj._names[0], usecols=cols, unpack=True )
         p1, p2, p3 = [input_data[obj._names[0]][f"col{n}"] for n in cols]
+        if plot_cols[1] == "res": p2 = model_overplot[0].residual
 
         if len(plot_cols)==2: p3 = None
         if figsize is None: figsize=(8,5)
         fig = plt.figure(figsize=figsize)
         plt.errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[0]}')
-        if model_overplot:
+        if model_overplot and plot_cols[1] != "res":
             plt.plot(p1,model_overplot[0].tot_trnd_mod,"r",zorder=3,label="detrend_model")
             if tsm: plt.plot(model_overplot[0].time_smooth,model_overplot[0].planet_mod_smooth,"c",zorder=3,label="planet_model")   #smooth model plot if time on x axis
             else: plt.plot(p1,model_overplot[0].planet_mod,"c",zorder=3,label="planet_model")
@@ -62,9 +67,11 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
         for i, d in enumerate(obj._names):
             # p1,p2,p3 = np.loadtxt(obj._fpath+d,usecols=cols, unpack=True )
             p1,p2,p3 = [input_data[d][f"col{n}"] for n in cols]
+            if plot_cols[1] == "res": p2 = model_overplot[i].residual
+
             if len(plot_cols)==2: p3 = None
             ax[i].errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[i]}')
-            if model_overplot:
+            if model_overplot and plot_cols[1] != "res":
                 ax[i].plot(p1,model_overplot[i].tot_trnd_mod,"r",zorder=3,label="detrend_model")
                 if tsm: ax[i].plot(model_overplot[i].time_smooth,model_overplot[i].planet_mod_smooth,"c",zorder=3,label="planet_model")
                 else: ax[i].plot(p1,model_overplot[i].planet_mod,"c",zorder=3,label="planet_model")
@@ -292,7 +299,8 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
         mods = SimpleNamespace(tot_trnd_mod       = trnd_mod+spl_mod, 
                                 planet_mod        = tra_occ_mod, 
                                 time_smooth       = tsm, 
-                                planet_mod_smooth = transit_occ_model(tr_params,tsm,npl=npl) 
+                                planet_mod_smooth = transit_occ_model(tr_params,tsm,npl=npl), 
+                                residual          = df["col1"] - fl_mod - spl_mod
                                 ) 
         return mods
     
@@ -346,7 +354,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
     return out
 
 
-def _decorr_RV(file, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None, decorr_bound=(-1000,1000),
+def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None, decorr_bound=(-1000,1000),
                 A0=None, B0=None, A3=None, B3=None, A4=None, B4=None, A5=None, B5=None, npl=1,return_models=False):
     """
     linear decorrelation with different columns of data file. It performs a linear model fit to the 3rd column of the file.
@@ -354,8 +362,8 @@ def _decorr_RV(file, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=No
     
     Parameters:
     -----------
-    file : str;
-        path to data file with columns 0 to 8 (col0-col8).
+    df : dataframe/dict;
+        data file with columns 0 to 5 (col0-col5).
     
     T_0, Period, K, Eccentricity, omega : floats, None;
         RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) in the data file.
@@ -380,14 +388,10 @@ def _decorr_RV(file, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=No
     from CONAN3.RVmodel_v3 import get_RVmod
 
     DA      = locals().copy()
-    _       = DA.pop("file")
     rv_pars = {}
 
-    ff = np.loadtxt(file,usecols=(0,1,2,3,4,5))
-    dict_ff = {}
-    for i in range(6): dict_ff[f"cols{i}"] = ff[:,i]
-    df = pd.DataFrame(dict_ff)  #pandas dataframe
-    cols0_med = np.median(df["cols0"])
+    df       = pd.DataFrame(df)      #pandas dataframe
+    col0_med = np.median(df["col0"])
                           
 
     #add indices to parameters if npl>1
@@ -425,7 +429,7 @@ def _decorr_RV(file, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=No
                 
     
     def rv_model(rv_params,t=None,npl=1):
-        if t is None: t = df["cols0"].values
+        if t is None: t = df["col0"].values
         rvmod_ms = np.zeros_like(t)
 
         for n in range(1,npl+1):
@@ -444,26 +448,31 @@ def _decorr_RV(file, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=No
 
 
     def trend_model(params):
-        trend  = params["A0"]*(df["cols0"]-cols0_med)  + params["B0"]*(df["cols0"]-cols0_med)**2 #time trend
-        trend += params["A3"]*df["cols3"]  + params["B3"]*df["cols3"]**2 #bisector
-        trend += params["A4"]*df["cols4"]  + params["B4"]*df["cols4"]**2 #fwhm
-        trend += params["A5"]*df["cols5"]  + params["B5"]*df["cols5"]**2 #contrast
+        trend  = params["A0"]*(df["col0"]-col0_med)  + params["B0"]*(df["col0"]-col0_med)**2 #time trend
+        trend += params["A3"]*df["col3"]  + params["B3"]*df["col3"]**2 #bisector
+        trend += params["A4"]*df["col4"]  + params["B4"]*df["col4"]**2 #fwhm
+        trend += params["A5"]*df["col5"]  + params["B5"]*df["col5"]**2 #contrast
         return np.array(trend)
     
 
     if return_models:
-        tsm = np.linspace(min(df["cols0"]),max(df["cols0"]),len(df["cols0"])*3)
-        return trend_model(params)+rv_params["gamma"], rv_model(rv_params,npl=npl), tsm,rv_model(rv_params,tsm,npl=npl)   
-    
+        tsm = np.linspace(min(df["col0"]),max(df["col0"]),max(500,len(df["col0"])*3))
+        mods = SimpleNamespace(tot_trnd_mod = trend_model(params)+rv_params["gamma"], 
+                                planet_mod  = rv_model(rv_params,npl=npl), 
+                                time_smooth = tsm, 
+                                planet_mod_smooth = rv_model(rv_params,tsm,npl=npl), 
+                                residual    = df["col1"] - trend_model(params) - rv_model(rv_params,npl=npl)
+                                )
+        return mods
+        
     #perform fitting 
     def chisqr(fit_params):
         rvmod = trend_model(fit_params)+rv_model(fit_params,npl=npl)
-        res = (df["cols1"] - rvmod)/df["cols2"]
+        res = (df["col1"] - rvmod)/df["col2"]
         for p in fit_params:
             u = fit_params[p].user_data  #obtain tuple specifying the normal prior if defined
             if u:  #modify residual to account for how far the value is from mean of prior
                 res = np.append(res, (u[0]-fit_params[p].value)/u[1] )
-        # print(f"chi-square:{np.sum(res**2)}")
         return res
     
     fit_params = params+rv_params
@@ -471,11 +480,11 @@ def _decorr_RV(file, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=No
     
     #modify output object
     out.bestfit = trend_model(out.params)+rv_model(out.params,npl=npl)
-    out.trend   = trend_model(out.params)+out.params["gamma"]
+    out.trend   = out.poly_trend = trend_model(out.params)+out.params["gamma"]
     out.rvmodel = rv_model(out.params,npl=npl)
-    out.time    = np.array(df["cols0"])
-    out.rv      = np.array(df["cols1"])
-    out.rv_err  = np.array(df["cols2"])
+    out.time    = np.array(df["col0"])
+    out.rv      = np.array(df["col1"])
+    out.rv_err  = np.array(df["col2"])
     out.data    = df
     out.rms     = np.std(out.rv - out.bestfit)
     out.ndata   = len(out.time)
@@ -657,7 +666,8 @@ def _print_output(self, section: str, file=None):
         f"""\n{'Total_no_steps':23s}  {DA['n_steps']*DA['n_chains']} \n{'Number_chains':23s}  {DA['n_chains']} \n{'Number_of_processes':23s}  {DA['n_cpus']} """+\
             f"""\n{'Burnin_length':23s}  {DA['n_burn']} \n{'n_live':23s}  {DA['n_live']} \n{'d_logz':23s}  {DA['dyn_dlogz']} \n{'Sampler':23s}  {DA['sampler']} \n{'emcee_move':23s}  {DA['emcee_move']} """+\
                     f"""\n{'leastsq_for_basepar':23s}  {DA['leastsq_for_basepar']} """+\
-                        f"""\n{'apply_jitter':23s}  {DA['apply_jitter']} \n{'apply_LCjitter':23s}  {DA['apply_LCjitter']} """
+                        f"""\n{'apply_LCjitter':23s}  {DA['apply_LCjitter']} \n{'apply_RVjitter':23s}  {DA['apply_RVjitter']} """+\
+                        f"""\n{'LCbasecoeff_lims':23s}  {DA['LCbasecoeff_lims']} \n{'RVbasecoeff_lims':23s}  {DA['RVbasecoeff_lims']} """
         
         print(_print_mcmc_pars, file=file)
 
@@ -825,7 +835,7 @@ class load_lightcurves:
         >>> lc_data = load_lightcurves(file_list=["lc1.dat","lc2.dat"], filters=["V","I"], lamdas=[6000,8000])
         
     """
-    def __init__(self, file_list, data_filepath=None, filters=None, lamdas=None, nplanet=1,
+    def __init__(self, file_list=None, data_filepath=None, filters=None, lamdas=None, nplanet=1,
                     verbose=True, show_guide=False):
         self._obj_type = "lc_obj"
         self._nplanet  = nplanet
@@ -866,8 +876,12 @@ class load_lightcurves:
 
             self._input_lc[f] = {}
             for i in range(9): self._input_lc[f][f"col{i}"] = fdata[:,i]
-
-
+        
+        #list to hold initial baseline model coefficients for each lc
+        self._bases_init =  [dict(off=1, A0=0, B0= 0, C0=0, D0=0,A3=0, B3=0, A4=0, B4=0,
+                                    A5=0, B5=0, A6=0, B6=0,A7=0, B7=0, amp=0,freq=0,phi=0,ACNM=1,BCNM=0) 
+                                    for _ in range(self._nphot)]
+        
         if verbose: 
             print(f"Filters: {self._filters}")
             print(f"Order of unique filters: {list(self._filnames)}")
@@ -906,7 +920,7 @@ class load_lightcurves:
 
     def get_decorr(self, T_0=None, Period=None, rho_star=None, D_occ=0, Impact_para=0, RpRs=1e-5,
                     Eccentricity=0, omega=90, A_pc=0, ph_off=0, K=0, q1=0, q2=0, 
-                    mask=False, spline=None,s_samp =None,delta_BIC=-3, decorr_bound =(-1,1),
+                    mask=False, spline=None,s_samp =None,delta_BIC=-5, decorr_bound =(-1,1),
                     exclude=[], enforce=[],verbose=True, 
                     show_steps=False, plot_model=True, use_result=True):
         """
@@ -915,13 +929,13 @@ class load_lightcurves:
             It uses columns 0,3,4,5,6,7 to construct the polynomial trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order coefficients in column i.
             A spline can also be included to decorrelate against any column.
             
-            Decorrelation parameters that reduce the BIC by 3(i.e delta_BIC = -3) are iteratively selected. This implies bayes_factor=exp(-0.5*-3) = 4.5 or more is required for a parameter to be selected.
+            Decorrelation parameters that reduce the BIC by 5(i.e delta_BIC = -5) are iteratively selected. This implies bayes_factor=exp(-0.5*-5) = 12 or more is required for a parameter to be selected.
             The result can then be used to populate the `lc_baseline` method, if use_result is set to True. The transit, limb darkening and phase curve parameters can also be setup from the inputs to this function.
 
             Parameters:
             -----------
             T_0, Period, rho_star, D_occ, Impact_para, RpRs, Eccentricity, omega, A_pc, ph_off: floats,tuple, None;
-                transit/eclipse parameters of the planet. T_0 and Period must be in same units as the time axis (cols0) in the data file.
+                transit/eclipse parameters of the planet. T_0 and Period must be in same units as the time axis (col0) in the data file.
                 if float/int, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
                 
             q1,q2 : float,tuple, list  (optional);
@@ -930,7 +944,7 @@ class load_lightcurves:
     
             delta_BIC : float (negative);
                 BIC improvement a parameter needs to provide in order to be considered relevant for decorrelation. + \
-                    Default is conservative and set to -3 i.e, parameters needs to lower the BIC by 3 to be included as decorrelation parameter.
+                    Default is conservative and set to -5 i.e, parameters needs to lower the BIC by 5 to be included as decorrelation parameter.
 
             mask : bool ;
                 If True, transits and eclipses are masked using T_0, P and rho_star (duration).
@@ -981,8 +995,9 @@ class load_lightcurves:
         else: q2=[q2]*nfilt
 
         blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[], "dcol6":[], "dcol7":[],"gp":[]}  #inputs to lc_baseline method
+
         self._decorr_result = []   #list of decorr result for each lc.
-        
+
         input_pars = dict(T_0=T_0, Period=Period, rho_star=rho_star, Impact_para=Impact_para, \
                         RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
 
@@ -1106,12 +1121,22 @@ class load_lightcurves:
             blpars["dcol6"].append( 2 if pps["B6"]!=0 else 1 if  pps["A6"]!=0 else 0)
             blpars["dcol7"].append( 2 if pps["B7"]!=0 else 1 if  pps["A7"]!=0 else 0)
             blpars["gp"].append("n")
+            # store baseline model coefficients for each lc, to used as start values of mcmc
+            self._bases_init[j] = dict(off=1+pps["offset"], 
+                                            A0=pps["A0"], B0=pps["B0"], C0=0, D0=0,
+                                            A3=pps["A3"], B3=pps["B3"], 
+                                            A4=pps["A4"], B4=pps["B4"],
+                                            A5=pps["A5"], B5=pps["B5"], 
+                                            A6=pps["A6"], B6=pps["B6"],
+                                            A7=pps["A7"], B7=pps["B7"], 
+                                            amp=0,freq=0,phi=0,ACNM=1,BCNM=0)
 
         if plot_model:
             _plot_data(self,plot_cols=(0,1,2),col_labels=("time","flux"),model_overplot=self._tmodel)
 
         #prefill other light curve setup from the results here or inputs given here.
         if use_result:
+            # spline
             if spline != [None]*self._nphot: 
                 print(_text_format.BOLD + f"\nSetting-up spline for decorrelation."+ _text_format.END +\
                         " Use `.add_spline(None)` method to remove/modify")
@@ -1123,10 +1148,10 @@ class load_lightcurves:
                         spl_knots.append(spline[j]['knot_spacing'])
                         spl_deg.append(spline[j]['degree'])
                 self.add_spline(lc_list=spl_lcs, par = spl_par, knot_spacing=spl_knots, degree=spl_deg,verbose=False)
-
+            
+            # supersampling
             if s_samp != [None]*self._nphot:
-                print(_text_format.BOLD + f"\nSetting-up supersampling."+ _text_format.END +\
-                        " Use `.supersample(None)` method to remove/modify")
+                print(_text_format.BOLD + f"\nSetting-up supersampling."+ _text_format.END + " Use `.supersample(None)` method to remove/modify")
                 ss_lcs,ss_exp,ss_fac = [],[],[]
                 for j,file in enumerate(self._names):
                     if s_samp[j] is not None: 
@@ -1135,14 +1160,27 @@ class load_lightcurves:
                         ss_fac.append(s_samp[j]['supersample_factor'])
                 self.supersample(lc_list=ss_lcs, exp_time = ss_exp, supersample_factor=ss_fac,verbose=False)
 
+            # baseline
             if verbose: print(_text_format.BOLD + "Setting-up baseline model from result" +_text_format.END)
             self.lc_baseline(**blpars, verbose=verbose)
-            # print(_text_format.RED + f"\n Note: GP flag for each lc has been set to {self._useGPphot}. "+\
-            #         "Use `._useGPphot` method to modify this list with 'y','ce' or 'n' for each loaded lc\n" + _text_format.END)
+            print(_text_format.RED + f"\n Note: GP flag for the lcs has been set to {self._useGPphot}. "+\
+                    "Use `._useGPphot` attribute to modify this list with 'y','ce' or 'n' for each loaded lc\n" + _text_format.END)
 
+            # transit/RV
             if verbose: print(_text_format.BOLD + "\nSetting-up transit pars from input values" +_text_format.END)
+            
+            # #replace start value of input pars with result pps
+            # for p in input_pars:
+            #     if isinstance(input_pars[p], (int,float)): pass
+            #     if isinstance(input_pars[p], (tuple)): 
+            #         if len(tuple)==2: input_pars[p][0] = pps[p]
+            #         if len(tuple)==3: input_pars[p][1] = pps[p]
+            #     if self._nplanet > 1:
+            #         for in range(len(input_pars[p]))
+
             self.setup_transit_rv(**input_pars, verbose=verbose)
 
+            # phasecurve
             if np.any([self._tra_occ_pars["D_occ"],self._tra_occ_pars["A_pc"],self._tra_occ_pars["ph_off"]] != 0): 
                 if verbose: print(_text_format.BOLD + "\nSetting-up Phasecurve pars from input values" +_text_format.END)
                 self.setup_phasecurve(D_occ=self._tra_occ_pars["D_occ"], A_pc=self._tra_occ_pars["A_pc"],
@@ -1150,6 +1188,7 @@ class load_lightcurves:
             else:
                 self.setup_phasecurve(verbose=False)
             
+            # limb darkening
             if verbose: print(_text_format.BOLD + "\nSetting-up Limb darkening pars from input values" +_text_format.END)
             self.limb_darkening(q1=q1, q2=q2, verbose=verbose)
 
@@ -1356,10 +1395,10 @@ class load_lightcurves:
     def lc_baseline(self, dcol0=None, dcol3=None, dcol4=None,  dcol5=None, dcol6=None, 
                  dcol7=None, dsin=None, grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
         """
-            Define baseline model parameters to fit for each light curve using the columns of the input data. dcol0 refers to decorrelation parameters for column 0, dcol3 for column 3 and so on.
+            Define baseline model parameters to fit for each light curve using the columns of the input data. `dcol0` refers to decorrelation setup for column 0, `dcol3` for column 3 and so on.
             Each baseline decorrelation parameter (dcolx) should be a list of integers specifying the polynomial order for column x for each light curve.
             e.g. Given 3 input light curves, if one wishes to fit a 2nd order trend in column 0 to the first and third lightcurves,
-            then dcol0 = [2, 0, 2].
+            then `dcol0` = [2, 0, 2].
             The decorrelation parameters depend on the columns (col) of the input light curve. Any desired array can be put in these columns to decorrelate against them. Note that col0 is usually the time array.
             The columns are:
 
@@ -1406,7 +1445,8 @@ class load_lightcurves:
         self._groups    = DA["grp_id"]
         self._grbases   = DA["grp"]    #TODO: never used, remove instances of it
         self._useGPphot = DA["gp"]
-        self._gp_lcs    = np.array(self._names)[np.array(self._useGPphot) != "n"]     #lcs with gp == "y" or "ce"
+        # self._gp_lcs    = np.array(self._names)[np.array(self._useGPphot) != "n"]     #lcs with gp == "y" or "ce"
+        self._gp_lcs    = lambda : np.array(self._names)[np.array(self._useGPphot) != "n"]
 
         if verbose: _print_output(self,"lc_baseline")
 
@@ -1414,7 +1454,7 @@ class load_lightcurves:
             self.add_GP(None, verbose=verbose)
             if self._show_guide: print("\nNo GPs required.\nNext: use method `setup_transit_rv` to configure transit an rv model parameters.")
         else: 
-            if self._show_guide: print("\nNext: use method `add_GP` to include GPs for the specified lcs. Get names of lcs with GPs using `._gp_lcs` attribute of the lightcurve object.")
+            if self._show_guide: print("\nNext: use method `add_GP` to include GPs for the specified lcs. Get names of lcs with GPs using `._gp_lcs()` attribute of the lightcurve object.")
 
         #initialize other methods to empty incase they are not called/have not been called
         if not hasattr(self,"_lcspline") or re_init:      self.add_spline(None, verbose=False)
@@ -1639,7 +1679,7 @@ class load_lightcurves:
         self._sameLCgp  = SimpleNamespace(flag = False, first_index =None)
 
         if lc_list is None:
-            if len(self._gp_lcs)>0: print(f"\nWarning: GP was expected for the following lcs {self._gp_lcs} \nMoving on ...")
+            if len(self._gp_lcs())>0: print(f"\nWarning: GP was expected for the following lcs {self._gp_lcs()} \nMoving on ...")
             if verbose:_print_output(self,"gp")
             return
         elif isinstance(lc_list, str): 
@@ -1647,14 +1687,14 @@ class load_lightcurves:
                 self._sameLCgp.flag        = True
                 self._sameLCgp.first_index = self._names.index(lc_list[0])
             if lc_list in ["all","same"]:
-                lc_list = self._gp_lcs
+                lc_list = self._gp_lcs()
             else: lc_list=[lc_list]
 
 
-        for lc in self._gp_lcs: assert lc in lc_list,f"add_GP(): GP was expected for {lc} but was not given in lc_list."
+        for lc in self._gp_lcs(): assert lc in lc_list,f"add_GP(): GP was expected for {lc} but was not given in lc_list."
         for lc in lc_list: 
             assert lc in self._names,f"add_GP(): {lc} not in loaded lc files."
-            assert lc in self._gp_lcs,f"add_GP(): GP was not expected for {lc} but was given in lc_list."
+            assert lc in self._gp_lcs(),f"add_GP(): GP was not expected for {lc} but was given in lc_list. Use `._useGPphot` attribute to modify this list with 'y','ce' or 'n' for each loaded lc"
         
         lc_ind = [self._names.index(lc) for lc in lc_list]
         gp_pck = [self._useGPphot[i] for i in lc_ind]   #gp_pck is a list of "y" or "ce" for each lc in lc_list
@@ -1749,10 +1789,10 @@ class load_lightcurves:
                                                                         bounds_lo=v[0]-10*v[1], bounds_hi=v[0]+10*v[1],
                                                                         user_data=[this_kern, this_par])
                         elif len(v)==3:
-                            steps = 0 if (self._sameLCgp.flag and i!=0) else min(0.01,0.001*np.ptp(v))
+                            steps = 0 if (self._sameLCgp.flag and i!=0) else min(0.001,0.001*np.ptp(v))
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
-                                                                        prior_width_hi=0, bounds_lo=v[0] if v[0]>0 else 0.01, bounds_hi=v[2],
+                                                                        prior_width_hi=0, bounds_lo=v[0] if v[0]>0 else 0.007, bounds_hi=v[2],
                                                                         user_data=[this_kern, this_par])
                     else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {v} given.")
 
@@ -2089,7 +2129,7 @@ class load_lightcurves:
 
         if verbose: _print_output(self,"phasecurve")
 
-    def get_LDs(self,Teff,logg,Z, filter_names, unc_mult=10, use_result=True, verbose=True):
+    def get_LDs(self,Teff,logg,Z, filter_names, unc_mult=10, use_result=False, verbose=True):
         """
         get Kipping quadratic limb darkening parameters (q1,q2) using ldtk (requires internet connection).
 
@@ -2180,7 +2220,7 @@ class load_lightcurves:
         sig_hi1 = sig_hi2 = 0
         step1 = step2 = 0     
 
-        DA = _reversed_dict(locals().copy())
+        DA = deepcopy(locals())
         _ = DA.pop("self")            #remove self from dictionary
         _ = DA.pop("verbose")
 
@@ -2440,11 +2480,37 @@ class load_rvs:
                 for i in range(6): self._input_rv[f][f"col{i}"] = fdata[:,i]
         
         self._nRV = len(self._names)
+        self._rescaled_data = False
         self.rv_baseline(verbose=False)
+
+
+    def rescale_data_columns(self,method="sub_median", verbose=True):
+
+        """
+            Function to rescale the data columns of the RVs. This can be important when decorrelating the data with polynomials.
+            The operation is not performed on columns 0,1,2. It is only performed on columns whose values do not span zero.
+            Function can only be run once on the loaded datasets but can be reset by running `load_rvs()` again. 
+        """
+        assert method in ["sub_median", "sub_mean"], f"method must be one of 'sub_median' or 'sub_mean' but {method} given"
+        
+        if self._rescaled_data:
+            print("Data columns have already been rescaled. run `load_rvs()` again to reset.")
+            return None
+        
+        for rv in self._names:
+            if verbose: print(f"Rescaling data columns of {rv}...")
+            for i in range(6):
+                if i not in [0,1,2]:
+                    if not (min(self._input_rv[rv][f"col{i}"]) <= 0 <=  max(self._input_rv[rv][f"col{i}"])):     #if zero not in array
+                        if method == "sub_median":
+                            self._input_rv[rv][f"col{i}"] -= np.median(self._input_rv[rv][f"col{i}"])
+                        elif method == "sub_mean":
+                            self._input_rv[rv][f"col{i}"] -= np.mean(self._input_rv[rv][f"col{i}"])
+        self._rescaled_data = True
 
     def get_decorr(self, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=0,
                     delta_BIC=-5, decorr_bound =(-1000,1000), exclude=[],enforce=[],verbose=True, 
-                        show_steps=False, plot_model=True, use_result=True):
+                    show_steps=False, plot_model=True, use_result=True):
         """
             Function to obtain best decorrelation parameters for each rv file using the forward selection method.
             It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
@@ -2513,10 +2579,11 @@ class load_rvs:
         _ = [decorr_cols.remove(c) for c in exclude]  #remove excluded columns from decorr_cols
 
         for j,file in enumerate(self._names):
+            df = self._input_rv[file]
             if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for rv: {file}" + _text_format.END)
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
 
-            out = _decorr_RV(self._fpath+file, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet)    #no trend, only offset
+            out = _decorr_RV(df, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet)    #no trend, only offset
             best_bic = out.bic
             best_pars = {}                      #parameter salways included
             for cp in enforce: best_pars[cp]=0            #add enforced parameters
@@ -2530,7 +2597,7 @@ class load_rvs:
                 for p in all_par:
                     dtmp = best_pars.copy()  #temporary dict to hold parameters to test
                     dtmp[p] = 0
-                    out = _decorr_RV(self._fpath+file, **self._rv_pars,**dtmp, decorr_bound=decorr_bound, npl=self._nplanet)
+                    out = _decorr_RV(df, **self._rv_pars,**dtmp, decorr_bound=decorr_bound, npl=self._nplanet)
                     if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                     pars_bic[p] = out.bic
 
@@ -2546,7 +2613,7 @@ class load_rvs:
                     best_bic = par_in_bic
                     all_par.remove(par_in)            
                       
-            result = _decorr_RV(self._fpath+file, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet)
+            result = _decorr_RV(df, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet)
             self._rvdecorr_result.append(result)
             print(f"\nBEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
             
@@ -2560,7 +2627,7 @@ class load_rvs:
                     pps[p] = [pps[p+f"_{n}"] for n in range(1,self._nplanet+1)]
                     _      = [pps.pop(f"{p}_{n}") for n in range(1,self._nplanet+1)]
     
-            self._rvmodel.append(_decorr_RV(self._fpath+file,**pps,decorr_bound=decorr_bound, npl=self._nplanet, return_models=True))
+            self._rvmodel.append(_decorr_RV(df,**pps,decorr_bound=decorr_bound, npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -2575,8 +2642,8 @@ class load_rvs:
         #prefill other light curve setup from the results here or inputs given here.
         if use_result:
             if verbose: print(_text_format.BOLD + "Setting-up rv baseline model from result" +_text_format.END)
-            self.rv_baseline(dt = blpars["dcol0"], dbis=blpars["dcol3"], dfwhm=blpars["dcol4"],
-                             dcont=blpars["dcol5"], gammas_kms= gamma, verbose=verbose)
+            self.rv_baseline(dcol0 = blpars["dcol0"], dcol3=blpars["dcol3"], dcol4=blpars["dcol4"],
+                             dcol5=blpars["dcol5"], gammas_kms= gamma, verbose=verbose)
 
         return self._rvdecorr_result
     
@@ -2605,7 +2672,7 @@ class load_rvs:
         elif isinstance(gammas_kms, (tuple,float,int)): gammas_kms=[gammas_kms]*self._nRV
         else: _raise(TypeError, f"gammas_kms must be type tuple/int or list of tuples/floats/ints of len {self._nRV}." )
         
-        gammas,prior,gam_pri,sig_lo,sig_hi = [],[],[],[],[]
+        gammas,prior,gam_pri,sig_lo,sig_hi,bound_lo, bound_hi = [],[],[],[],[],[],[]
         for g in gammas_kms:
             #fixed gammas
             if isinstance(g, (float,int)):
@@ -2614,6 +2681,8 @@ class load_rvs:
                 gam_pri.append(g)
                 sig_lo.append(0)
                 sig_hi.append(0)
+                bound_lo.append(0)
+                bound_hi.append(0)
             #fit gammas
             elif isinstance(g, tuple):
                 if len(g)==2:
@@ -2621,13 +2690,18 @@ class load_rvs:
                     gammas.append(g[0])
                     gam_pri.append(g[0])
                     sig_lo.append(g[1])
-                    sig_hi.append(g[1])   
+                    sig_hi.append(g[1])  
+                    bound_lo.append(g[0]-10*g[1])
+                    bound_hi.append(g[0]+10*g[1])
                 if len(g)==3:
                     prior.append("n")
                     gammas.append(g[1])
                     gam_pri.append(g[1])
-                    sig_lo.append(g[0])
-                    sig_hi.append(g[2])   
+                    sig_lo.append(0)
+                    sig_hi.append(0)  
+                    bound_lo.append(g[0])
+                    bound_hi.append(g[2]) 
+
             else: _raise(TypeError, f"a tuple of len 2 or 3, float or int was expected but got the value {g} in gammas_kms.")
 
         DA = locals().copy()     #get a dictionary of the input/variables arguments for easy manipulation
@@ -2655,11 +2729,8 @@ class load_rvs:
             gampriloa.append( 0. if (DA["prior"][i] == 'n' or DA["gam_steps"][i] == 0.) else DA["sig_lo"][i])
             gamprihia.append( 0. if (DA["prior"][i] == 'n' or DA["gam_steps"][i] == 0.) else DA["sig_hi"][i])
         
-        # self._gamprilo = 
         DA["gampriloa"] = gampriloa                
-        # self._gamprihi = 
         DA["gamprihia"] = gamprihia                
-        # self._sinPs    = DA["sinPs"]
         
         self._rvdict   = DA
         if not hasattr(self,"_rvspline"):  self.add_spline(None, verbose=False)
@@ -2826,10 +2897,10 @@ class load_rvs:
                                                                         bounds_lo=v[0]-10*v[1], bounds_hi=v[0]+10*v[1],
                                                                         user_data=[this_kern, this_par])
                         elif len(v)==3:
-                            steps = 0 if (self._sameRVgp.flag and i!=0) else min(0.01,0.001*np.ptp(v))
+                            steps = 0 if (self._sameRVgp.flag and i!=0) else min(0.001,0.001*np.ptp(v))
                             self._rvGP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
-                                                                        prior_width_hi=0, bounds_lo=v[0] if v[0]>0 else 0.1, bounds_hi=v[2],
+                                                                        prior_width_hi=0, bounds_lo=v[0] if v[0]>0 else 0.007, bounds_hi=v[2],
                                                                         user_data=[this_kern, this_par])
                         #TODO add len(v)==4 for truncated normal (a,b,mu,std)
                     else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3 or float/int but {v} given.")
@@ -3041,6 +3112,12 @@ class mcmc_setup:
 
         apply_LCjitter: "y" or "n";
         whether to apply a jitter term for the fit of LC data. Default is "y".
+
+        LCbasecoeff_lims: list of length 2;
+            limits of uniform prior for the LC baseline coefficients. Default is [-1,1].
+
+        RVbasecoeff_lims: list of length 2;
+            limits of uniform prior for the RV baseline coefficients. Default is [-2,2].
     
         Other keyword arguments to the emcee or dynesty sampler functions (`run_mcmc()` or `run_nested()`) can be given in the call to `CONAN3.fit_data`.
         
@@ -3055,7 +3132,8 @@ class mcmc_setup:
     """
     def __init__(self, n_chains=64, n_steps=2000, n_burn=500, n_live=300, n_cpus=2, 
                     sampler="emcee",emcee_move="stretch", dyn_dlogz=0.1,
-                    leastsq_for_basepar="n",apply_jitter="y", apply_LCjitter="y",
+                    leastsq_for_basepar="n",apply_RVjitter="y", apply_LCjitter="y",
+                    LCbasecoeff_lims = [-1,1], RVbasecoeff_lims = [-2,2],
                     verbose=True,  apply_CFs="y",remove_param_for_CNM="n", lssq_use_Lev_Marq="n",
                     GR_test="y", make_plots="n", leastsq="y", savefile="output_ex1.npy",
                     savemodel="n", adapt_base_stepsize="y"):

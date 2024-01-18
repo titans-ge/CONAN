@@ -162,12 +162,15 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV, _, phase = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6,7,8),unpack = True)  # reading in the rvcurve data
         srt    = np.argsort(phase)
 
-        fig,ax = plt.subplots(3,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
+        fig,ax = plt.subplots(3,1, figsize=(10,15),gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title('Fit for RV curve '+RVnames[j][:-4])
         ax[0].set_ylabel("RV [km/s]")
-        ax[0].errorbar(phase, y_rv, yerr=e_rv, fmt="o",capsize=2, label=RVnames[j])
-        ax[0].plot(phase[srt], full_mod[srt], "-r", label='Full Model fit')
+        ax[0].errorbar(tt, y_rv, yerr=e_rv, fmt="o",capsize=2, label=RVnames[j])
+        ax[0].plot(tt, full_mod, "-r", label='Full Model fit')
+        ax[0].plot(tt, base, "--g", label='Baseline')
+
         ax[0].set_ylabel("RV [km/s]")
+        ax[0].set_xlabel("Time")
         ax[0].legend()
 
         ax[1].errorbar(phase, det_RV, e_rv, fmt="o",capsize=2) 
@@ -179,7 +182,7 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         ax[2].set_xlabel("Orbital phase")
         ax[2].set_ylabel("O – C [km/s]")
 
-        plt.subplots_adjust(hspace=0.02,wspace=0.02)
+        plt.subplots_adjust(hspace=0.1)
         fig.savefig(outname, bbox_inches='tight')              
 
     #joint plot

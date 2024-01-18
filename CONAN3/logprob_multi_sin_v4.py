@@ -317,7 +317,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
             continue
             
 
-        bfstart = 1+7*npl+nddf+nocc*3+2*nfilt+nphot+nRV*2+ j*20  # index in params of the first baseline param of this light curve
+        bfstart = 1 +7*npl + nddf +nocc*3 +2*nfilt + nphot + nRV*2+ j*20  # index in params of the first baseline param of this light curve
         blind = np.asarray(list(range(bfstart,bfstart+20))) # the indices of the baseline params of this light curve
         basesin = np.zeros(20)
         
@@ -359,7 +359,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 out_data   = np.stack((t_in,f_in,err_in,trans_base,bfunc,mt0,det_LC,lc_result.spline),axis=1)
                 header     = ["time","flux","error","full_mod","base","transit","det_flux","spl_fit"]
                 header_fmt = "{:14s}\t"*len(header)
-                phases   = np.zeros((len(t_in),npl))
+                phases     = np.zeros((len(t_in),npl))
 
                 for n in range(npl):
                     phases[:,n] = np.modf(np.modf( (t_in-T0in[n])/perin[n])[0]+1)[0]

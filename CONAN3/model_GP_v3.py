@@ -271,7 +271,7 @@ class Transit_Model(Model):
         col4 = np.copy(col4_in)
         col6 = np.copy(col6_in)
         col7 = np.copy(col7_in)
-        ts   = tt-tt[0]
+        ts   = tt-np.median(tt)  #TODO change to median subtraction
 
         # MONIKA: added least square optimisation for baselines
         if (baseLSQ == 'y'):
@@ -317,7 +317,7 @@ def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
 
             splfunc = LSQUnivariateSpline(xs, ys, knots, k=useSpline.deg, ext="const")
             spl = splfunc(x)     #evaluate the spline at the original x values
-            # spl = spl/np.median(spl)  #center spline around 1 so as not to interfere with offset of baseline function
+
         if dim == 2:
             x1      = np.copy(DA[s_par[0]])
             x2      = np.copy(DA[s_par[1]])

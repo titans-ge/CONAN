@@ -143,6 +143,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     filters    = lc._filters
     lamdas     = lc._lamdas
     bases      = lc._bases
+    bases_init = lc._bases_init
     groups     = lc._groups
     useGPphot  = lc._useGPphot
 
@@ -369,6 +370,10 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     fit_sampler = DA_mc['sampler']               # Which sampler to use?   
     nlive       = DA_mc["n_live"]  
     dlogz       = DA_mc["dyn_dlogz"]    
+    jit_apply   = DA_mc['apply_RVjitter']       # apply rvjitter
+    jit_LCapply = DA_mc['apply_LCjitter']     # apply lcjitter
+    LCbase_lims = DA_mc['LCbasecoeff_lims']   # bounds of the LC baseline coefficients
+    RVbase_lims = DA_mc['RVbasecoeff_lims']   # bounds of the RV baseline coefficients
     grtest      = True if DA_mc['GR_test'] == 'y' else False  # GRtest done?
     plots       = True if DA_mc['make_plots'] == 'y' else False  # Make plots done
     leastsq     = True if DA_mc['leastsq'] == 'y' else False  # Do least-square?
@@ -379,8 +384,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     baseLSQ     = DA_mc['leastsq_for_basepar']   # do a leas-square minimization for the baseline (not jump parameters)
     lm          = True if DA_mc['lssq_use_Lev_Marq'] =='y' else False  # use Levenberg-Marquardt algorithm for minimizer?
     cf_apply    = DA_mc['apply_CFs']  # which CF to apply
-    jit_apply   = DA_mc['apply_jitter'] # apply jitter
-    jit_LCapply = DA_mc['apply_LCjitter'] # apply jitter
+
 
 
 
@@ -513,7 +517,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         if (jit_LCapply=='y'):
             #in ppm
             params      = np.concatenate((params,  [-13]), axis=0)    #20ppm
-            stepsize    = np.concatenate((stepsize,[1]), axis=0)
+            stepsize    = np.concatenate((stepsize,[0.1]), axis=0)
             pmin        = np.concatenate((pmin,    [-15]), axis=0)
             pmax        = np.concatenate((pmax,    [-4.]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
@@ -534,8 +538,8 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     for i in range(nRV):
         params      = np.concatenate((params,  [rv_dict["gammas"][i]]),   axis=0)
         stepsize    = np.concatenate((stepsize,[rv_dict["gam_steps"][i]]), axis=0)
-        pmin        = np.concatenate((pmin,    [-1000]), axis=0)
-        pmax        = np.concatenate((pmax,    [1000]),  axis=0)
+        pmin        = np.concatenate((pmin,    [rv_dict["bound_lo"][i]]), axis=0)
+        pmax        = np.concatenate((pmax,    [rv_dict["bound_hi"][i]]),  axis=0)
         prior       = np.concatenate((prior,   [rv_dict["gam_pri"][i]]),   axis=0)
         priorlow    = np.concatenate((priorlow,[rv_dict["gampriloa"][i]]), axis=0)
         priorup     = np.concatenate((priorup, [rv_dict["gamprihia"][i]]), axis=0)
@@ -543,8 +547,8 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
         
         if (jit_apply=='y'):
-            params      = np.concatenate((params,  [0.01]), axis=0)
-            stepsize    = np.concatenate((stepsize,[0.001]), axis=0)
+            params      = np.concatenate((params,  [0.001]), axis=0)
+            stepsize    = np.concatenate((stepsize,[0.0001]), axis=0)
             pmin        = np.concatenate((pmin,    [0.]), axis=0)
             pmax        = np.concatenate((pmax,    [100]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
@@ -623,7 +627,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         
         #baseline parameters
         # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
-        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[i])  # the baseline coefficients for this lightcurve; each is a 2D array
+        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[i],bases_init[i],LCbase_lims)  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot      = nbc_tot+nbc # add up the number of jumping baseline coeff
         njumpphot[i] = njumpphot[i]+nbc   # each LC has another jump pm
 
@@ -649,7 +653,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
                                             f"lc{i+1}_A5",f"lc{i+1}_B5",
                                             f"lc{i+1}_A6",f"lc{i+1}_B6",
                                             f"lc{i+1}_A7",f"lc{i+1}_B7",
-                                            f"lc{i+1}_sin_amp",f"lc{i+1}_sin_per",f"lc{i+1}_sin_off",
+                                            f"lc{i+1}_sin_amp",f"lc{i+1}_sin_P",f"lc{i+1}_sin_phi",
                                             f"lc{i+1}_ACNM",f"lc{i+1}_BCNM"
                                             ]))        
         # note currently we have the following parameters in these arrays:
@@ -778,10 +782,10 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         lind      = np.concatenate((lind,np.zeros(len(t),dtype=int)+i+nphot), axis=0)   # indices
         indices   = np.where(lind==i+nphot)
         indlist.append(indices)
-        Pin = sinPs[i]
+        Pin       = sinPs[i]
 
         #rv baseline
-        W_in,V_in,U_in,S_in,P_in,nbcRV = basecoeffRV(RVbases[i],Pin)  # the baseline coefficients for this lightcurve; each is a 2D array
+        W_in,V_in,U_in,S_in,P_in,nbcRV = basecoeffRV(RVbases[i],Pin,RVbase_lims)  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot = nbc_tot+nbcRV # add up the number of jumping baseline coeff
         abvar=np.concatenate(([W_in[1,:],V_in[1,:],U_in[1,:],S_in[1,:],P_in[1,:]]))
         abind=np.where(abvar!=0.)
@@ -1171,17 +1175,25 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
                 pickle.dump(burnin_chains_dict,open(out_folder+"/"+"burnin_chains_dict.pkl","wb"))  
                 print("burn-in chain written to disk")
                 matplotlib.use('Agg')
+
                 burn_result = load_result(out_folder)
                 try:
                     fig = burn_result.plot_burnin_chains()
                     fig.savefig(out_folder+"/"+"burnin_chains.png", bbox_inches="tight")
                     print(f"Burn-in chains plot saved as: {out_folder}/burnin_chains.png")
                 except: 
-                    print(f"full burn-in chains not plotted (number of parameters ({ndim}) exceeds 20. use result.plot_burnin_chains()")
-                    print(f"saving burn-in chain plot for the first 20 parameters")
-                    pl_pars = list(burn_result._par_names)[:20]
-                    fig = burn_result.plot_burnin_chains(pl_pars)
-                    fig.savefig(out_folder+"/"+"burnin_chains.png", bbox_inches="tight") 
+                    if ndim<=30:
+                        nplotpars = int(np.ceil(ndim/2))
+                        nplot     = 2
+                    else:
+                        nplotpars = 14
+                        nplot = int(np.ceil(ndim/14))
+
+                    for i in range(nplot):
+                        fit_pars = list(burn_result._par_names)[i*nplotpars:(i+1)*nplotpars]
+                        fig = burn_result.plot_burnin_chains(fit_pars)
+                        fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
+                    print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
 
                 matplotlib.use(__default_backend__)
             sampler.reset()
@@ -1215,9 +1227,10 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     else:    #dynesty sampling
         if not os.path.exists(f'{out_folder}/chains_dict.pkl'):
             if nlive < ndim **2:
-                print('WARNING: Number of dynesty live points is less than ndim**2. Increasing number of live points to 2*ndim')
+                print('WARNING: Number of dynesty live points is less than ndim**2. Increasing number of live points to min(ndim**2,1000)')
                 nlive = min(ndim**2, 1000)
             print('No of live points: ', nlive)
+            print('fitting parameters: ', pnames_all[jumping])
 
             sampler = dynesty.NestedSampler(logprob_multi, prior_transform, ndim, nlive=nlive,sample="rwalk",
                                     logl_args=(indparams),ptform_args=(prior_distr,jnames),pool=Pool(nproc), queue_size=nproc-2)
@@ -1286,7 +1299,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         fig.savefig(out_folder+"/corner.png", bbox_inches="tight")
     except: 
         if ndim<=30:
-            nplotpars = int(ndim/2)
+            nplotpars = int(np.ceil(ndim/2))
             nplot     = 2
         else:
             nplotpars = 14
