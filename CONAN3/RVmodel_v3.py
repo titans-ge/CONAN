@@ -9,8 +9,8 @@ from types import SimpleNamespace
 #plt.ion()
 
 def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None,RVerr=None,bis=None,fwhm=None,contra=None,
-              nfilt=None,baseLSQ=None,inmcmc=None,nddf=None,nocc=None,nRV=None,nphot=None,j=None,RVnames=None,bvarsRV=None,gammaind=None,
-              useSpline=None,npl=None,planet_only=False):
+                nfilt=None,baseLSQ=None,inmcmc=None,nddf=None,nocc=None,nRV=None,nphot=None,j=None,RVnames=None,bvarsRV=None,gammaind=None,
+                useSpline=None,npl=None,planet_only=False):
     """ 
     Model the radial velocity curve of planet(s). 
     T0, per, K_in, sesinw, secosw are given as lists of the same length (npl), each element corresponding to a planet.
@@ -135,8 +135,7 @@ def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None
         TA_rv = np.mod(TA_rv,2*np.pi)  # that's the true anomaly!
 
         # get the model RV at each time stamp
-        # gammaind = 8 + nddf + nocc+ nfilt*4
-        m_RV = K_in[n] * (np.cos(TA_rv + ome) + ecc * np.sin(ome)) #+ Gamma_in
+        m_RV = K_in[n] * (np.cos(TA_rv + ome) + ecc * np.sin(ome))
         model_components[f"pl_{n+1}"] = m_RV
         mod_RV += m_RV      #add RV of each planet to the total RV
 
@@ -148,7 +147,7 @@ def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None
     bfstartRV= 1+7*npl + nddf + nocc + nfilt*2 + nphot+ 2*nRV + nphot*20 +j*12  #the first index in the param array that refers to a baseline function
     incoeff = list(range(bfstartRV,bfstartRV+12))  # the indices for the coefficients for the base function        
 
-    ts = tt-np.mean(tt)
+    ts = tt-np.median(tt)
 
     if (baseLSQ == 'y'):
         #get the indices of the variable baseline parameters via bvar (0 for fixed, 1 for variable)
@@ -165,7 +164,7 @@ def get_RVmod(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None
 
     else:        
         coeff = np.copy(params[incoeff])   # the coefficients for the base function
-      
+    
     bfuncRV,spl_comp=basefuncRV(coeff, ts, bis, fwhm, contra,RVmes-mod_RV ,useSpline)
 
     mod_RVbl = mod_RV + bfuncRV

@@ -130,7 +130,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
     rvGPindex   = args[64]
     jumping_rvGP  = args[65]
     jumping_lcGP  = args[66]
-    rvGPstepsizes = args[67]
+    RVunit        = args[67]
     rv_pargps     = args[68]
     rv_gpkerns    = args[69]
     sameRVgp      = args[70]
@@ -436,7 +436,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
     # now do the RVs and add their probabilities to the model
     for j in range(nRV):
-        if verbose: print('\nRV',j+1, " ...\n")
+        if verbose: print('\nRV',j+1, " ...")
         t_in      = np.copy(t_arr[indlist[j+nphot][0]]) if t is None else t # time values of lightcurve j
         f_in      = np.copy(f_arr[indlist[j+nphot][0]]) # flux values of lightcurve j
         e_in      = np.copy(e_arr[indlist[j+nphot][0]]) # error values of lightcurve j
@@ -628,7 +628,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
             lnprob = -np.inf
         return lnprob
     else:      
-        return (mod, emod, T0in, perin, durin)
+        return (mod, emod, T0in, perin, durin if nphot>0 else 0)
 
 # def norm_prior(value,center,sigma):
 #     lpri = np.log( 1./(2. * np.pi * sigma**2)**0.5) - ((value-center)**2/(2. * sigma**2))

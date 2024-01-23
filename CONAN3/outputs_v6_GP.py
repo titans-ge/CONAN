@@ -9,7 +9,7 @@ from .credibleregion_ML import *
 
 
 def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
-                    nfilt, filnames, howstellar, extinpars, extins, extind_PDF,npl,out_folder):
+                    nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder):
     
 
     npoint,npara=posterior.shape
@@ -139,6 +139,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
             K_bp = bp[nijnames[0][indn]]
         if (len(inde) > 0):
             K_PDF = np.squeeze(extind_PDF[:,inde])
+        if RVunit == 'm/s': #convert to km/s
+            K_PDF = K_PDF/1000.
+            K_bp  = K_bp/1000.
 
         dur_PDF = rho_to_tdur(rho_PDF, b_PDF, RpRs_PDF, Period_PDF,
                                 e=esinw_PDF**2+ecosw_PDF**2, w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
@@ -507,38 +510,21 @@ def gr_print(jnames,GRvals, out_folder):
     of.close()
 
 
-def get_BIC_emcee(npar,ndat,chi2,out_folder):
+def get_AIC_BIC(npar,ndat,chi2,out_folder):
     
     BIC = chi2 + npar * np.log(ndat)
+    AIC = chi2 + npar * ndat *2. / (ndat - npar -1.)
+
     RCHI = chi2 /(ndat-npar)
     
-    outfile=out_folder+'/BIC.dat'
+    outfile=out_folder+'/AIC_BIC.dat'
     of=open(outfile,'w')
-    of.write('data points: ')
-    of.write('%10.0f \n' % (ndat))
-    of.write('free parameters: ')
-    of.write('%10.0f \n' % (npar))
-    of.write('BIC            reduced CHI2\n')
-    of.write('%10.3f %10.2f \n' % (BIC, RCHI))
+    of.write(f'{"data points:":20s} {ndat:10.0f} \n')
+    of.write(f'{"free parameters":20s} {npar:10.0f} \n')
+    of.write(f'{"AIC":10s} {"BIC":10s} {"reduced CHI2"}\n')
+    of.write(f'{AIC:10.3f} {BIC:10.3f} {RCHI:10.2f} \n')
     of.close()
-    
-    return BIC
-
-def get_AIC_emcee(npar,ndat,chi2,out_folder):
-    
-    AIC = chi2 + npar * ndat *2. / (ndat - npar -1.)
-    
-    outfile=out_folder+'/AIC.dat'
-    of=open(outfile,'w')
-    of.write('data points: ')
-    of.write('%10.0f \n' % (ndat))
-    of.write('free parameters: ')
-    of.write('%10.0f \n' % (npar))
-    of.write('AIC \n')
-    of.write('%10.3f \n' % (AIC))
-    of.close()
-    
-    return AIC
+    return
 
 
 def dyn_summary(res,out_folder):
@@ -598,7 +584,7 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] = ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] + np.pi
     ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)] = 2. * np.pi - ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)]
     ome_PDF[(esinw_PDF>0) & (ecosw_PDF<0)] = np.pi - ome_PDF[(esinw_PDF>0) & (ecosw_PDF<0)]
-       
+
     e0ind = np.where(ecc_PDF<1e-15)   # avoid NaNs for very small eccentricity
     ome_PDF[e0ind] = 0.               # by defining omeaga == 0
     
@@ -609,13 +595,11 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
 
 
     if (howstellar == 'Rrho'):
-        # rhoS_PDF = 3. * np.pi / ((Period_PDF*3600.*24.)**2 * cn.G) * aRs_PDF**3 
-        Ms_PDF = (4. * np.pi) / 3. * rhoS_PDF * (Rs_PDF * Rsolar)**3 / Msolar
+        Ms_PDF = rhoS_PDF * 4/3 * np.pi *  (Rs_PDF * Rsolar*100)**3 / (Msolar*1000)
         starstring = 'stellar Mass from R+rho'
-        
+
     elif (howstellar == 'Mrho'):
-        # rhoS_PDF = 3. * np.pi / ((Period_PDF*3600.*24.)**2 * cn.G) * aRs_PDF**3
-        Rs_PDF = ((3. * Ms_PDF * Msolar) / (4. * np.pi * rhoS_PDF))**(1./3.) / Rsolar
+        Rs_PDF = ((3. * Ms_PDF * Msolar*1000) / (4. * np.pi * rhoS_PDF))**(1./3.) / (Rsolar*100)
         starstring = 'stellar Radius from M+rho'
     
     # else:
@@ -626,21 +610,11 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     a_PDF = aRs_PDF * Rs_PDF * Rsolar / au
     Rsa_PDF = 1./aRs_PDF
 
-    rhoS_PDF = rhoS_PDF / rhoSolar   #solar units
+    rhoS_PDF = rhoS_PDF / (rhoSolar/1000)   #solar units
 
     ome_PDF = ome_PDF * 180. / np.pi
 
     Mp_PDF = (Period_PDF*3600.*24. / (2.*np.pi*cn.G))**(1./3.) * K_PDF*1000 * (Ms_PDF*Msolar)**(2./3.) * np.sqrt(1. - ecc_PDF**2) / Mjup
-    
-    # test = (1.+RpRs_PDF)**2 - efac2_PDF**2 * (1.-(np.sin(dur_PDF*np.pi/Period_PDF))**2)
-    
-    # if (np.min(test) > 0):    
-    #     aRs_PDF = np.sqrt(((1.+RpRs_PDF)**2 - efac2_PDF**2 * (1.-(np.sin(dur_PDF*np.pi/Period_PDF))**2))/(np.sin(dur_PDF*np.pi/Period_PDF))**2 * efac1_PDF)
-
-    # else:
-    #     aRs_PDF = ( (Period_PDF * secondsperday / (2. * np.pi))**2 * cn.G*(Ms_PDF * Msolar + Mp_PDF * Mjup) )**(1./3.) / (Rs_PDF * Rsolar)
-        
-
 
     MF_PDF = Period_PDF* secondsperday * (K_PDF*1000)**3 / (2. * np.pi * cn.G) / Msolar * (1. - ecc_PDF**2)**(3/2) # mass function in Solar mass
     #FWHM_PDF = Rsa_PDF * np.sqrt(1. - b_PDF**2)/np.pi
@@ -662,7 +636,6 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
         nfil = q1_PDF.shape
         pnames_LD = []
         LD_PDFs = []
-        #print(nfil[0])
         for i in range(nfil[0]):
             u1,u2 = convert_LD(q1_PDF[i], q2_PDF[i],conv="q2u")
             name1 = filnames[i]+'_u1'
@@ -672,8 +645,6 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
             LD_PDFs.append(u2)
     else:
         npo, nfil = q1_PDF.shape
-        u1_PDF = np.zeros((npo,nfil))
-        u2_PDF = np.zeros((npo,nfil))
         pnames_LD = []
         LD_PDFs = []
     

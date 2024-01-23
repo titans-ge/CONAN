@@ -303,6 +303,10 @@ def rescale0_1(x):
     """Rescale an array to the range [0,1]."""
     return ((x - np.min(x))/np.ptp(x) ) if np.all(min(x) != max(x)) else x
 
+def rescale_minus1_1(x):
+    """Rescale an array to the range [-1,1]."""
+    return ((x - np.min(x))/np.ptp(x) - 0.5)*2 if np.all(min(x) != max(x)) else x
+
 def convert_LD(coeff1, coeff2,conv="q2u"):
     """ 
     convert 2 parameter limb darkening coefficients between different parameterizations.
@@ -363,7 +367,7 @@ class supersampling:
         """
         self.supersample_factor = supersample_factor
         self.exp_time = exp_time
-        self.config   = f"x{exp_time*24*60:.2f}d{supersample_factor}" if exp_time !=0 else "None"
+        self.config   = f"x{exp_time*24*60}" if exp_time !=0 else "None"
 
     def supersample(self,time):
         assert isinstance(time, np.ndarray), f'time must be a numpy array and not {type(time)}'

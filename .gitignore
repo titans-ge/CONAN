@@ -191,3 +191,4 @@ cython_debug/
 #ignore folder
 docs/tutorial/
 
+example/

@@ -10,7 +10,6 @@ import time
 
 from occultquad import *
 from occultnl import *
-# from .basecoeff_v14_LM import *
 from .basecoeff_setup import *
 from .model_GP_v3 import *
 from .logprob_multi_sin_v4 import *
@@ -34,13 +33,13 @@ from .utils import gp_params_convert
 from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
 
-from ._classes import _raise, mcmc_setup, __default_backend__, load_result
+from ._classes import _raise, fit_setup, __default_backend__, load_result
 import matplotlib
 matplotlib.use(__default_backend__)
 
 import multiprocessing as mp 
 mp.set_start_method('fork')
-__all__ = ["fit_data"]
+__all__ = ["run_fit"]
 
 def prior_transform(u,prior_dst,prior_names):
     """  
@@ -64,24 +63,24 @@ def prior_transform(u,prior_dst,prior_names):
         x[i] = x[i]*1e6 if (prior_names[i].startswith('GPlc') and 'Amp' in prior_names[i]) else x[i]
     return x 
 
-def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", progress=True,rerun_result=False,
-                verbose=False, debug=False, save_burnin_chains=True, **kwargs):
+def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_folder="output", progress=True,
+            rerun_result=False, verbose=False, debug=False, save_burnin_chains=True, force_nlive=False, **kwargs):
     """
-    function to fit the data using the light-curve object lc, rv_object rv and mcmc setup object mcmc.
+    function to fit the data using the light-curve object lc_obj, rv_object rv_obj, and fit_setup object fit_obj.
 
     Parameters
     ----------
-    lc : lightcurve object;
+    lc_obj : lightcurve object;
         object containing lightcurve data and setup parameters. 
         see CONAN3.load_lightcurves() for more details.
 
-    rv : rv object
+    rv_obj : rv object
         object containing radial velocity data and setup parameters. 
         see CONAN3.load_rvs() for more details.
 
-    mcmc : mcmc_setup object;
-        object containing mcmc setup parameters. 
-        see CONAN3.mcmc_setup() for more details.
+    fit_obj : fit_setup object;
+        object containing fit setup parameters. 
+        see CONAN3.fit_setup() for more details.
 
     statistic : str;
         statistic to run on posteriors to obtain model parameters and create model output file ".._lcout.dat".
@@ -138,14 +137,14 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
 #============lc_obj=========================
     #from load_lightcurves()
-    fpath      = lc._fpath
-    names      = lc._names
-    filters    = lc._filters
-    lamdas     = lc._lamdas
-    bases      = lc._bases
-    bases_init = lc._bases_init
-    groups     = lc._groups
-    useGPphot  = lc._useGPphot
+    fpath      = lc_obj._fpath
+    names      = lc_obj._names
+    filters    = lc_obj._filters
+    lamdas     = lc_obj._lamdas
+    bases      = lc_obj._bases
+    bases_init = lc_obj._bases_init
+    groups     = lc_obj._groups
+    useGPphot  = lc_obj._useGPphot
 
     nphot      = len(names)                                                 # the number of photometry input files
     njumpphot  = np.zeros(nphot)                                            # the number of jumping parameters for each photometry input file
@@ -155,25 +154,26 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     nfilt      = len(filnames)                                              # the number of unique filters
     ngroup     = len(grnames)                                               # the number of unique groups
 
-    useSpline_lc  = lc._lcspline                                            # use spline to interpolate the light curve
-    input_lcs     = {} if lc is None else lc._input_lc
-    s_samp        = lc._ss
+    useSpline_lc  = lc_obj._lcspline                                            # use spline to interpolate the light curve
+    input_lcs     = {} if lc_obj is None else lc_obj._input_lc
+    s_samp        = lc_obj._ss
 
 #============rv_obj========================== 
     # from load_rvs()
-    if rv is not None and rv._names == []: rv = None   
-    RVnames  = [] if rv is None else rv._names
-    RVbases  = [] if rv is None else rv._RVbases
-    rv_fpath = [] if rv is None else rv._fpath
-    rv_dict  = {} if rv is None else rv._rvdict
-    sinPs    = [] if rv is None else rv_dict["sinPs"]
+    if rv_obj is not None and rv_obj._names == []: rv_obj = None   
+    RVnames  = [] if rv_obj is None else rv_obj._names
+    RVbases  = [] if rv_obj is None else rv_obj._RVbases
+    rv_fpath = [] if rv_obj is None else rv_obj._fpath
+    rv_dict  = {} if rv_obj is None else rv_obj._rvdict
+    sinPs    = [] if rv_obj is None else rv_dict["sinPs"]
     nRV      = len(RVnames)             # the number of RV input files
     njumpRV  = np.zeros(nRV)        # the number of jumping parameters for each RV input file
-    useGPrv  = ["n"]*nRV if rv is None else rv._useGPrv 
+    useGPrv  = ["n"]*nRV if rv_obj is None else rv_obj._useGPrv 
 
-    useSpline_rv  = [] if rv is None else rv._rvspline   
-    input_rvs     = {} if rv is None else rv._input_rv   
-
+    useSpline_rv  = [] if rv_obj is None else rv_obj._rvspline   
+    input_rvs     = {} if rv_obj is None else rv_obj._input_rv  
+    RVbases_init  = [] if rv_obj is None else rv_obj._RVbases_init
+    RVunit        = "kms" if rv_obj is None else rv_obj._RVunit
     extinpars= []               # set up array to contain the names of the externally input parameters
     
     for i in range(nRV):
@@ -182,21 +182,31 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
  
 #============transit and RV jump parameters===============
-    #from load_lightcurves.setup_transit_rv()
+    #from load_lightcurves.planet_parameters()
 
-    CP  = deepcopy(lc._config_par)    #load input transit and RV parameters from dict
-    npl = lc._nplanet
+    CP  = deepcopy(lc_obj._config_par)    #load input transit and RV parameters from dict
+    npl = lc_obj._nplanet
 
     # # rho_star (same for all planets)
     rho_star = CP[f"pl{1}"]["rho_star"]
-    if rho_star.step_size != 0.: njumpphot=njumpphot+1
-    if (rho_star.to_fit == 'n' and rho_star.prior == 'p'):   
-        extinpars.append('rho_star')
+    if nphot > 0:    # if there is photometry, then define rho_star: can be a jumping parameter
+        if rho_star.step_size != 0.: njumpphot=njumpphot+1
+        if (rho_star.to_fit == 'n' and rho_star.prior == 'p'):   
+            extinpars.append('rho_star')
+    else:
+        rho_star.to_fit == 'n'
+        rho_star.step_size = 0
         
     for n in range(1,npl+1): 
-        if rv is None: #remove k as a free parameter
+        if rv_obj is None: #remove k as a free parameter
             CP[f"pl{n}"]['K'].to_fit = "n"
             CP[f"pl{n}"]['K'].step_size = 0
+        if nphot == 0: #remove rprs and impact_para as a free parameter
+            CP[f"pl{n}"]['RpRs'].to_fit = "n"
+            CP[f"pl{n}"]['RpRs'].step_size = 0
+            CP[f"pl{n}"]['Impact_para'].to_fit = "n"
+            CP[f"pl{n}"]['Impact_para'].step_size = 0
+
 
         # # rprs   
         if CP[f"pl{n}"]['RpRs'].step_size != 0.: njumpphot=njumpphot+1                 # if step_size is 0, then rprs is not a jumping parameter
@@ -237,8 +247,8 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
             _raise(ValueError, 'cant externally input eccentricity at this time!')
             
         # #K
-        for key,val in CP[f"pl{n}"]["K"].__dict__.items(): #convert K to km/s
-            if isinstance(val, (float,int)): CP[f"pl{n}"]["K"].__dict__[key] /= 1000 
+        # for key,val in CP[f"pl{n}"]["K"].__dict__.items(): #convert K to km/s
+        #     if isinstance(val, (float,int)): CP[f"pl{n}"]["K"].__dict__[key] /= 1000 
         if CP[f"pl{n}"]['K'].step_size != 0.: njumpRV=njumpRV+1
         if (CP[f"pl{n}"]['K'].to_fit == 'n' and CP[f"pl{n}"]['K'].prior == 'p'):
             extinpars.append('K')
@@ -256,12 +266,12 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     
 #============ddfs ==========================
     #from load_lighcurves.transit_depth_variations()
-    drprs_op = lc._ddfs.drprs_op    # drprs options --> [0., step, bounds_lo, bounds_hi, 0., width_lo, width_hi]
-    divwhite = lc._ddfs.divwhite    # do we do a divide-white?
-    ddfYN    = lc._ddfs.ddfYN       # do we do a depth-dependent fit?
+    drprs_op = lc_obj._ddfs.drprs_op    # drprs options --> [0., step, bounds_lo, bounds_hi, 0., width_lo, width_hi]
+    divwhite = lc_obj._ddfs.divwhite    # do we do a divide-white?
+    ddfYN    = lc_obj._ddfs.ddfYN       # do we do a depth-dependent fit?
                 
-    grprs  = lc._ddfs.depth_per_group   # the group rprs values
-    egrprs = lc._ddfs.depth_err_per_group  # the uncertainties of the group rprs values
+    grprs  = lc_obj._ddfs.depth_per_group   # the group rprs values
+    egrprs = lc_obj._ddfs.depth_err_per_group  # the uncertainties of the group rprs values
     dwfiles = [f"dw_00{n}.dat" for n in grnames]   
 
     dwCNMarr=np.array([])      # initializing array with all the dwCNM values
@@ -269,7 +279,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     dwind=np.array([])
     if (divwhite=='y'):           # do we do a divide-white?    
         for i in range(ngroup):   # read fixed dwCNMs for each group
-            tdwCNM, dwCNM = np.loadtxt(lc._fpath + dwfiles[i], usecols=(0,1), unpack = True)
+            tdwCNM, dwCNM = np.loadtxt(lc_obj._fpath + dwfiles[i], usecols=(0,1), unpack = True)
             dwCNMarr      = np.concatenate((dwCNMarr,dwCNM), axis=0)
             dwind         = np.concatenate((dwind,np.zeros(len(dwCNM),dtype=int)+i), axis=0)
             indices       = np.where(dwind==i)
@@ -279,9 +289,9 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     #============phasecurve setup=============
     #from load_lightcurves.setup_phasecurve()
 
-    DA_occ = lc._PC_dict["D_occ"]
-    DA_Apc = lc._PC_dict["A_pc"]
-    DA_off = lc._PC_dict["ph_off"]
+    DA_occ = lc_obj._PC_dict["D_occ"]
+    DA_Apc = lc_obj._PC_dict["A_pc"]
+    DA_off = lc_obj._PC_dict["ph_off"]
 
     nocc     = len(filnames) #len(DA_occ["filters_occ"])
     occ_in   = np.zeros((nocc,7))
@@ -289,7 +299,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     phoff_in = np.zeros((nocc,7))
 
     for i, f in enumerate(filnames):
-        k = np.where(np.array(lc._filters)== f)     #  get indices where the filter name is the same as the one in the input file
+        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
 
         occ_in[i,:] = [DA_occ[f].start_value, DA_occ[f].step_size, DA_occ[f].bounds_lo, DA_occ[f].bounds_hi,
                         DA_occ[f].prior_mean, DA_occ[f].prior_width_lo, DA_occ[f].prior_width_hi ]           
@@ -308,14 +318,14 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
 #============limb darkening===============
     #from load_lightcurves.limb_darkening()
-    DA_ld = lc._ld_dict
+    DA_ld = lc_obj._ld_dict
 
     q1_in=np.zeros((nfilt,7))
     q2_in=np.zeros((nfilt,7))
 
     for i in range(nfilt):
         j=np.where(filnames == filnames[i])              # make sure the sequence in this array is the same as in the "filnames" array
-        k=np.where(np.array(lc._filters) == filnames[i])
+        k=np.where(np.array(lc_obj._filters) == filnames[i])
 
         q1_in[j,:] = [DA_ld["q1"][i], DA_ld["step1"][i],DA_ld["bound_lo1"][i],DA_ld["bound_hi1"][i],DA_ld["q1"][i],DA_ld["sig_lo1"][i],DA_ld["sig_hi1"][i]]
         q1_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else q1_in[j,5])   #sig_lo
@@ -331,35 +341,19 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
             njumpphot[k]=njumpphot[k]+1
 
 #============contamination factors=======================
-    #from load_lightcurves.contamination
-    DA_cont = lc._contfact_dict
+    #from load_lightcurves.contamination()
+    DA_cont = lc_obj._contfact_dict
     cont=np.zeros((nfilt,2))
 
     for i in range(nfilt):
         j = np.where(filnames == filnames[i])               # make sure the sequence in this array is the same as in the "filnames" array
         if verbose: print(j)
-        cont[j,:]= [DA_cont["cont_ratio"][i], DA_cont["err"][i]]
+        cont[j,:]= [DA_cont["cont_ratio"][i][0], DA_cont["cont_ratio"][i][1]]
 
-
-#========= stellar properties==========================
-    #from setup_fit.stellar_parameters()
-    DA_stlr = lc._stellar_dict
-    
-    Rs_in  = DA_stlr["R_st"][0]
-    sRs_lo = DA_stlr["R_st"][1]
-    sRs_hi = DA_stlr["R_st"][2]
-
-    Ms_in  = DA_stlr["M_st"][0]
-    sMs_lo = DA_stlr["M_st"][1]
-    sMs_hi = DA_stlr["M_st"][2]
-
-    howstellar = DA_stlr["par_input"]
-
-
-#=============mcmc setup===============
-    #from setup_fit.mcmc()
-    if mcmc is None: mcmc = mcmc_setup()
-    DA_mc =  mcmc._mcmc_dict
+#=============sampling setup===============
+    #from setup_fit()
+    if fit_obj is None: fit_obj = fit_setup()
+    DA_mc =  fit_obj._fit_dict
 
     nsamples    = int(DA_mc['n_steps']*DA_mc['n_chains'])   # total number of integrations
     nchains     = int(DA_mc['n_chains'])  #  number of chains
@@ -387,7 +381,16 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
 
 
+#========= stellar properties==========================
+    #from setup_fit.stellar_parameters()
+    DA_stlr = fit_obj._stellar_dict
+    
+    Rs_in  = DA_stlr["R_st"][0]
+    sRs_lo = sRs_hi = DA_stlr["R_st"][1]
+    Ms_in  = DA_stlr["M_st"][0]
+    sMs_lo = sMs_hi = DA_stlr["M_st"][1]
 
+    howstellar = DA_stlr["par_input"]
 
     #********************************************************************
     #============Start computations as in original CONANGP===============
@@ -584,8 +587,8 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     pargps      = []  # list to hold independent variables of GP for each lc
     gpkerns     = []  # list to hold the kernel for each lc
 
-    GPdict   = {} if lc is None else lc._GP_dict
-    sameLCgp = False if lc is None else lc._sameLCgp
+    GPdict   = {} if lc_obj is None else lc_obj._GP_dict
+    sameLCgp = False if lc_obj is None else lc_obj._sameLCgp
     
     #possible kernels
     george_kernels = dict(  expsq = george.kernels.ExpSquaredKernel, 
@@ -646,14 +649,13 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         prior     = np.concatenate((prior,    np.zeros(20)))
         priorlow  = np.concatenate((priorlow, np.zeros(20)))
         priorup   = np.concatenate((priorup,  np.zeros(20)))
-        # pnames    = np.concatenate((pnames, [names[i]+'_A0', names[i]+'_A1', names[i]+'_A2', names[i]+'_A3', names[i]+'_A4', names[i]+'_B1', names[i]+'_B2', names[i]+'_C11', names[i]+'_C12', names[i]+'_C21', names[i]+'_C22', names[i]+'_D1', names[i]+'_D2', names[i]+'_E1', names[i]+'_E2', names[i]+'_G1', names[i]+'_G2', names[i]+'_G3', names[i]+'_H1', names[i]+'_H2']))
         pnames   = np.concatenate((pnames, [f"lc{i+1}_off",f"lc{i+1}_A0",f"lc{i+1}_B0",f"lc{i+1}_C0",f"lc{i+1}_D0",
                                             f"lc{i+1}_A3",f"lc{i+1}_B3",
                                             f"lc{i+1}_A4",f"lc{i+1}_B4",
                                             f"lc{i+1}_A5",f"lc{i+1}_B5",
                                             f"lc{i+1}_A6",f"lc{i+1}_B6",
                                             f"lc{i+1}_A7",f"lc{i+1}_B7",
-                                            f"lc{i+1}_sin_amp",f"lc{i+1}_sin_P",f"lc{i+1}_sin_phi",
+                                            f"lc{i+1}_sin_amp",f"lc{i+1}_sin_freq",f"lc{i+1}_sin_phi",
                                             f"lc{i+1}_ACNM",f"lc{i+1}_BCNM"
                                             ]))        
         # note currently we have the following parameters in these arrays:
@@ -755,21 +757,21 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
             pargps.append(gp_x) 
 
     # =================RADIAL VELOCITY =========================================
-    if rv is not None: print('Setting up RV arrays ...')
+    if rv_obj is not None: print('Setting up RV arrays ...')
     
     rvGPobjects,rvGPnames,rv_pargps,rv_gpkerns = [],[],[],[]
     rvGPparams,rvGPstepsizes,rvGPindex,rvGPprior,rvGPpriwid,rvGPlimup,rvGPlimlo = [],[],[],[],[],[],[]
-    rvGPdict = {} if rv is None else rv._rvGP_dict
-    sameRVgp = False if rv is None else rv._sameRVgp                                           # use spline to interpolate the light curve
+    rvGPdict = {} if rv_obj is None else rv_obj._rvGP_dict
+    sameRVgp = False if rv_obj is None else rv_obj._sameRVgp                                           # use spline to interpolate the light curve
 
 
     for i in range(nRV):
         # t, rv, err, bis, fwhm, contrast = np.loadtxt(rv_fpath+RVnames[i], usecols=(0,1,2,3,4,5), unpack = True)  # reading in the data
         thisRVdata = input_rvs[RVnames[i]]
-        t, rv, err, bis, fwhm, contrast = thisRVdata.values()
+        t, rv_obj, err, bis, fwhm, contrast = thisRVdata.values()
 
         t_arr    = np.concatenate((t_arr,t), axis=0)
-        f_arr    = np.concatenate((f_arr,rv), axis=0)    # ! add the RVs to the "flux" array !
+        f_arr    = np.concatenate((f_arr,rv_obj), axis=0)    # ! add the RVs to the "flux" array !
         e_arr    = np.concatenate((e_arr,err), axis=0)   # ! add the RV errors to the "earr" array !
         col3_arr = np.concatenate((col3_arr,np.zeros(len(t),dtype=int)), axis=0)  # xshift array: filled with 0s
         col4_arr = np.concatenate((col4_arr,np.zeros(len(t),dtype=int)), axis=0)  # yshift array: filled with 0s
@@ -784,29 +786,29 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
         indlist.append(indices)
         Pin       = sinPs[i]
 
-        #rv baseline
-        W_in,V_in,U_in,S_in,P_in,nbcRV = basecoeffRV(RVbases[i],Pin,RVbase_lims)  # the baseline coefficients for this lightcurve; each is a 2D array
+        #rv baseline 
+        dcol0RV, dcol3RV, dcol4RV, dcol5RV,dsinRV,nbcRV = basecoeffRV(RVbases[i],Pin,RVbases_init[i],RVbase_lims)  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot = nbc_tot+nbcRV # add up the number of jumping baseline coeff
-        abvar=np.concatenate(([W_in[1,:],V_in[1,:],U_in[1,:],S_in[1,:],P_in[1,:]]))
+        abvar=np.concatenate(([dcol0RV[1,:],dcol3RV[1,:],dcol4RV[1,:],dcol5RV[1,:],dsinRV[1,:]]))
         abind=np.where(abvar!=0.)
         njumpRV[i] = njumpRV[i]+len(abind)
     
         if (baseLSQ == "y"):
             bvarsRV.append(abind)
-            W_in[1,:]=V_in[1,:]=U_in[1,:]=S_in[1,:]=P_in[1,:]=0        # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
+            dcol0RV[1,:]=dcol3RV[1,:]=dcol4RV[1,:]=dcol5RV[1,:]=dsinRV[1,:]=0        # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
         # append these to the respective mcmc input arrays
-        params    = np.concatenate((params,   W_in[0,:],V_in[0,:],U_in[0,:],S_in[0,:],P_in[0,:]))
-        stepsize  = np.concatenate((stepsize, W_in[1,:],V_in[1,:],U_in[1,:],S_in[1,:],P_in[1,:]))
-        pmin      = np.concatenate((pmin,     W_in[2,:],V_in[2,:],U_in[2,:],S_in[2,:],P_in[2,:]))
-        pmax      = np.concatenate((pmax,     W_in[3,:],V_in[3,:],U_in[3,:],S_in[3,:],P_in[3,:]))
-        prior     = np.concatenate((prior,    np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
-        priorlow  = np.concatenate((priorlow, np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
-        priorup   = np.concatenate((priorup,  np.zeros(len(W_in[0,:])+len(V_in[0,:])+len(U_in[0,:])+len(S_in[0,:])+len(P_in[0,:]))))
+        params    = np.concatenate((params,   dcol0RV[0,:],dcol3RV[0,:],dcol4RV[0,:],dcol5RV[0,:],dsinRV[0,:]))
+        stepsize  = np.concatenate((stepsize, dcol0RV[1,:],dcol3RV[1,:],dcol4RV[1,:],dcol5RV[1,:],dsinRV[1,:]))
+        pmin      = np.concatenate((pmin,     dcol0RV[2,:],dcol3RV[2,:],dcol4RV[2,:],dcol5RV[2,:],dsinRV[2,:]))
+        pmax      = np.concatenate((pmax,     dcol0RV[3,:],dcol3RV[3,:],dcol4RV[3,:],dcol5RV[3,:],dsinRV[3,:]))
+        prior     = np.concatenate((prior,    np.zeros(12)))
+        priorlow  = np.concatenate((priorlow, np.zeros(12)))
+        priorup   = np.concatenate((priorup,  np.zeros(12)))
         pnames   = np.concatenate((pnames, [f"rv{i+1}_A0",f"rv{i+1}_B0",
                                             f"rv{i+1}_A3",f"rv{i+1}_B3",
                                             f"rv{i+1}_A4",f"rv{i+1}_B4",
                                             f"rv{i+1}_A5",f"rv{i+1}_B5",
-                                            f"rv{i+1}_sin_amp",f"rv{i+1}_sin_per",f"rv{i+1}_sin_off",f"rv{i+1}_sin_off2"]))            
+                                            f"rv{i+1}_sin_amp",f"rv{i+1}_sin_freq",f"rv{i+1}_sin_phi",f"rv{i+1}_sin_phi2"]))            
 
         # calculate the weights for the lightcurves to be used for the CNM calculation later: do this in a function!
         #ewarr=grweights(earr,indlist,grnames,groups,ngroup)
@@ -1118,7 +1120,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
                 cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
                 pindices,jumping,pnames_all[jumping],prior_distr,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
                 jumping_noGP,gpkerns,jit_apply,jumping_GP,GPstepsizes,sameLCgp,npl,useSpline_lc,useSpline_rv,s_samp,
-                rvGPobjects,rvGPparams,rvGPindex,jumping_rvGP, jumping_lcGP,rvGPstepsizes,rv_pargps,rv_gpkerns,sameRVgp,fit_sampler]
+                rvGPobjects,rvGPparams,rvGPindex,jumping_rvGP, jumping_lcGP,RVunit,rv_pargps,rv_gpkerns,sameRVgp,fit_sampler]
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
 
     debug_t1 = time.time()
@@ -1126,7 +1128,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',initial,T0_init,per_init,Dur_init)
+    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,T0_init,per_init,Dur_init)
     if debug: print(f'finished mcmc_plots, took {(time.time() - debug_t2)} secs')
 
 
@@ -1226,9 +1228,11 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
     else:    #dynesty sampling
         if not os.path.exists(f'{out_folder}/chains_dict.pkl'):
-            if nlive < ndim **2:
-                print('WARNING: Number of dynesty live points is less than ndim**2. Increasing number of live points to min(ndim**2,1000)')
-                nlive = min(ndim**2, 1000)
+            if not force_nlive:   # modify nlive based on the number of dimensions
+                if nlive < ndim * (ndim + 1) // 2:
+                    print('WARNING: Number of dynesty live points is less than ndim*(ndim+1)//2. Increasing number of live points to min(ndim*(ndim+1)//2, 1000)')
+                    nlive = min(ndim * (ndim + 1) // 2, 1000)
+            
             print('No of live points: ', nlive)
             print('fitting parameters: ', pnames_all[jumping])
 
@@ -1327,7 +1331,7 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
     bpfull[[ijnames][0]] = bp
 
     medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
-                                    nfilt, filnames, howstellar, extinpars, extins, extind_PDF,npl,out_folder)
+                                    nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
 
     npar=len(jnames)
     if (baseLSQ == "y"):
@@ -1353,36 +1357,34 @@ def fit_data(lc, rv=None, mcmc=None, statistic = "median", out_folder="output", 
 
     #median
     mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],*indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, 
-                names, RVnames, out_folder+'/med_',medp,T0_post,p_post,Dur_post)
+    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,T0_post,p_post,Dur_post)
 
     #max_posterior
     mval2, merr2, T0_post, p_post, Dur_post = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
-    mcmc_plots(mval2,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, 
-                names, RVnames, out_folder+'/max_',maxp, T0_post,p_post,Dur_post)
+    mcmc_plots(mval2,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit, T0_post,p_post,Dur_post)
 
 
     maxresiduals = f_arr - mval2 if statistic != "median" else f_arr - mval  #Akin allow statistics to be based on median of posterior
     chisq = np.sum(maxresiduals**2/e_arr**2)
 
     ndat = len(t_arr)
-    bic=get_BIC_emcee(npar,ndat,chisq,out_folder)
-    aic=get_AIC_emcee(npar,ndat,chisq,out_folder)
+    get_AIC_BIC(npar,ndat,chisq,out_folder)
 
     rarr=f_arr-mval2  if statistic != "median" else f_arr - mval  # the full residuals
-    bw, br, brt, cf, cfn = corfac(rarr, t_arr, e_arr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
-    of=open(out_folder+"/CF.dat",'w')
-    for i in range(nphot):   #adapt the error values
-    # print(earr[indlist[i][0]])
-        of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
-        if (cf_apply == 'cf'):
-            e_arr[indlist[i][0]] = np.multiply(e_arr[indlist[i][0]],cf[i])
-            if verbose: print((e_arr[indlist[i][0]]))        
-        if (cf_apply == 'rchisq'):
-            e_arr[indlist[i][0]] = np.sqrt((e_arr[indlist[i][0]])**2 + (cfn[i])**2)
-            if verbose: print((e_arr[indlist[i][0]]))
 
-    of.close()
+    if nphot > 0:
+        bw, br, brt, cf, cfn = corfac(rarr, t_arr, e_arr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
+        of=open(out_folder+"/CF.dat",'w')
+        for i in range(nphot):   #adapt the error values
+        # print(earr[indlist[i][0]])
+            of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
+            if (cf_apply == 'cf'):
+                e_arr[indlist[i][0]] = np.multiply(e_arr[indlist[i][0]],cf[i])
+                if verbose: print((e_arr[indlist[i][0]]))        
+            if (cf_apply == 'rchisq'):
+                e_arr[indlist[i][0]] = np.sqrt((e_arr[indlist[i][0]])**2 + (cfn[i])**2)
+                if verbose: print((e_arr[indlist[i][0]]))
+        of.close()
 
     result = load_result(out_folder)
     # result.T0   = maxp[np.where(pnames_all=='T_0')]      if statistic != "median" else medp[np.where(pnames_all=='T_0')]

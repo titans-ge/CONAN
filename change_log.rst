@@ -48,7 +48,7 @@
 
 22-07-2022: version 3.0.3
 ~~~~~~~~~~~
-* Modified automatic steps assignment in setup_transit_rvs() function
+* Modified automatic steps assignment in planet_parameterss() function
 * allow fitting single LDC while keeping the other fixed
 * correction in celerite fitting
 * corrected setup_occultation() which erroneously showed fit="y" when not fitting a lc for occultation

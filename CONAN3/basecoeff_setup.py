@@ -122,7 +122,7 @@ def basecoeff(ibase,spline,init=None,lims=None):
     return offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dsin, dCNM, nbc
         
 
-def basecoeffRV(ibaseRV,Pin,lims=None):
+def basecoeffRV(ibaseRV,Pin,init=None,lims=None):
 
     nbcRV = 0
     
@@ -133,59 +133,110 @@ def basecoeffRV(ibaseRV,Pin,lims=None):
     #       S coeff => contrast:  S[0]*cont + S[1]*cont^2
     #       P coeff => sinus:     P[0]*np.sin(P[1]*ts+P[2])
    
-    # W coeff => time:  W[0]*t + W[1]*t^2 
-    
-    W_in=np.zeros((4,2), dtype=float)
-    if ibaseRV[0] > 0:
-        W_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order W_in
+
+    # dcol0 coeff:   A0*dcol0 + B0*dcol0^2
+    dcol0=np.zeros((4,2), dtype=float)
+    if ibaseRV[0] > 0:  #A0
+        dcol0[:,0]=[init["A0"],0.001,lims[0],lims[1]] 
         nbcRV = nbcRV+1
         
-    if ibaseRV[0] > 1:
-        W_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order W_in
-        nbcRV = nbcRV+1
-    
-    # V coeff => bisector : V[0]*bis + B[1]*bis^2 
-    V_in=np.zeros((4,2), dtype=float)
-    
-    if ibaseRV[1] > 0:
-        V_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order V_in
-        nbcRV = nbcRV+1
-        
-    if ibaseRV[1] > 1:
-        V_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order V_in
-        nbcRV = nbcRV+1
-     
-    #  U coeff => fwhm:     U[0]*fwhm + U[1]*fwhm^2 
-    U_in=np.zeros((4,2), dtype=float)
-    
-    if ibaseRV[2] > 0:
-        U_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order U_in
-        nbcRV = nbcRV+1
-        
-    if ibaseRV[2] > 1:
-        U_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order U_in 
-        nbcRV = nbcRV+1
-    
-    # S coeff => contrast:  S[0]*cont + S[1]*cont^2
-    S_in=np.zeros((4,2), dtype=float)
-    if ibaseRV[3] > 0:
-        S_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order S_in
-        nbcRV = nbcRV+1
-        
-    if ibaseRV[3] > 1:
-        S_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order S_in
+    if ibaseRV[0] > 1: #B3
+        dcol0[:,1]=[init["B0"],0.001,lims[0],lims[1]]  
         nbcRV = nbcRV+1
 
-    # P coeff => sin:   P[0]*np.sin(P[1]*ts+P[2])
-    P_in=np.zeros((4,4), dtype=float)
-    if ibaseRV[4] > 0:
-        P_in[:,0]=[0.01,0.001,0,1]  # set the starting value and limits of the sinus amplitude
-        P_in[:,1]=[1,0.,0.1,100]  # set the starting value and limits of the sinus frequency
-        P_in[:,2]=[np.pi,np.pi/4.,0,2.*np.pi]  # set the starting value and limits of the sinus offset (between 0 min and 2pi)
-        P_in[:,3]=[0.0,0.,0,1]  # set the starting value and limits of the cosine amplitude
+    # dcol3 coeff:   A3*dcol3 + B3*dcol3^2
+    dcol3=np.zeros((4,2), dtype=float)
+    if ibaseRV[1] > 0:  #A3
+        dcol3[:,0]=[init["A3"],0.001,lims[0],lims[1]] 
+        nbcRV = nbcRV+1
+        
+    if ibaseRV[1] > 1: #B3
+        dcol3[:,1]=[init["B3"],0.001,lims[0],lims[1]]  
+        nbcRV = nbcRV+1
+
+    # dcol4 coeff:   A4*dcol4 + B4*dcol4^2
+    dcol4=np.zeros((4,2), dtype=float)
+    if ibaseRV[2] > 0:  #A4
+        dcol4[:,0]=[init["A4"],0.001,lims[0],lims[1]]
+        nbcRV = nbcRV+1
+
+    if ibaseRV[2] > 1: #B4
+        dcol4[:,1]=[init["B4"],0.001,lims[0],lims[1]]
+        nbcRV = nbcRV+1
+
+    # dcol5 coeff:   A5*dcol5 + B5*dcol5^2
+    dcol5=np.zeros((4,2), dtype=float)
+    if ibaseRV[3] > 0: #A5
+        dcol5[:,0]=[init["A5"],0.001,lims[0],lims[1]]
+        nbcRV = nbcRV+1
+
+    if ibaseRV[3] > 1: #B5
+        dcol5[:,1]=[init["B5"],0.001,lims[0],lims[1]]
+        nbcRV = nbcRV+1
+
+    # dsin  coeff:   Amp*sin(2pi(dcol0-phi)/P) -x-> Amp*sin(freq*dcol0+phi)
+    dsin=np.zeros((4,4), dtype=float)
+    if ibaseRV[4] > 0: 
+        dsin[:,0]=[init["amp"],0.001,0,1]
+        dsin[:,1]=[init["freq"],0,0.1,100]
+        dsin[:,2]=[init["phi"],0.001,0,1]
+        dsin[:,3]=[init["phi2"],0.,0,1]
         nbcRV = nbcRV+4
 
+    return dcol0, dcol3, dcol4, dcol5, dsin, nbcRV
+
+    # # W coeff => time:  W[0]*t + W[1]*t^2 
+    # W_in=np.zeros((4,2), dtype=float)
+    # if ibaseRV[0] > 0:
+    #     W_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order W_in
+    #     nbcRV = nbcRV+1
+        
+    # if ibaseRV[0] > 1:
+    #     W_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order W_in
+    #     nbcRV = nbcRV+1
+    
+    # # V coeff => bisector : V[0]*bis + B[1]*bis^2 
+    # V_in=np.zeros((4,2), dtype=float)
+    
+    # if ibaseRV[1] > 0:
+    #     V_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order V_in
+    #     nbcRV = nbcRV+1
+        
+    # if ibaseRV[1] > 1:
+    #     V_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order V_in
+    #     nbcRV = nbcRV+1
+     
+    # #  U coeff => fwhm:     U[0]*fwhm + U[1]*fwhm^2 
+    # U_in=np.zeros((4,2), dtype=float)
+    
+    # if ibaseRV[2] > 0:
+    #     U_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order U_in
+    #     nbcRV = nbcRV+1
+        
+    # if ibaseRV[2] > 1:
+    #     U_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order U_in 
+    #     nbcRV = nbcRV+1
+    
+    # # S coeff => contrast:  S[0]*cont + S[1]*cont^2
+    # S_in=np.zeros((4,2), dtype=float)
+    # if ibaseRV[3] > 0:
+    #     S_in[:,0]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the first-order S_in
+    #     nbcRV = nbcRV+1
+        
+    # if ibaseRV[3] > 1:
+    #     S_in[:,1]=[0.,0.001,lims[0],lims[1]]  # set the starting value and limits of the second-order S_in
+    #     nbcRV = nbcRV+1
+
+    # P coeff => sin:   P[0]*np.sin(P[1]*ts+P[2])
+    # P_in=np.zeros((4,4), dtype=float)
+    # if ibaseRV[4] > 0:
+    #     P_in[:,0]=[0.01,0.001,0,1]  # set the starting value and limits of the sinus amplitude
+    #     P_in[:,1]=[1,0.,0.1,100]  # set the starting value and limits of the sinus frequency
+    #     P_in[:,2]=[np.pi,np.pi/4.,0,2.*np.pi]  # set the starting value and limits of the sinus offset (between 0 min and 2pi)
+    #     P_in[:,3]=[0.0,0.,0,1]  # set the starting value and limits of the cosine amplitude
+    #     nbcRV = nbcRV+4
+
                    
-    return W_in, V_in, U_in, S_in, P_in, nbcRV
+    # return W_in, V_in, U_in, S_in, P_in, nbcRV
         
 

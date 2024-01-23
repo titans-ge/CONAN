@@ -94,7 +94,7 @@ def corfac(rarr, tarr, earr, indlist, nphot, njumpphot):
                 bsig=np.nanstd(res[(tt>binlims[k]) & (tt<binlims[k+1])])
                 beme=np.nanmean(err[(tt>binlims[k]) & (tt<binlims[k+1])]) # NOTE: either this or err2, i.e. the red-noise adapted errors
                 bws2[k]=bsig/beme
-         
+        
             bws[ll]=np.nanmean(bws2)
             
         bw[j]=np.nanmean(bws)
@@ -114,7 +114,7 @@ def corfac(rarr, tarr, earr, indlist, nphot, njumpphot):
             pjit, dump = scipy.optimize.leastsq(redchisqmin, pjit, args=(nfree, res, err))
             pjit = np.abs(pjit)
             cfn = np.append(cfn,pjit)
-         
+        
     return bw, br, brt, cf, cfn
 
 
