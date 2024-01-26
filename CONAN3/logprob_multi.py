@@ -1,24 +1,10 @@
-
-import george
-import sys
 import numpy as np
 import time
-
-# from george.modeling import Model
-# from george import kernels
-# from .gpnew import *
-from .model_GP_v3 import *
-from celerite.modeling import Model 
-from celerite import terms
-import celerite
-from CONAN3.celeritenew import *
+from .models import *
 from types import SimpleNamespace
 from .utils import rho_to_tdur, gp_params_convert
-from scipy.stats import norm, uniform, lognorm, loguniform
 import matplotlib
 from ._classes import __default_backend__
-
-from .RVmodel_v3 import *
 
 
 def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,get_model=False,out_folder=""):
@@ -61,7 +47,6 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
     """
     
-    # print(f"t={t}")
     # distribute out all the input arguments
     t_arr       = args[0]
     f_arr       = args[1]
@@ -166,7 +151,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
     # restrict the parameters to those of the light curve
     for j in range(nphot):
         if inmcmc == 'n':
-            if verbose: print('\nLightcurve ',j+1)
+            if verbose: print(f'LC{j+1}', end=" ...")
 
         t_in      = np.copy(t_arr[indlist[j][0]]) if t is None else t # time values of lightcurve j
         f_in      = np.copy(f_arr[indlist[j][0]]) # flux values of lightcurve j
@@ -371,7 +356,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 out_data = np.hstack((out_data,phases))
                 if make_outfile:
                     outfile=out_folder+"/"+name[:-4]+'_lcout.dat' 
-                    if verbose: print(f"Writing output without gp to file: {outfile}")
+                    if verbose: print(f"Writing LC output to file: {outfile}")
                     np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
         
         elif useGPphot[j] in ['y','ce']: 
@@ -403,8 +388,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
             
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
-                if verbose: 
-                    print("Using George GP") if useGPphot[j]=='y' else print("Using Celerite GP")
+                which_GP = "George" if useGPphot[j]=='y' else "Celerite"
 
                 bfunc_gp= gp.predict(f_in/trans_base, t=pargp, return_cov=False, return_var=False) #gp_fit to residual
                 pred = bfunc_gp*trans_base    #gp * transit*baseline(w/wo spl)
@@ -430,13 +414,13 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 out_data = np.hstack((out_data,phases))
                 if make_outfile:
                     outfile=out_folder+"/"+name[:-4]+'_lcout.dat'
-                    if verbose: print(f"Writing output with gp to file: {outfile}")
+                    if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
                     np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
 
 
     # now do the RVs and add their probabilities to the model
     for j in range(nRV):
-        if verbose: print('\nRV',j+1, " ...")
+        if verbose: print(f'RV{j+1}', end= " ...")
         t_in      = np.copy(t_arr[indlist[j+nphot][0]]) if t is None else t # time values of lightcurve j
         f_in      = np.copy(f_arr[indlist[j+nphot][0]]) # flux values of lightcurve j
         e_in      = np.copy(e_arr[indlist[j+nphot][0]]) # error values of lightcurve j
@@ -514,12 +498,12 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                     nddf,nocc,nRV,nphot,j,RVnames,bvarsRV,gammaind]
         
         if get_model:   #skip other calculations and return the RV model for this dataset
-            RVmodel,compo = get_RVmod(t_in,T0in,perin,Kin,eosin,eocin,Gamma_in,*RVargs,
+            RVmodel,compo = RadialVelocity_Model(t_in,T0in,perin,Kin,eosin,eocin,Gamma_in,*RVargs,
                                         useSpline_rv[j],npl,planet_only=True)
             model_outputs.rv[name] = RVmodel,compo
             continue
 
-        rv_result = get_RVmod(t_in,T0in,perin,Kin,eosin,eocin,Gamma_in,*RVargs,
+        rv_result = RadialVelocity_Model(t_in,T0in,perin,Kin,eosin,eocin,Gamma_in,*RVargs,
                                 useSpline_rv[j],npl,planet_only=False) #planet rv + baseline
         
         mod_RVbl  = rv_result.full_RVmod            #planet rv + baseline
@@ -559,7 +543,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 if make_outfile:   
                     outfile  = out_folder+"/"+RVnames[j][:-4]+'_rvout.dat'
                     out_data = np.hstack((out_data,phases))
-                    if verbose: print(f"Writing RV output without GP to file: {outfile}")
+                    if verbose: print(f"Writing RV output to file: {outfile}")
                     np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
 
 
@@ -591,7 +575,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
-                if verbose: print("RV using George GP") if useGPrv[j]=='y' else print("RV using Celerite GP")
+                which_GP = "George" if useGPrv[j]=='y' else "Celerite"
 
                 bfunc_gp= gp.predict(f_in-mod_RVbl, t=rvpargp, return_cov=False, return_var=False)
                 pred = bfunc_gp+mod_RVbl
@@ -615,7 +599,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 if make_outfile:   
                     out_data = np.hstack((out_data,phases))
                     outfile  = out_folder+"/"+RVnames[j][:-4]+'_rvout.dat'
-                    if verbose: print(f"Writing RV output with GP to file: {outfile}")
+                    if verbose: print(f"Writing RV output with GP{which_GP} to file: {outfile}")
                     np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
 
 
@@ -630,11 +614,3 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
     else:      
         return (mod, emod, T0in, perin, durin if nphot>0 else 0)
 
-# def norm_prior(value,center,sigma):
-#     lpri = np.log( 1./(2. * np.pi * sigma**2)**0.5) - ((value-center)**2/(2. * sigma**2))
-#     return lpri
-
-# def limits(value,lim_low,lim_up):
-#     if value < lim_low or value > lim_up:  # gp scale
-#         return -np.inf  
-#     return 0.

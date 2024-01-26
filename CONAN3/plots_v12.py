@@ -1,15 +1,14 @@
 from .utils import bin_data, phase_fold
+from ._classes import __default_backend__
+import numpy as np
+import matplotlib, os
+from matplotlib.ticker import FormatStrFormatter    
+import matplotlib.pyplot as plt    
+
 
 def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,prefix,RVunit,T0,period,Dur):
     
-    import matplotlib
-    import os
     matplotlib.use('Agg')
-    from ._classes import __default_backend__
-    import matplotlib.pyplot as plt    
-    import numpy as np
-    from matplotlib.ticker import FormatStrFormatter    
-
 
     if np.iterable(T0): npl = len(T0)
     else: npl = 1; T0 = [T0]
@@ -21,7 +20,6 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         phase_phasefold[n] = np.empty(0) #array containing phase of each data point
         flux_phasefold[n]  = np.empty(0) #array containig baseline corrected flux of each data point
         model_phasefold[n] = np.empty(0) #array containg baseline corrected model of each data point
-
 
         
     for j in range(nphot):
@@ -176,7 +174,7 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
 
         if RVunit == 'km/s':
             rv_mod, det_RV, e_rv, rv_resid = rv_mod*1e3, det_RV*1e3, e_rv*1e3, rv_resid*1e3
-
+        ax[1].axhline(0,ls="--", color="k", alpha=0.3)
         ax[1].errorbar(phase, det_RV, e_rv, fmt="o",capsize=2) 
         ax[1].plot(phase[srt], rv_mod[srt], "-r", label='MCMC best fit') 
         ax[1].set_ylabel(f"RV [m/s]")
@@ -225,17 +223,9 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
 def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
     
     # this needs to be written. Just make a histogram plot of the parameter (values vals), label it (pname), and indicate the 1- and 3- sigma limits (s1, s3)
-
-    import numpy as np
-    import matplotlib
-    from ._classes import __default_backend__
     matplotlib.use('Agg')
-    import matplotlib.mlab as mlab
-    import matplotlib.pyplot as plt
-    import os
 
     fig = plt.figure()
-
     matplotlib.rcParams.update({'font.size': 10})
     
     num_bins = 50
@@ -263,26 +253,12 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
 
     matplotlib.use(__default_backend__)
 
-#    if not os.path.exists("posteriors"): os.mkdir("posteriors")
-#    outfile="posteriors/posterior_"+pname+".dat"
-#    of=open(outfile,'w')
-#    for ii in range(len(vals)):
-#        of.write('%14.8f\n' % (vals[ii]) ) 
-#
-#    of.close()
-
 
 def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm,out_folder):
     
     # this needs to be written. Just make a histogram plot of the parameter (values vals), label it (pname), and indicate the 1- and 3- sigma limits (s1, s3)
 
-    import numpy as np
-    import matplotlib
-    from ._classes import __default_backend__ 
     matplotlib.use('Agg')
-    import matplotlib.mlab as mlab
-    import matplotlib.pyplot as plt
-    import os
 
     fig = plt.figure()
 
@@ -318,23 +294,11 @@ def param_histbp(vals,pname,mv,s1v,s3v,mav,s1m,s3m,bpm,s1bpm,out_folder):
     matplotlib.use(__default_backend__)
 
 
-#    if not os.path.exists("posteriors"): os.mkdir("posteriors")
-#    outfile="posteriors/posterior_"+pname+".dat"
-#    of=open(outfile,'w')
-#    for ii in range(len(vals)):
-#        of.write('%14.8f\n' % (vals[ii]) ) 
 
-#    of.close()
 
 def plot_traspec(dRpRsres, edRpRsres, ulamdas,out_folder):
     
-    import numpy as np
-    import matplotlib
-    from ._classes import __default_backend__
     matplotlib.use('Agg')
-    import matplotlib.mlab as mlab
-    import matplotlib.pyplot as plt
-#    import plotly.plotly as py  # tools to communicate with Plotly's server
     
     outname=out_folder+'/transpec.png'
     fig = plt.figure()
@@ -348,11 +312,8 @@ def plot_traspec(dRpRsres, edRpRsres, ulamdas,out_folder):
     
 def plot_phasecurve(params, filename):
     #TODO: look at phase curve plot
-
+    matplotlib.use('Agg')
     import lightkurve as lk
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import matplotlib
     
     phaseCenter = 0.5
     #OK: tData, yData, dyData = np.loadtxt(os.path.join(outdir, filename)).T
@@ -422,4 +383,3 @@ def plot_phasecurve(params, filename):
 
     fig.savefig(filename+"_PC.pdf")
     matplotlib.use(__default_backend__)
-#TODO backend issue causes timeout 

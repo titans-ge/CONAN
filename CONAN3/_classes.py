@@ -22,7 +22,7 @@ __default_backend__ = matplotlib.get_backend()
 matplotlib.use(__default_backend__)
 
 def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, 
-                fit_order=0, model_overplot=None):
+                fit_order=0, model_overplot=None, hspace=None, wspace=None):
     """
     Takes a data object (containing light-curves or RVs) and plots them.
     """
@@ -37,63 +37,68 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None,
         col_labels = (col_labels[0],"residuals")
 
     if n_data == 1:
-        # p1, p2, p3 = np.loadtxt(obj._fpath+obj._names[0], usecols=cols, unpack=True )
         p1, p2, p3 = [input_data[obj._names[0]][f"col{n}"] for n in cols]
         if plot_cols[1] == "res": p2 = model_overplot[0].residual
 
         if len(plot_cols)==2: p3 = None
         if figsize is None: figsize=(8,5)
         fig = plt.figure(figsize=figsize)
-        plt.errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[0]}')
+        plt.title(f'{obj._names[0]}')
+        plt.errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray")
         if model_overplot and plot_cols[1] != "res":
             plt.plot(p1,model_overplot[0].tot_trnd_mod,"r",zorder=3,label="detrend_model")
             if tsm: plt.plot(model_overplot[0].time_smooth,model_overplot[0].planet_mod_smooth,"c",zorder=3,label="planet_model")   #smooth model plot if time on x axis
             else: plt.plot(p1,model_overplot[0].planet_mod,"c",zorder=3,label="planet_model")
-
+            xmin    = fig.axes[0].get_ylim()[0]
+            res_lvl = xmin - np.ptp(model_overplot[0].residual)
+            plt.axhline(res_lvl, color="k", ls="--", alpha=0.3)
+            plt.plot(p1,model_overplot[0].residual+res_lvl,".",c="gray")
+            plt.text(min(p1), max(model_overplot[0].residual+res_lvl),"residuals")
+            plt.legend(fontsize=10)
 
         if fit_order>0:
             pfit = np.polyfit(p1,p2,fit_order)
             srt = np.argsort(p1)
             plt.plot(p1[srt],np.polyval(pfit,p1[srt]),"r",zorder=3)
-        plt.legend(fontsize=12)
 
     else:
         if nrow_ncols is None: 
             nrow_ncols = (int(n_data/2), 2) if n_data%2 ==0 else (int(np.ceil(n_data/3)), 3)
-        if figsize is None: figsize=(14,3*nrow_ncols[0])
+        if figsize is None: figsize=(14,3.5*nrow_ncols[0])
         fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
         ax = ax.reshape(-1)
 
         for i, d in enumerate(obj._names):
-            # p1,p2,p3 = np.loadtxt(obj._fpath+d,usecols=cols, unpack=True )
             p1,p2,p3 = [input_data[d][f"col{n}"] for n in cols]
             if plot_cols[1] == "res": p2 = model_overplot[i].residual
 
             if len(plot_cols)==2: p3 = None
-            ax[i].errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray",label=f'{obj._names[i]}')
+            ax[i].set_title(f'{obj._names[i]}')
+            ax[i].errorbar(p1,p2,yerr=p3, fmt=".", color="b", ecolor="gray")
             if model_overplot and plot_cols[1] != "res":
                 ax[i].plot(p1,model_overplot[i].tot_trnd_mod,"r",zorder=3,label="detrend_model")
                 if tsm: ax[i].plot(model_overplot[i].time_smooth,model_overplot[i].planet_mod_smooth,"c",zorder=3,label="planet_model")
                 else: ax[i].plot(p1,model_overplot[i].planet_mod,"c",zorder=3,label="planet_model")
+                xmin    = ax[i].get_ylim()[0]
+                res_lvl = xmin - np.ptp(model_overplot[i].residual)
+                ax[i].axhline(res_lvl, color="k", ls="--", alpha=0.3)
+                ax[i].plot(p1,model_overplot[i].residual+res_lvl,".",c="gray")
+                ax[i].text(min(p1), max(model_overplot[i].residual+res_lvl),"residuals")
+                ax[i].legend(fontsize=10)
 
             if fit_order>0:
                 pfit = np.polyfit(p1,p2,fit_order)
                 srt = np.argsort(p1)
                 ax[i].plot(p1[srt],np.polyval(pfit,p1[srt]),"r",zorder=3)
-            
-            ax[i].legend(fontsize=12)
+        plt.subplots_adjust(hspace=0.3 if hspace is None else hspace , wspace = wspace if wspace!=None else None)
+        for i in range(len(obj._names),np.product(nrow_ncols)): ax[i].axis("off")   #remove unused subplots
+
     fig.suptitle(f"{col_labels[0]} against {col_labels[1]}", y=0.99, fontsize=18)
 
     plt.show()
     return fig
 
-def _skip_lines(file, n):
-    """
-    takes a open file object and skips the reading of lines by n lines
-    
-    """
-    for i in range(n):
-        dump = file.readline()
+
         
 def _reversed_dict(d):
     """
@@ -393,7 +398,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
         result object from fit with several attributes such as result.bestfit, result.params, result.bic, ...
         if return_models = True, returns (trend_model, transit/eclipse model)
     """
-    from CONAN3.RVmodel_v3 import get_RVmod
+    from CONAN3.models import RadialVelocity_Model
 
     DA      = locals().copy()
     rv_pars = {}
@@ -448,7 +453,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
             K       = [rv_params["K"+lbl]]
             sesinw  = [rv_params["sesinw"+lbl]]
             secosw  = [rv_params["secosw"+lbl]]
-            mod,_   = get_RVmod(t, t0, per, K, sesinw, secosw, planet_only=True)  
+            mod,_   = RadialVelocity_Model(t, t0, per, K, sesinw, secosw, planet_only=True)  
             rvmod += mod
         
         # rvmod_kms = rvmod_ms/1000 # to km/s
@@ -526,11 +531,11 @@ def _print_output(self, section: str, file=None):
 
     if section == "lc_baseline":
         _print_lc_baseline = """# ============ Input lightcurves filters baseline function =======================================================""" +\
-                            f""" \n{"name":{max_name_len}s} {"filt":{max_filt_len}s} {"𝜆_𝜇m":5s}|{"s_samp ":7s} {"clip   ":7s} {"scl_col":7s}|{"col0":4s} {"col3":4s} {"col4":4s} {"col5":4s} {"col6":4s} {"col7":4s}|{"sin":3s} {"id":2s} {"GP":2s} {"spline_config  ":15s}"""
+                            f""" \n{"name":{max_name_len}s} {"filt":{max_filt_len}s} {"𝜆_𝜇m":5s}|{"s_samp ":7s} {"clip   ":7s} {"scl_col":8s}|{"col0":4s} {"col3":4s} {"col4":4s} {"col5":4s} {"col6":4s} {"col7":4s}|{"sin":3s} {"id":2s} {"GP":2s} {"spline_config  ":15s}"""
         #define print out format
-        txtfmt = f"\n{{0:{max_name_len}s}} {{1:{max_filt_len}s}}"+" {2:5s}|{3:7s} {4:7s} {5:7s}|{6:4d} {7:4d} {8:4d} {9:4d} {10:4d} {11:4d}|{12:3d} {13:2d} {14:2s} {15:15s}"        
+        txtfmt = f"\n{{0:{max_name_len}s}} {{1:{max_filt_len}s}}"+" {2:5s}|{3:7s} {4:7s} {5:8s}|{6:4d} {7:4d} {8:4d} {9:4d} {10:4d} {11:4d}|{12:3d} {13:2d} {14:2s} {15:15s}"        
         for i in range(len(self._names)):
-            t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), self._ss[i].config,self._clipped_data.config[i], self._rescaled_data.config,
+            t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), self._ss[i].config,self._clipped_data.config[i], self._rescaled_data.config[i],
                               *self._bases[i][:-1], self._groups[i], self._useGPphot[i],self._lcspline[i].conf, 
                                 )
             _print_lc_baseline += t
@@ -681,7 +686,7 @@ def _print_output(self, section: str, file=None):
             txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:7s} |{2:4d} {3:4d} {4:4d} {5:4d}| {6:3d} {7:2s} {8:15s} | {9} "         
             for i in range(self._nRV):
                 gam_pri_ = f'N({DA["gammas"][i]},{DA["sig_lo"][i]})' if DA["sig_lo"][i] else f'U({DA["bound_lo"][i]},{DA["gammas"][i]},{DA["bound_hi"][i]})' if DA["bound_hi"][i] else f"F({DA['gammas'][i]})"
-                t = txtfmt.format(self._names[i],self._rescaled_data.config, *self._RVbases[i],
+                t = txtfmt.format(self._names[i],self._rescaled_data.config[i], *self._RVbases[i],
                                     self._useGPrv[i],self._rvspline[i].conf,gam_pri_)
                 _print_rv_baseline += t
         print(_print_rv_baseline, file=file)
@@ -886,7 +891,7 @@ class load_lightcurves:
 
         self._show_guide = show_guide
         self._clipped_data  = SimpleNamespace(flag=False, config=["None"]*self._nphot)
-        self._rescaled_data = SimpleNamespace(flag=False, config="None")
+        self._rescaled_data = SimpleNamespace(flag=False, config=["None"]*self._nphot)
         self.lc_baseline(re_init = hasattr(self,"_bases"), verbose=False)   
 
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
@@ -899,26 +904,33 @@ class load_lightcurves:
             The operation is not performed on columns 0,1,2. It is only performed on columns whose values do not span zero.
             Function can only be run once on the loaded datasets but can be reset by running `load_lightcurves()` again. 
 
-            The method can be one of ["med_sub", "rs0to1", "rs-1to1"] which subtracts the median, rescales t0 [0-1], or rescales to [-1,1] respectively.
+            The method can be one of ["med_sub", "rs0to1", "rs-1to1","None"] which subtracts the median, rescales t0 [0-1], rescales to [-1,1], or does nothing, respectively.
             The default is "med_sub" which subtracts the median from each column.
         """
-        assert method in ["med_sub", "rs0to1", "rs-1to1"], f"method must be one of 'med_sub', 'rs0to1', 'rs-1to1' not {method}"
         
         if self._rescaled_data.flag:
             print("Data columns have already been rescaled. run `load_lightcurves()` again to reset.")
             return None
         
-        for lc in self._names:
-            if verbose: print(f"Rescaling data columns of {lc}...")
+        if isinstance(method,str): method = [method]*self._nphot
+        elif isinstance(method, list):
+            assert len(method)==1 or len(method)==self._nphot, f'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})'
+        else: _raise(TypeError,'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})')
+
+
+        for j,lc in enumerate(self._names):
+            assert method[j] in ["med_sub", "rs0to1", "rs-1to1","None"], f"method must be one of ['med_sub','rs0to1','rs-1to1','None'] but {method[j]} given"
+            if verbose: print(f"No rescaling for {lc}") if method[j]=="None" else print(f"Rescaled data columns of {lc} with method:{method[j]}")
             for i in range(9):
                 if i not in [0,1,2]:
                     if not (min(self._input_lc[lc][f"col{i}"]) <= 0 <=  max(self._input_lc[lc][f"col{i}"])):     #if zero not in array
-                        if method == "med_sub":
+                        if method[j] == "med_sub":
                             self._input_lc[lc][f"col{i}"] -= np.median(self._input_lc[lc][f"col{i}"])
-                        elif method == "rs0to1":
+                        elif method[j] == "rs0to1":
                             self._input_lc[lc][f"col{i}"] = rescale0_1(self._input_lc[lc][f"col{i}"])
-                        elif method == "rs-1to1":
+                        elif method[j] == "rs-1to1":
                             self._input_lc[lc][f"col{i}"] = rescale_minus1_1(self._input_lc[lc][f"col{i}"])
+                        else: pass
 
         self._rescaled_data = SimpleNamespace(flag=True, config=method)
 
@@ -2287,7 +2299,8 @@ class load_lightcurves:
                 section must be one of {possible_sections}."
             _print_output(self, section)
 
-    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, show_decorr_model=False, return_fig=False):
+    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, 
+             show_decorr_model=False, hspace=None, wspace=None, return_fig=False):
         """
             visualize data
 
@@ -2311,6 +2324,9 @@ class load_lightcurves:
 
             show_decorr_model : bool;
                 show decorrelation model if decorrelation has been done.
+
+            hspace, wspace: float;
+                height and width space between subplots. Default is None to use matplotlib defaults.
             
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
@@ -2336,13 +2352,13 @@ class load_lightcurves:
         
         if self._names != []:
             fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, figsize=figsize, fit_order=fit_order,
-                            model_overplot=self._tmodel if show_decorr_model else None)
+                            hspace=hspace, wspace=wspace, model_overplot=self._tmodel if show_decorr_model else None)
             if return_fig: return fig
         else: print("No data to plot")
     
         
     
-        
+
 #rv data
 class load_rvs:
     """
@@ -2411,7 +2427,7 @@ class load_rvs:
                                         amp=0,freq=0,phi=0,phi2=0)
                                     for _ in range(self._nRV)]
             
-        self._rescaled_data = SimpleNamespace(flag=False, config="None")
+        self._rescaled_data = SimpleNamespace(flag=False, config=["None"]*self._nRV)
         self.rv_baseline(verbose=False)
 
 
@@ -2449,26 +2465,31 @@ class load_rvs:
             The operation is not performed on columns 0,1,2. It is only performed on columns whose values do not span zero.
             Function can only be run once on the loaded datasets but can be reset by running `load_rvs()` again. 
 
-            The method can be one of ["med_sub", "rs0to1", "rs-1to1"] which subtracts the median, rescales to [0,1] or [-1,1] respectively.
+            The method can be one of ["med_sub", "rs0to1", "rs-1to1","None"] which subtracts the median, rescales to [0,1], rescales to [-1,1], or does nothing, respectively.
         """
-        assert method in ["med_sub", "rs0to1", "rs-1to1"], f"method must be one of 'med_sub', 'rs0to1', 'rs-1to1' not {method}"
         
         if self._rescaled_data.flag:
             print("Data columns have already been rescaled. run `load_rvs()` again to reset.")
             return None
         
-        for rv in self._names:
-            if verbose: print(f"Rescaling data columns of {rv}...")
+        if isinstance(method,str): method = [method]*self._nRV
+        elif isinstance(method, list):
+            assert len(method)==1 or len(method)==self._nRV, f'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})'
+        else: _raise(TypeError,'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})')
+        
+        for j,rv in enumerate(self._names):
+            assert method[j] in ["med_sub", "rs0to1", "rs-1to1","None"], f"method must be one of ['med_sub','rs0to1','rs-1to1','None'] but {method[j]} given"
+            if verbose: print(f"No rescaling for {rv}") if method[j]=="None" else print(f"Rescaled data columns of {rv} with method:{method[j]}")
             for i in range(6):
                 if i not in [0,1,2]:
                     if not (min(self._input_rv[rv][f"col{i}"]) <= 0 <=  max(self._input_rv[rv][f"col{i}"])):     #if zero not in array
-                        if method == "med_sub":
+                        if method[j] == "med_sub":
                             self._input_rv[rv][f"col{i}"] -= np.median(self._input_rv[rv][f"col{i}"])
-                        elif method == "rs0to1":
+                        elif method[j] == "rs0to1":
                             self._input_rv[rv][f"col{i}"] = rescale0_1(self._input_rv[rv][f"col{i}"])
-                        elif method == "rs-1_1":
+                        elif method[j] == "rs-1_1":
                             self._input_rv[rv][f"col{i}"] = rescale_minus1_1(self._input_rv[rv][f"col{i}"])
-
+                        else: pass
         self._rescaled_data = SimpleNamespace(flag=True, config=method)
 
     def get_decorr(self, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=0,
@@ -2883,7 +2904,7 @@ class load_rvs:
         if verbose: _print_output(self,"rv_gp")
 
     def add_custom_rvGP():
-        NotImplementedError
+        raise NotImplementedError
 
     
     def add_spline(self, rv_list=None, par = None, degree=3, knot_spacing=None, verbose=True):
@@ -2995,7 +3016,8 @@ class load_rvs:
         else:
             return ""
         
-    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, show_decorr_model=False,return_fig=False):
+    def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, 
+             show_decorr_model=False,hspace=None, wspace=None, return_fig=False):
         """
             visualize data
 
@@ -3018,6 +3040,9 @@ class load_rvs:
                 
             show_decorr_model : bool;
                 show decorrelation model if decorrelation has been done.
+
+            hspace, wspace: float;
+                height and width space between subplots. Default is None to use matplotlib defaults.
             
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
@@ -3044,7 +3069,7 @@ class load_rvs:
         
         if self._names != []:
             fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, fit_order=fit_order, figsize=figsize,
-                             model_overplot=self._rvmodel if show_decorr_model else None)
+                            hspace=hspace, wspace=wspace, model_overplot=self._rvmodel if show_decorr_model else None)
             if return_fig: return fig
         else: print("No data to plot")
     
@@ -3206,7 +3231,7 @@ class fit_setup:
 
 class load_result:
     """
-        Load results from mcmc run
+        Load results from emcee/dynesty run
         
         Parameters:
         ------------
@@ -3214,7 +3239,7 @@ class load_result:
             folder where the output files are located. Default is "output".
         
         chain_file: str;
-            name of the file containing the chains. Default is "chains_dict.pkl".
+            name of the file containing the posterior chains. Default is "chains_dict.pkl".
         
         burnin_chain_file: str;
             name of the file containing the burn-in chains. Default is "burnin_chains_dict.pkl".
@@ -3280,7 +3305,7 @@ class load_result:
         
 
     def __repr__(self):
-        return f'Object containing chains (main or burn-in) from mcmc. \
+        return f'Object containing posterior from emcee/dynesty sampling \
                 \nParameters in chain are:\n\t {self.params_names} \
                 \n\nuse `plot_chains()`, `plot_burnin_chains()`, `plot_corner()` or `plot_posterior()` methods on selected parameters to visualize results.'
         
@@ -3532,6 +3557,11 @@ class load_result:
 
         return fig
 
+    def plot_bestfit(self, bin_width):
+        """
+        Plot the best-fit model of the input data. 
+        """
+        raise NotImplementedError
 
     def load_result_array(self, data=["lc","rv"],verbose=True):
         """
@@ -3589,7 +3619,7 @@ class load_result:
             is the parameter combination that gives the maximum joint posterior probability.
         """
         
-        from CONAN3.logprob_multi_sin_v4 import logprob_multi
+        from CONAN3.logprob_multi import logprob_multi
         from CONAN3.plots_v12 import mcmc_plots
 
         assert stat in ["median","max","bestfit"],f'make_output_file: stat must be of ["median","max","bestfit"] but {stat} given'
@@ -3631,7 +3661,7 @@ class load_result:
             if return_std is True, 1sigma quantiles (lo and hi) of the model is returned.
         """
 
-        from CONAN3.logprob_multi_sin_v4 import logprob_multi
+        from CONAN3.logprob_multi import logprob_multi
         
         if params is None: params = self.params_median
         mod  = logprob_multi(params,*self._ind_para,t=time,get_model=True)
@@ -3682,7 +3712,7 @@ class load_result:
             if return_std is True, 1sigma quantiles (lo and hi) of the model is returned.
         """
 
-        from CONAN3.logprob_multi_sin_v4 import logprob_multi
+        from CONAN3.logprob_multi import logprob_multi
 
         if params is None: params = self.params_median
         mod  = logprob_multi(params,*self._ind_para,t=time,get_model=True)
@@ -3700,394 +3730,3 @@ class load_result:
             qs = np.quantile(mods,q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
             
             return (mod.rv[file][0],mod.rv[file][1],qs[0],qs[1]) if return_components else (mod.rv[file][0],qs[0],qs[1])
-
-
-
-def create_configfile(lc_obj, rv_obj, fit_obj, filename="input_config.dat"): 
-    """
-        create configuration file that of lc_obj, rv_obj, amd fit_obj setup.
-        
-        Parameters:
-        -----------
-        lc_obj : object;
-            Instance of CONAN.load_lightcurve() object and its attributes.
-
-        rv_obj : object, None;
-            Instance of CONAN.load_rvs() object and its attributes.
-        
-        fit_obj : object;
-            Instance of CONAN.fit_setup() object and its attributes.
-    """
-    f = open(filename,"w")
-    f.write("# ========================================== CONAN configuration file ============================================= \n")
-    f.write("#             *********** KEYS *****************************************************************************************\n")
-    f.write("#             PRIORS: *Fixed - F(val), *Normal - N(mu,std), *Uniform - U(min,start,max), *LogUniform - LU(min,start,max)\n")
-    f.write("#             s_samp: supersampling - x{exp_time}\n")
-    f.write("#             clip:   clip outliers - W{window_width}C{clip_sigma}\n")
-    f.write("#             spline_config: spline - c{column_no}:d{degree}K{knot_spacing}\n")
-    f.write("#             ***********************************************************************************************************\n")
-    f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    f.write(f"LC_filepath: {lc_obj._fpath}\n")
-    f.write(f"RV_filepath: {lc_obj._fpath}\n")
-    f.write(f"n_planet: {lc_obj._nplanet}\n")
-    f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    _print_output(lc_obj,"lc_baseline",file=f)
-    _print_output(lc_obj,"gp",file=f)
-    f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    _print_output(rv_obj,"rv_baseline",file=f)
-    _print_output(rv_obj,"rv_gp",file=f)
-    f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    _print_output(lc_obj,"planet_parameters",file=f)
-    _print_output(lc_obj,"limb_darkening",file=f)
-    _print_output(lc_obj,"depth_variation",file=f)
-    _print_output(lc_obj,"phasecurve",file=f)
-    f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    _print_output(lc_obj,"contamination",file=f)
-    _print_output(fit_obj,"stellar_pars",file=f)
-    f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    _print_output(fit_obj, "fit",file=f)
-    f.close()
-
-
-def load_configfile(configfile="input_config.dat", return_fit=False, verbose=True):
-    """
-        configure conan from specified configfile.
-        
-        Parameters:
-        -----------
-        configfile: filepath;
-            path to configuration file.
-
-        return_fit: bool;
-            whether to immediately perform the fit from this function call.
-            if True, the result object from the fit is also returned
-
-        verbose: bool;
-            show print statements
-
-        Returns:
-        --------
-        lc_obj, rv_obj, fit_obj. if return_fit is True, the result object of fit is also returned
-
-        lc_obj: object;
-            light curve data object generated from `conan3.load_lighturves()`.
-        
-        rv_obj: object;
-            rv data object generated from `conan3.load_rvs()`
-            
-        fit_obj: object;
-            fitting object generated from `conan3.fit_setup()`.
-
-        result: object;
-            result object containing chains of the mcmc fit.
-    
-    """
-
-    def _prior_value(str_prior): 
-        "convert string prior into float/tuple"
-        str_prior = str_prior[str_prior.find("(")+1:str_prior.find(")")].split(",")
-        tuple_prior = [float(v) for v in str_prior]
-        tuple_prior = [(int(v) if v.is_integer() else float(v)) for v in tuple_prior]
-        len_tup = len(tuple_prior)
-        val = tuple_prior[0] if len_tup==1 else tuple(tuple_prior)
-        return val
-
-
-    _file = open(configfile,"r")
-    _skip_lines(_file,8)                       #remove first 2 comment lines
-    fpath    = _file.readline().rstrip().split()[1]           # the path where the files are
-    rv_fpath = _file.readline().rstrip().split()[1]           # the path where the files are
-    nplanet  = int(_file.readline().rstrip().split()[1])      # the path where the files are
-    _skip_lines(_file,3)                                      #remove 3 comment lines
-
-    # ========== Lightcurve input ====================
-    _names=[]                    # array where the LC filenames are supposed to go
-    _filters=[]                  # array where the filter names are supposed to go
-    _lamdas=[]
-    _bases=[]                    # array where the baseline exponents are supposed to go
-    _groups=[]                   # array where the group indices are supposed to go
-    _grbases=[]
-    _useGPphot=[]
-    
-    _ss_lclist,_ss_exp = [],[]
-    _clip_lclist, _clip, _clip_width  = [],[],[]
-    _sclcol= []
-    _spl_lclist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
-    
-    #read baseline specification for each listed light-curve file 
-    dump = _file.readline() 
-    while dump[0] != '#':                   # if it is not starting with # then
-        _adump = dump.split()               # split it
-
-        _names.append(_adump[0])            # append the first field to the name array
-        _filters.append(_adump[1])          # append the second field to the filters array
-        _lamdas.append(float(_adump[2]))    # append the second field to the filters array
-        
-        #supersample
-        xt = _adump[3].split("|")[-1]
-        if xt != "None":
-            _ss_lclist.append(_adump[0])
-            _ss_exp.append(float(xt.split("x")[1]))
-        
-        #clip_outlier
-        if _adump[4]!= "None":
-            _clip_lclist.append(_adump[0])
-            clip_v = float(_adump[4].split("C")[1]) 
-            _clip.append(int(clip_v) if clip_v.is_integer() else clip_v)                   # outlier clip value
-            _clip_width.append(int(_adump[4].split("C")[0].split("W")[1])) # windown width
-    
-        _sclcol.append(_adump[5].split("|")[0])
-
-        strbase=_adump[6:11]
-        strbase.append(_adump[11].split("|")[0])        # string array of the baseline function coeffs
-        grbase = 0
-        strbase.extend([_adump[12],grbase])
-        _grbases.append(grbase)
-        base = [int(i) for i in strbase]
-        _bases.append(base)
-        
-        group = int(_adump[13])
-        _groups.append(group)
-        _useGPphot.append(_adump[14])
-        
-        #LC spline
-        if _adump[15] != "None":
-            _spl_lclist.append(_adump[0])
-            _spl_knot.append(float(_adump[15].split("k")[-1]))
-            _spl_deg.append(int(_adump[15].split("k")[0].split("d")[-1]))
-            _spl_par.append("col" + _adump[15].split("k")[0].split("d")[0][1])
-
-        #move to next LC
-        dump =_file.readline() 
-
-    _skip_lines(_file,1)                                      #remove 1 comment lines
-    
-    # ========== GP input ====================
-    gp_lclist,op = [],[]
-    gp_pars, kernels, amplitude, lengthscale = [],[],[],[]
-
-    dump =_file.readline()
-    while dump[0] != "#":
-        _adump = dump.split()
-        gp_lclist.append(_adump[0])
-        gp_pars.append(_adump[1])
-        kernels.append(_adump[2])
-        amplitude.append(_prior_value(_adump[3]))
-        lengthscale.append(_prior_value(_adump[4]))
-        
-        op.append(_adump[5].strip("|"))
-        if op[-1] != "--":    #if theres a second kernel 
-            gp_pars[-1]     = (gp_pars[-1],_adump[6])
-            kernels[-1]     = (kernels[-1],_adump[7])
-            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[8]))
-            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[9]))
-
-        #move to next LC
-        dump =_file.readline()
-    _skip_lines(_file,2)  
-    
-    
-    # instantiate light curve object
-    lc_obj = load_lightcurves(_names, fpath, _filters, _lamdas, nplanet)
-    lc_obj.lc_baseline(*np.array(_bases).T, grp_id=_groups, gp=_useGPphot,verbose=False )
-    lc_obj.clip_outliers(lc_list=_clip_lclist, clip=_clip, width=_clip_width,show_plot=False,verbose=False )
-    if _sclcol[0] != "None": 
-        lc_obj.rescale_data_columns(method=_sclcol[0],verbose=False)
-    lc_obj.supersample(lc_list=_ss_lclist, exp_time=_ss_exp, verbose=False)
-    lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
-                        knot_spacing=_spl_knot , verbose=False)
-    if verbose: lc_obj.print("lc_baseline")
-    lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation="op",
-                    amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
-    
-    ## RV ==========================================================
-    RVnames, RVbases, gammas = [],[],[]
-    _RVsclcol, usegpRV,strbase = [],[],[]
-    _spl_rvlist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
-    
-    dump =_file.readline()
-    while dump[0] != '#':                   # if it is not starting with # then
-        _adump = dump.split()               # split it
-        RVnames.append(_adump[0])
-        _RVsclcol.append(_adump[1])
-        strbase=_adump[3:6]                  # string array of the baseline function coeffs
-        strbase.append(_adump[6].split("|")[0])
-        strbase.append(_adump[7])
-        base = [int(i) for i in strbase]
-        RVbases.append(base)
-        usegpRV.append(_adump[8])
-        
-        #RV spline
-        if _adump[9] != "None":
-            _spl_rvlist.append(_adump[0])
-            _spl_knot.append(float(_adump[9].split("k")[-1]))
-            _spl_deg.append(int(_adump[9].split("k")[0].split("d")[-1]))
-            _spl_par.append("col" + _adump[9].split("k")[0].split("d")[0][1])
-        
-        gammas.append(_prior_value(_adump[11]))
-        #move to next RV
-        dump =_file.readline()
-
-    _skip_lines(_file,1)                                      #remove 1 comment lines
-    
-    # RV GP
-    gp_rvlist,op = [],[]
-    gp_pars, kernels, amplitude, lengthscale = [],[],[],[]
-
-    dump =_file.readline()
-    while dump[0] != "#":
-        _adump = dump.split()
-        gp_rvlist.append(_adump[0])
-        gp_pars.append(_adump[1])
-        kernels.append(_adump[2])
-        amplitude.append(_prior_value(_adump[3]))
-        lengthscale.append(_prior_value(_adump[4]))
-        
-        op.append(_adump[5].strip("|"))
-        if op[-1] != "––":    #if theres a second kernel 
-            gp_pars[-1]     = (gp_pars[-1],_adump[6])
-            kernels[-1]     = (kernels[-1],_adump[7])
-            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[8]))
-            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[9]))
-
-        #move to next LC
-        dump =_file.readline()
-        
-        
-    rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,lc_obj=lc_obj)
-    rv_obj.rv_baseline(*np.array(RVbases).T, gamma=gammas,gp=usegpRV,verbose=verbose) 
-    if _RVsclcol[0] != "None":
-        rv_obj.rescale_data_columns(method=_RVsclcol[0],verbose=False)
-    rv_obj.add_spline(rv_list=_spl_rvlist ,par=_spl_par, degree=_spl_deg,
-                        knot_spacing=_spl_knot, verbose=False)
-    rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation="op",
-                        amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
-    
-    ## Planet parameters
-    dump    = _file.readline()
-    _adump  = dump.split()
-    pl_pars = {}
-    pl_pars["rho_star"] = _prior_value(_adump[2])
-    par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
-    for p in par_names: pl_pars[p] = []
-        
-    for n in range(1,nplanet+1):        #load parameters for each planet
-        _skip_lines(_file,1)          #remove dashes
-        for i in range(7):
-            dump =_file.readline()
-            _adump = dump.split()
-            pl_pars[par_names[i]].append(_prior_value(_adump[2]))
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
-    
-    ## limb darkening
-    q1, q2 = [],[]
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
-        q1.append(_prior_value(_adump[2]))
-        q2.append(_prior_value(_adump[3]))
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
-    
-    #DDFs
-    dump   = _file.readline()
-    _adump = dump.split()
-    ddfyn,ddf_pri,div_wht  = _adump[0], _prior_value(_adump[1]), _adump[2]
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
-    
-    #phase curve
-    D_occ,A_pc,ph_off = [],[],[]    
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
-        D_occ.append(_prior_value(_adump[3]))
-    _skip_lines(_file,1)                                      #remove 2 comment lines
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
-        A_pc.append(_prior_value(_adump[3]))
-    _skip_lines(_file,1)                                      #remove 2 comment lines
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
-        ph_off.append(_prior_value(_adump[3]))
-    
-    _skip_lines(_file,3)                                      #remove 3 comment lines
- 
-    #contamination factors
-    cont_fac = []
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
-        cont_fac.append(_prior_value(_adump[1]))
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
-    
-    lc_obj.planet_parameters(**pl_pars,verbose=verbose)
-    lc_obj.limb_darkening(q1,q2,verbose=verbose)
-    lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
-    lc_obj.setup_phasecurve(D_occ, A_pc, ph_off, verbose=verbose)
-    lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
-    
-    
-    # stellar params
-    dump    = _file.readline()
-    _adump  = dump.split()
-    st_rad  = _prior_value(_adump[1])
-    dump    = _file.readline()
-    _adump  = dump.split()
-    st_mass = _prior_value(_adump[1])
-    dump    = _file.readline()
-    _adump  = dump.split()
-    par_in  = _adump[2]
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
-    #fit setup
-    tot_samps = int(_file.readline().split()[1])
-    nchains   = int(_file.readline().split()[1])
-    nsteps    = int(tot_samps/nchains)
-    ncpus     = int(_file.readline().split()[1])
-    nburn     = int(_file.readline().split()[1])
-    nlive     = int(_file.readline().split()[1])
-    dlogz     = float(_file.readline().split()[1])
-    sampler   = _file.readline().split()[1]
-    mc_move   = _file.readline().split()[1]
-    lsq_base  = _file.readline().split()[1]
-    lcjitt    = _file.readline().split()[1]
-    rvjitt    = _file.readline().split()[1]
-    
-    _adump    = _file.readline().split()
-    baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-    basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
-    lcbaselim = [baselo, basehi]
-    
-    _adump    = _file.readline().split()
-    baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-    basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
-    rvbaselim = [baselo, basehi]
-    
-    fit_obj = fit_setup(R_st = st_rad, M_st = st_mass, par_input=par_in,
-                        apply_LCjitter=lcjitt, apply_RVjitter=rvjitt,
-                        leastsq_for_basepar=lsq_base, 
-                        LCbasecoeff_lims=lcbaselim, RVbasecoeff_lims=rvbaselim,
-                        verbose=verbose)
-    
-    fit_obj.sampling(sampler=sampler,n_cpus=ncpus, emcee_move=mc_move,
-                    n_chains=nchains, n_burn   = 5000, n_steps  = nsteps, 
-                    n_live=nlive, dyn_dlogz=dlogz,verbose=verbose )
-
-    _file.close()
-
-    if return_fit:
-        from .fit_data import run_fit
-        result =   run_fit(lc_obj, rv_obj, fit_obj) 
-        return lc_obj,rv_obj,fit_obj,result
-
-    return lc_obj,rv_obj,fit_obj
-
-
-

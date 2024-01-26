@@ -108,7 +108,7 @@ class get_TESS_data(object):
         for s in self.sectors:
             gap = np.diff(self.lc[s]) > 0.5
         #TODO: implement this
-        NotImplemented
+        raise NotImplemented
 
     def scatter(self):
         """
@@ -422,7 +422,7 @@ def get_parameters(planet_name, database="exoplanetarchive", overwrite_cache=Fal
         params["planet"]["T14"]    = (df["pl_trandur"][0],df["pl_trandurerr1"][0])
         params["planet"]["aR"]     = (df["pl_ratdor"][0],df["pl_ratdorerr1"][0])
     else:
-        NotImplemented
+        raise NotImplemented
 
     pd.to_pickle(params, f"{planet_name}_sysparams.pkl")
 

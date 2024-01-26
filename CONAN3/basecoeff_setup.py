@@ -8,7 +8,6 @@ def basecoeff(ibase,spline,init=None,lims=None):
       
     # each of the arrays have 4 parameter: [initial guess, step, min, max]  -- perhaps 5 in the future if I use priors
     # nbc is the number of non-fixed baseline coefficients
-    #TODO allow to give initial guesses for the baseline parameters, 
     
     # set the baseline function
     #       offset 
@@ -125,14 +124,13 @@ def basecoeff(ibase,spline,init=None,lims=None):
 def basecoeffRV(ibaseRV,Pin,init=None,lims=None):
 
     nbcRV = 0
-    
+
     # set the baseline function
-    #       W coeff => time:      W[0]*t + W[1]*t^2  NOTE: 0th order is GAMMA
-    #       V coeff => bisector:  V[0]*bis + B[1]*bis^2 
-    #       U coeff => fwhm:      U[0]*fwhm + U[1]*fwhm^2 
-    #       S coeff => contrast:  S[0]*cont + S[1]*cont^2
-    #       P coeff => sinus:     P[0]*np.sin(P[1]*ts+P[2])
-   
+    #       dcol0 coeff:   A0*dcol0 + B0*dcol0^2
+    #       dcol3 coeff:   A3*dcol3 + B3*dcol3^2
+    #       dcol4 coeff:   A4*dcol4 + B4*dcol4^2
+    #       dcol5 coeff:   A5*dcol5 + B5*dcol5^2
+    #       dsin  coeff:   Amp*sin(2pi(dcol0)/P + phi)
 
     # dcol0 coeff:   A0*dcol0 + B0*dcol0^2
     dcol0=np.zeros((4,2), dtype=float)

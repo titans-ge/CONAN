@@ -1,4 +1,3 @@
-from logging import exception
 import numpy as np
 from types import SimpleNamespace
 import os
@@ -11,22 +10,17 @@ import time
 from occultquad import *
 from occultnl import *
 from .basecoeff_setup import *
-from .model_GP_v3 import *
-from .logprob_multi_sin_v4 import *
+from .models import *
+from .logprob_multi import logprob_multi
 from .plots_v12 import *
-from .corfac_v8 import *
-from .groupweights_v2 import *
-from .ecc_om_par import *
-from .outputs_v6_GP import *
-from .jitter_v1 import *
-from .GRtest_v1 import *
+from .funcs import corfac, grweights, grtest_emcee
+from .utils import ecc_om_par
+from .outputs import *
 
 import george
-from george import kernels, GP
-import corner
+from george import GP
 
 import celerite
-from celerite import terms
 from celerite import GP as cGP
 from copy import deepcopy
 from .utils import gp_params_convert
@@ -347,7 +341,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     for i in range(nfilt):
         j = np.where(filnames == filnames[i])               # make sure the sequence in this array is the same as in the "filnames" array
-        if verbose: print(j)
         cont[j,:]= [DA_cont["cont_ratio"][i][0], DA_cont["cont_ratio"][i][1]]
 
 #=============sampling setup===============
@@ -397,7 +390,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     #********************************************************************
         
     #============================= SETUP ARRAYS =======================================
-    print('Setting up photometry arrays ...')
+    if lc_obj is not None: print('Setting up photometry arrays ...')
     if np.any([spl.use for spl in useSpline_lc]): print('Setting up Spline fitting for LCS ...')  
 
     t_arr      = np.array([])  # initializing array with all timestamps (col0)
@@ -573,7 +566,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     nbc_tot = np.copy(0)  # total number of baseline coefficients let to vary (leastsq OR jumping)
 
     #################################### GP setup #########################################
-    print('Setting up photometry GPs ...')
+    if lc_obj._GP_dict != {}: print('Setting up photometry GPs ...')
     
     GPobjects   = []  # list to hold the GP objects for each lc
     GPparams    = []  # list to hold the GP parameters for each lc
@@ -625,7 +618,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         contr_arr = np.concatenate((contr_arr, np.zeros(len(t), dtype=int)), axis=0)   # contrast array: filled with 0s
         lind      = np.concatenate((lind, np.zeros(len(t), dtype=int) + i),  axis=0)   # lightcurve index array: filled with i
         indices   = np.where(lind == i)
-        if verbose: print(lind, indices)
         indlist.append(indices)
         
         #baseline parameters
@@ -898,8 +890,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             rv_pargps.append(gp_x) 
 
 
-    for i in range(len(params)):
-        if verbose: print(pnames[i], params[i], stepsize[i], pmin[i], pmax[i], priorup[i], priorlow[i])
+    # for i in range(len(params)):
+    #     if verbose: print(pnames[i], params[i], stepsize[i], pmin[i], pmax[i], priorup[i], priorlow[i])
         
     inmcmc='n'
 
@@ -1090,7 +1082,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 prior_distr.append(llim)
 
     ## plot the prior distributions
-    print("Plotting priors")
+    print("Plotting prior distributions")
     matplotlib.use('Agg')
     
     start_pars = initial[jumping]
@@ -1124,7 +1116,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
 
     debug_t1 = time.time()
-    mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],*indparams,make_outfile=True,verbose=True,debug=debug,out_folder=out_folder)
+    mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],*indparams,make_outfile=True,verbose=False,debug=debug,out_folder=out_folder)
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
@@ -1221,7 +1213,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         for ch in range(chains.shape[2]):
             chains_dict[jnames[ch]] = chains[:,:,ch]
         pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
-        print(f"Emcee production chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.\n")  
+        print(f"\nEmcee production chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.\n")  
     
         GRvals = grtest_emcee(chains)
         gr_print(jnames,GRvals,out_folder)
@@ -1260,7 +1252,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         for ch in range(chains.shape[1]):
             chains_dict[jnames[ch]] = chains[:,ch]
         pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
-        print(f"dynesty chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.\n")  
+        print(f"\nDynesty chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.\n")  
         
 
 
@@ -1294,7 +1286,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
                 fig = result.plot_chains(fit_pars)
                 fig.savefig(out_folder+f"/chains_{i}.png", bbox_inches="tight") 
-            print(f"saved {nplot} chain plots as {out_folder}/chains_*.png")
+            print(f"\nsaved {nplot} chain plots as {out_folder}/chains_*.png")
         
     
     #corner plot
@@ -1344,7 +1336,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     maxp[[ijnames][0]]=maxvals
 
     #============================== PLOTTING ===========================================
-    print('Plotting output figures')
+    print('\nPlotting output figures')
 
     inmcmc='n'
     indparams[25] = inmcmc
@@ -1380,10 +1372,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
             if (cf_apply == 'cf'):
                 e_arr[indlist[i][0]] = np.multiply(e_arr[indlist[i][0]],cf[i])
-                if verbose: print((e_arr[indlist[i][0]]))        
             if (cf_apply == 'rchisq'):
                 e_arr[indlist[i][0]] = np.sqrt((e_arr[indlist[i][0]])**2 + (cfn[i])**2)
-                if verbose: print((e_arr[indlist[i][0]]))
         of.close()
 
     result = load_result(out_folder)

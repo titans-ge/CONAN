@@ -1,11 +1,7 @@
-import sys
 import numpy as np
 from .plots_v12 import *
-import subprocess
-import scipy.stats as stats
-import scipy.interpolate as si
 from .utils import rho_to_tdur, rho_to_aR, convert_LD,aR_to_Tdur
-from .credibleregion_ML import *
+from .funcs import credregionML
 
 
 def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
@@ -220,15 +216,15 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
     sig3md =  np.zeros([nderived,2]) 
     
     of.write('====================================================================================================\n')
-    of.write('Jump parameters:\n')
+    of.write(f'{"Jump parameters:25s"} {"median:14s"} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
     of.write('====================================================================================================\n')
     
     of2.write('====================================================================================================\n')
-    of2.write('Jump parameters:\n')
+    of2.write(f'{"Jump parameters:25s"} {"median:14s"} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
     of2.write('====================================================================================================\n')
 
     of3.write('====================================================================================================\n')
-    of3.write('Jump parameters:\n')
+    of3.write(f'{"Jump parameters:25s"} {"median:14s"} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
     of3.write('====================================================================================================\n')
 
     for i in range(npara):
