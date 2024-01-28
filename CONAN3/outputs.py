@@ -216,15 +216,15 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
     sig3md =  np.zeros([nderived,2]) 
     
     of.write('====================================================================================================\n')
-    of.write(f'{"Jump parameters:25s"} {"median:14s"} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
+    of.write(f'{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
     of.write('====================================================================================================\n')
     
     of2.write('====================================================================================================\n')
-    of2.write(f'{"Jump parameters:25s"} {"median:14s"} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
+    of2.write(f'{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
     of2.write('====================================================================================================\n')
 
     of3.write('====================================================================================================\n')
-    of3.write(f'{"Jump parameters:25s"} {"median:14s"} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
+    of3.write(f'{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
     of3.write('====================================================================================================\n')
 
     for i in range(npara):

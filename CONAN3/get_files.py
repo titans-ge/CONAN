@@ -421,6 +421,7 @@ def get_parameters(planet_name, database="exoplanetarchive", overwrite_cache=Fal
         params["planet"]["b"]      = (df["pl_imppar"][0],df["pl_impparerr1"][0])
         params["planet"]["T14"]    = (df["pl_trandur"][0],df["pl_trandurerr1"][0])
         params["planet"]["aR"]     = (df["pl_ratdor"][0],df["pl_ratdorerr1"][0])
+        params["planet"]["K[m/s]"] = (df["pl_rvamp"][0],df["pl_rvamperr1"][0])
     else:
         raise NotImplemented
 

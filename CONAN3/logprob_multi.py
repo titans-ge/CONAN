@@ -113,15 +113,16 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
     rvGPobjects = args[62]
     rvGPparams  = args[63]
     rvGPindex   = args[64]
-    jumping_rvGP  = args[65]
-    jumping_lcGP  = args[66]
-    RVunit        = args[67]
-    rv_pargps     = args[68]
-    rv_gpkerns    = args[69]
-    sameRVgp      = args[70]
-    fit_sampler   = args[71]
-    params_all    = np.concatenate((params, GPparams,rvGPparams))
-    initial_p     = params_all[jumping]
+    # jumping_rvGP  = args[65]
+    # jumping_lcGP  = args[66]
+    input_lcs   = args[65]
+    input_rvs   = args[66]
+    RVunit      = args[67]
+    rv_pargps   = args[68]
+    rv_gpkerns  = args[69]
+    sameRVgp    = args[70]
+    fit_sampler = args[71]
+    params_all  = np.concatenate((params, GPparams,rvGPparams))
 
     lnprob     = 0.
     lnprior    = 0.
@@ -140,7 +141,6 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
         else:
             return -np.inf         # no point computing log_likelihood if log prior is not finite
     
-    # lc0_combinedGPs = np.where(GPcombined == 1.0)
     
     mod, emod = [], [] # output arrays in case we're not in the mcmc
     if get_model: 

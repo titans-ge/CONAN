@@ -58,7 +58,7 @@ def prior_transform(u,prior_dst,prior_names):
     return x 
 
 def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_folder="output", progress=True,
-            rerun_result=False, verbose=False, debug=False, save_burnin_chains=True, force_nlive=False, **kwargs):
+            rerun_result=False, verbose=False, debug=False, save_burnin_chains=True, **kwargs):
     """
     function to fit the data using the light-curve object lc_obj, rv_object rv_obj, and fit_setup object fit_obj.
 
@@ -240,9 +240,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (CP[f"pl{n}"]['omega'].to_fit == 'n' and CP[f"pl{n}"]['omega'].prior == 'p'):
             _raise(ValueError, 'cant externally input eccentricity at this time!')
             
-        # #K
-        # for key,val in CP[f"pl{n}"]["K"].__dict__.items(): #convert K to km/s
-        #     if isinstance(val, (float,int)): CP[f"pl{n}"]["K"].__dict__[key] /= 1000 
+        # #K 
         if CP[f"pl{n}"]['K'].step_size != 0.: njumpRV=njumpRV+1
         if (CP[f"pl{n}"]['K'].to_fit == 'n' and CP[f"pl{n}"]['K'].prior == 'p'):
             extinpars.append('K')
@@ -348,14 +346,14 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if fit_obj is None: fit_obj = fit_setup()
     DA_mc =  fit_obj._fit_dict
 
-    nsamples    = int(DA_mc['n_steps']*DA_mc['n_chains'])   # total number of integrations
+    nsteps      = int(DA_mc['n_steps'])   # number of steps
     nchains     = int(DA_mc['n_chains'])  #  number of chains
-    ppchain     = int(nsamples/nchains)  # number of points per chain
     nproc       = int(DA_mc['n_cpus'])   #  number of processes
     burnin      = int(DA_mc['n_burn'])    # Length of bun-in
     emcee_move  = DA_mc['emcee_move']            # Differential Evolution? 
     fit_sampler = DA_mc['sampler']               # Which sampler to use?   
     nlive       = DA_mc["n_live"]  
+    force_nlive = DA_mc["force_nlive"]
     dlogz       = DA_mc["dyn_dlogz"]    
     jit_apply   = DA_mc['apply_RVjitter']       # apply rvjitter
     jit_LCapply = DA_mc['apply_LCjitter']     # apply lcjitter
@@ -604,7 +602,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             dwCNM = np.copy(dwCNMarr[dwCNMind[groups[i]-1]])
             flux=np.copy(flux/dwCNM)
                 
-        col7_in   = col7_in - np.mean(col7_in)
+        col7_in   = col7_in - np.median(col7_in)
         t_arr     = np.concatenate((t_arr,    t),       axis=0)
         f_arr     = np.concatenate((f_arr,    flux),    axis=0)
         e_arr     = np.concatenate((e_arr,    err),     axis=0)
@@ -952,7 +950,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         #baseline
         bfstart= 1+7*npl+nddf+nocc*3+nfilt*2 + nphot + nRV*2  # the first index in the param array that refers to a baseline function    
         blind = np.asarray(list(range(bfstart+i*20,bfstart+i*20+20)))  # the indices for the coefficients for the base function   
-        if verbose: print(bfstart, blind, nocc, nfilt)
 
         lcstep1 = np.where(stepsize[blind]!=0.)
         
@@ -1112,7 +1109,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
                 pindices,jumping,pnames_all[jumping],prior_distr,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
                 jumping_noGP,gpkerns,jit_apply,jumping_GP,GPstepsizes,sameLCgp,npl,useSpline_lc,useSpline_rv,s_samp,
-                rvGPobjects,rvGPparams,rvGPindex,jumping_rvGP, jumping_lcGP,RVunit,rv_pargps,rv_gpkerns,sameRVgp,fit_sampler]
+                rvGPobjects,rvGPparams,rvGPindex,input_lcs, input_rvs, RVunit,rv_pargps,rv_gpkerns,sameRVgp,fit_sampler]
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
 
     debug_t1 = time.time()
@@ -1130,6 +1127,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     inmcmc = 'y'
     indparams[25] = inmcmc
     print('No of dimensions: ', ndim)
+
+    nplot = round(ndim/15)                #number of chain and corner plots to make
+    nplotpars = int(np.ceil(ndim/nplot))  #number of parameters to plot in each plot
 
     if fit_sampler == "emcee":
         if nchains < 2*ndim:
@@ -1168,32 +1168,19 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     burnin_chains_dict[jnames[ch]] = burnin_chains[:,:,ch]
                 pickle.dump(burnin_chains_dict,open(out_folder+"/"+"burnin_chains_dict.pkl","wb"))  
                 print("burn-in chain written to disk")
+                
                 matplotlib.use('Agg')
-
-                burn_result = load_result(out_folder)
-                try:
-                    fig = burn_result.plot_burnin_chains()
-                    fig.savefig(out_folder+"/"+"burnin_chains.png", bbox_inches="tight")
-                    print(f"Burn-in chains plot saved as: {out_folder}/burnin_chains.png")
-                except: 
-                    if ndim<=30:
-                        nplotpars = int(np.ceil(ndim/2))
-                        nplot     = 2
-                    else:
-                        nplotpars = 14
-                        nplot = int(np.ceil(ndim/14))
-
-                    for i in range(nplot):
-                        fit_pars = list(burn_result._par_names)[i*nplotpars:(i+1)*nplotpars]
-                        fig = burn_result.plot_burnin_chains(fit_pars)
-                        fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
-                    print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
-
+                burn_result = load_result(out_folder, verbose=False)
+                for i in range(nplot):
+                    fit_pars = list(burn_result._par_names)[i*nplotpars:(i+1)*nplotpars]
+                    fig      = burn_result.plot_burnin_chains(fit_pars)
+                    fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
+                print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
                 matplotlib.use(__default_backend__)
             sampler.reset()
 
             print("\nRunning production...")
-            pos, prob, state = sampler.run_mcmc(pos, ppchain,skip_initial_state_check=True, progress=progress, **kwargs )
+            pos, prob, state = sampler.run_mcmc(pos, nsteps,skip_initial_state_check=True, progress=progress, **kwargs )
             bp = pos[np.argmax(prob)]
 
             posterior = sampler.flatchain
@@ -1202,7 +1189,18 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         else:
             print("\nSkipping burn-in and production. Loading chains from disk")
-            result     = load_result(out_folder)
+            result     = load_result(out_folder,verbose=False)
+            #try burnin chain plot
+            try:
+                matplotlib.use('Agg')
+                for i in range(nplot):
+                    fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
+                    fig      = result.plot_burnin_chains(fit_pars)
+                    fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
+                print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
+                matplotlib.use(__default_backend__)
+            except: pass
+
             posterior  = result.flat_posterior
             chains     = np.stack([v for k,v in result._chains.items()],axis=2)
             try: bp    = result.params_max
@@ -1241,7 +1239,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         else:
             print("\nSkipping dynesty run. Loading chains from disk")
-            result     = load_result(out_folder)
+            result     = load_result(out_folder, verbose=False)
             posterior  = result.flat_posterior
             chains     = np.stack([v for k,v in result._chains.items()],axis=1)
             try: bp    = result.params_max
@@ -1263,49 +1261,26 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     exti[1].sort()
     extins=np.copy(exti[1])
 
-    print("==================Sampling Finished==================\n\n")
+    print("============ Sampling Finished ==============================================\n")
 
     # ==== chain and corner plot ================
     matplotlib.use('Agg')
-    result = load_result(out_folder)
-    if fit_sampler == "emcee":
-       
+    result = load_result(out_folder,verbose=False)
+    if fit_sampler == "emcee": 
         #chain plot
-        try:
-            fig = result.plot_chains()
-            fig.savefig(out_folder+"/chains.png", bbox_inches="tight")
-        except:
-            if ndim<=30:
-                nplotpars = int(np.ceil(ndim/2))
-                nplot     = 2
-            else:
-                nplotpars = 14
-                nplot = int(np.ceil(ndim/14))
-
-            for i in range(nplot):
-                fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
-                fig = result.plot_chains(fit_pars)
-                fig.savefig(out_folder+f"/chains_{i}.png", bbox_inches="tight") 
-            print(f"\nsaved {nplot} chain plots as {out_folder}/chains_*.png")
-        
-    
-    #corner plot
-    try:
-        fig = result.plot_corner()
-        fig.savefig(out_folder+"/corner.png", bbox_inches="tight")
-    except: 
-        if ndim<=30:
-            nplotpars = int(np.ceil(ndim/2))
-            nplot     = 2
-        else:
-            nplotpars = 14
-            nplot = int(np.ceil(ndim/14))
         for i in range(nplot):
             fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
-            fig = result.plot_corner(fit_pars)
-            fig.savefig(out_folder+f"/corner_{i}.png", bbox_inches="tight")
-        print(f"saved {nplot} corner plots as {out_folder}/corner_*.png")
-
+            fig = result.plot_chains(fit_pars)
+            fig.savefig(out_folder+f"/chains_{i}.png", bbox_inches="tight") 
+        print(f"\nsaved {nplot} chain plots as {out_folder}/chains_*.png")
+    
+    
+    #corner plot
+    for i in range(nplot):
+        fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
+        fig = result.plot_corner(fit_pars, force_plot=True)
+        fig.savefig(out_folder+f"/corner_{i}.png", bbox_inches="tight")
+    print(f"saved {nplot} corner plots as {out_folder}/corner_*.png")
     matplotlib.use(__default_backend__)
 
     dim=posterior.shape
@@ -1318,12 +1293,15 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         par_PDF = get_PDF_Gauss(extcens[ind],extup[ind],extlow[ind],dim)
         extind_PDF[:,i] = par_PDF
 
-    # newparams == initial here are the parameter values as they come in. they get used only for the fixed values
     bpfull = np.copy(initial)
     bpfull[[ijnames][0]] = bp
 
-    medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
-                                    nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
+    try:
+        medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+                                        nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
+    except:
+        medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+                                        nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
 
     npar=len(jnames)
     if (baseLSQ == "y"):
@@ -1341,15 +1319,17 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     inmcmc='n'
     indparams[25] = inmcmc
 
-    #AKIN: save config parameters indparams and summary_stats and as a hidden files. 
-    #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
-    # pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
-    stat_vals = dict(med = medp[jumping], max=maxp[jumping], bf = bpfull[jumping])
-    pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
-
     #median
     mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],*indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
     mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,T0_post,p_post,Dur_post)
+
+    #AKIN: save summary_stats and as a hidden files. 
+    #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
+    # pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
+    stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping],
+                        T0 = T0_post,  P = p_post, dur = Dur_post)
+    pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
+
 
     #max_posterior
     mval2, merr2, T0_post, p_post, Dur_post = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
@@ -1376,10 +1356,17 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 e_arr[indlist[i][0]] = np.sqrt((e_arr[indlist[i][0]])**2 + (cfn[i])**2)
         of.close()
 
-    result = load_result(out_folder)
-    # result.T0   = maxp[np.where(pnames_all=='T_0')]      if statistic != "median" else medp[np.where(pnames_all=='T_0')]
-    # result.P    = maxp[np.where(pnames_all=='Period')]   if statistic != "median" else medp[np.where(pnames_all=='Period')]
-    # result.dur  = maxp[np.where(pnames_all=='Duration')] if statistic != "median" else medp[np.where(pnames_all=='Duration')]
-    # result.RpRs = maxp[np.where(pnames_all=='RpRs')]     if statistic != "median" else medp[np.where(pnames_all=='RpRs')]
     
+    print("\n")
+    result = load_result(out_folder)
+    matplotlib.use('Agg')
+
+    if result.lc.names != []:
+        fig = result.lc.plot_bestfit()
+        fig.savefig(out_folder+"/bestfit_LC.png", bbox_inches="tight")
+    if result.rv.names != []:
+        fig = result.rv.plot_bestfit()
+        fig.savefig(out_folder+"/bestfit_RV.png", bbox_inches="tight")
+        
+    matplotlib.use(__default_backend__)
     return result

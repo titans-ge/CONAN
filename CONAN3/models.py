@@ -18,6 +18,10 @@ from .utils import rho_to_aR, cosine_atm_variation, reflection_atm_variation, ph
 from types import SimpleNamespace
 
 
+class TTV_Model(Model):
+    #TODO: implement TTV model
+    pass
+
 class Transit_Model(Model):
     """
     computes the transit model for a given set of parameters along with the baseline

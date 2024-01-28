@@ -1,10 +1,12 @@
 from ._classes import load_lightcurves, load_rvs, fit_setup,_print_output
 from .fit_data import run_fit
+from.utils import ecc_om_par
 import numpy as np 
 
 
 
-def fit_configfile(config_file = "input_config.dat", out_folder = "output"):
+def fit_configfile(config_file = "input_config.dat", out_folder = "output", 
+                   rerun_result= True, verbose=True):
     """
         Run CONAN fit from configuration file. 
         This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
@@ -18,10 +20,9 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output"):
             path to folder where output files will be saved.
     """
 
-    lc_obj, rv_obj, fit_obj = load_configfile(config_file, verbose=True)
-    result = run_fit(lc_obj, rv_obj, fit_obj,
-                            out_folder=out_folder,
-                            rerun_result=True)
+    lc_obj, rv_obj, fit_obj = load_configfile(config_file, verbose=verbose)
+    result = run_fit(lc_obj, rv_obj, fit_obj,out_folder=out_folder,
+                        rerun_result=rerun_result,verbose=verbose)
     return result
 
 
@@ -41,13 +42,13 @@ def _prior_value(str_prior):
 
 
 
-def create_configfile(lc_obj, rv_obj, fit_obj, filename="input_config.dat"): 
+def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_config.dat"): 
     """
         create configuration file that of lc_obj, rv_obj, amd fit_obj setup.
         
         Parameters:
         -----------
-        lc_obj : object;
+        lc_obj : object,None;
             Instance of CONAN.load_lightcurve() object and its attributes.
 
         rv_obj : object, None;
@@ -56,6 +57,12 @@ def create_configfile(lc_obj, rv_obj, fit_obj, filename="input_config.dat"):
         fit_obj : object;
             Instance of CONAN.fit_setup() object and its attributes.
     """
+    if lc_obj is None:
+        lc_obj = load_lightcurves()
+    if rv_obj is None:
+        rv_obj = load_rvs()
+    if fit_obj is None:
+        fit_obj = fit_setup()
     f = open(filename,"w")
     f.write("# ========================================== CONAN configuration file ============================================= \n")
     f.write("#             *********** KEYS *****************************************************************************************\n")
@@ -70,9 +77,15 @@ def create_configfile(lc_obj, rv_obj, fit_obj, filename="input_config.dat"):
     f.write(f"RV_filepath: {lc_obj._fpath}\n")
     f.write(f"n_planet: {lc_obj._nplanet}\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
+    f.write(f"{'LC_auto_decorr:':15s} False       # automatically determine baseline function for the LCs\n")
+    f.write(f"{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
+    f.write(f"{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
     _print_output(lc_obj,"lc_baseline",file=f)
     _print_output(lc_obj,"gp",file=f)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
+    f.write(f"{'RV_auto_decorr:':15s} False       # automatically determine baseline function for the RVs\n")
+    f.write(f"{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
+    f.write(f"{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
     _print_output(rv_obj,"rv_baseline",file=f)
     _print_output(rv_obj,"rv_gp",file=f)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
@@ -127,7 +140,21 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     fpath    = _file.readline().rstrip().split()[1]           # the path where the files are
     rv_fpath = _file.readline().rstrip().split()[1]           # the path where the files are
     nplanet  = int(_file.readline().rstrip().split()[1])      # the path where the files are
-    _skip_lines(_file,3)                                      #remove 3 comment lines
+    _skip_lines(_file,1)                                      #remove 3 comment lines
+
+    #### auto decorrelation
+    dump = _file.readline().rstrip().split()[1]
+    assert dump in ["True","False"], f"LC_auto_decorr: must be 'True' or 'False' but {dump} given"
+    use_decorr = True if dump == "True" else False
+    dump = _file.readline().rstrip().split()[1]
+    assert dump[0] == "[" and dump[-1] == "]", f"exclude_cols: must be a list of column numbers (e.g. [3,4]) but {dump} given"
+    #convert dump to list of ints
+    exclude_cols = [int(i) for i in dump[1:-1].split(",")] if dump[1]!= "]" else []
+    dump = _file.readline().rstrip().split()[1]
+    assert dump[0] == "[" and dump[-1] == "]", f"enforce_pars: must be a list of  pars (e.g. [B3,A5]) but {dump} given"
+    #convert dump to list of strings
+    enforce_pars = [i for i in dump[1:-1].split(",")] if dump[1]!= "]" else []
+    _skip_lines(_file,2)                                      #remove 1 comment lines
 
     # ========== Lightcurve input ====================
     _names=[]                    # array where the LC filenames are supposed to go
@@ -181,7 +208,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         _useGPphot.append(_adump[15])
         
         #LC spline
-        if _adump[16] != "None":
+        if _adump[16] != "None":   #TODO: only works for 1d spline
             _spl_lclist.append(_adump[0])
             _spl_knot.append(float(_adump[16].split("k")[-1]))
             _spl_deg.append(int(_adump[16].split("k")[0].split("d")[-1]))
@@ -189,7 +216,8 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
 
         #move to next LC
         dump =_file.readline() 
-
+    
+    nphot = len(_names)
     _skip_lines(_file,1)                                      #remove 1 comment lines
     
     # ========== GP input ====================
@@ -214,12 +242,12 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
 
         #move to next LC
         dump =_file.readline()
-    _skip_lines(_file,2)  
+    # _skip_lines(_file,1)  
     
     
     # instantiate light curve object
     lc_obj = load_lightcurves(_names, fpath, _filters, _lamdas, nplanet)
-    lc_obj.lc_baseline(*np.array(_bases).T, grp_id=_groups, gp=_useGPphot,verbose=False )
+    lc_obj.lc_baseline(*np.array(_bases).T, grp_id=None, gp=_useGPphot,verbose=False )
     lc_obj.clip_outliers(lc_list=_clip_lclist, clip=_clip, width=_clip_width,show_plot=False,verbose=False )
     lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
     lc_obj.supersample(lc_list=_ss_lclist, exp_time=_ss_exp, verbose=False)
@@ -230,6 +258,20 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
                     amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
     
     ## RV ==========================================================
+    #### auto decorrelation
+    dump = _file.readline().rstrip().split()[1]
+    assert dump in ["True","False"], f"RV_auto_decorr: must be 'True' or 'False' but {dump} given"
+    use_decorrRV = True if dump == "True" else False
+    dump = _file.readline().rstrip().split()[1]
+    assert dump[0] == "[" and dump[-1] == "]", f"RV exclude_cols: must be a list of column numbers (e.g. [3,4]) but {dump} given"
+    #convert dump to list of ints
+    exclude_colsRV = [int(i) for i in dump[1:-1].split(",")] if dump[1]!= "]" else []
+    dump = _file.readline().rstrip().split()[1]
+    assert dump[0] == "[" and dump[-1] == "]", f"RV enforce_pars: must be a list of  pars (e.g. [B3,A5]) but {dump} given"
+    #convert dump to list of strings
+    enforce_parsRV = [i for i in dump[1:-1].split(",")] if dump[1]!= "]" else []
+    _skip_lines(_file,2)                                      #remove 1 comment lines
+
     RVnames, RVbases, gammas = [],[],[]
     _RVsclcol, usegpRV,strbase = [],[],[]
     _spl_rvlist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
@@ -256,7 +298,8 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         gammas.append(_prior_value(_adump[11]))
         #move to next RV
         dump =_file.readline()
-
+    
+    nRV = len(RVnames)
     _skip_lines(_file,1)                                      #remove 1 comment lines
     
     # RV GP
@@ -302,6 +345,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     pl_pars["rho_star"] = _prior_value(_adump[2])
     par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
     for p in par_names: pl_pars[p] = []
+    sesinw, secosw = [],[]
         
     for n in range(1,nplanet+1):        #load parameters for each planet
         _skip_lines(_file,1)          #remove dashes
@@ -309,7 +353,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
             dump =_file.readline()
             _adump = dump.split()
             pl_pars[par_names[i]].append(_prior_value(_adump[2]))
-    
+        eos, eoc = ecc_om_par(pl_pars["Eccentricity"][-1],pl_pars["omega"][-1],
+                                conv_2_obj=True,return_tuple=True)
+        sesinw.append(eos)
+        secosw.append(eoc)
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
     ## limb darkening
@@ -362,7 +409,25 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
     lc_obj.setup_phasecurve(D_occ, A_pc, ph_off, verbose=verbose)
     lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
-    
+
+    if nphot > 0:
+        if not use_decorr:
+            if verbose: print("\ngetting start values for LC decorrelation parameters ...")
+        lc_obj.get_decorr(**pl_pars,q1=q1,q2=q2,
+                            D_occ=D_occ[0] if len(D_occ)>0 else 0, 
+                            A_pc=A_pc[0] if len(A_pc)>0 else 0, 
+                            ph_off=ph_off[0] if len(ph_off)>0 else 0, plot_model=False,
+                            setup_baseline=use_decorr,exclude_cols=exclude_cols,
+                            enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
+    if nRV > 0:
+        if not use_decorrRV:
+            if verbose: print("\ngetting start values for RV decorrelation parameters ...")
+        rv_obj.get_decorr(T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
+                            sesinw=sesinw,secosw=secosw,
+                            gamma=gammas if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
+                            exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, 
+                            plot_model=False,verbose=verbose if use_decorrRV else False)
+        
     
     # stellar params
     dump    = _file.readline()
@@ -377,12 +442,13 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     
     _skip_lines(_file,2)                                      #remove 2 comment lines
     #fit setup
-    tot_samps = int(_file.readline().split()[1])
+    nsteps    = int(_file.readline().split()[1])
     nchains   = int(_file.readline().split()[1])
-    nsteps    = int(tot_samps/nchains)
     ncpus     = int(_file.readline().split()[1])
     nburn     = int(_file.readline().split()[1])
     nlive     = int(_file.readline().split()[1])
+    force_nl  = _file.readline().split()[1]
+    force_nl  = True if force_nl == "True" else False
     dlogz     = float(_file.readline().split()[1])
     sampler   = _file.readline().split()[1]
     mc_move   = _file.readline().split()[1]
@@ -407,8 +473,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
                         verbose=verbose)
     
     fit_obj.sampling(sampler=sampler,n_cpus=ncpus, emcee_move=mc_move,
-                    n_chains=nchains, n_burn   = 5000, n_steps  = nsteps, 
-                    n_live=nlive, dyn_dlogz=dlogz,verbose=verbose )
+                    n_chains=nchains, n_burn   = nburn, n_steps  = nsteps, 
+                    n_live=nlive, force_nlive=force_nl,
+                    dyn_dlogz=dlogz,verbose=verbose )
 
     _file.close()
 

@@ -24,7 +24,7 @@ python setup.py develop
 
 - or directly using pip to install from github
 ```
-pip install -e git+https://github.com/mlendl42/CONAN3.git
+pip install -e git+https://github.com/mlendl42/CONAN3.git#egg=CONAN3
 ```
 
 See recent changes in change_log.rst

@@ -90,7 +90,7 @@ traocc_pars =dict(  T_0           = (t0-0.1,t0,t0+0.1),
                     q2            = q2)
 # In[9]:
 decorr_res = lc_obj.get_decorr( **traocc_pars, cheops=False, show_steps=False, 
-                                plot_model=False, use_result=False)
+                                plot_model=False, setup_baseline=False)
 
 # In[12]:
 res = decorr_res[0]

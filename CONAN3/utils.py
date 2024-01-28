@@ -25,6 +25,25 @@ def phase_fold(t, per, t0,phase0=-0.5):
     return ( ( ( (t-t0)/per % 1) - phase0) % 1) + phase0
 
 
+def get_transit_time(t, per, t0):
+    """Get the transit time of a light curve.
+
+    Parameters
+    ----------
+    t : array-like
+        Time stamps.
+    per : float
+        Period.
+    t0 : float
+        Time of transit center.
+
+    Returns
+    -------
+    tt : array-like
+        Transit times.
+    """
+    return t0 + per * np.round((np.median(t) - t0)/per)
+
 def bin_data(t,f,err=None,statistic="mean",bins=20):
     """
     Bin data in time.
@@ -114,8 +133,34 @@ def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_c
 
 
 
-def ecc_om_par(ecc, omega):
+def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
     # This function calculates the prior values and limits for the eccentricity and omega parameters
+
+    if conv_2_obj:
+        if isinstance(ecc, (int,float)):
+            ecc = SimpleNamespace(to_fit="n",start_value=ecc, step_size=0, prior="n", prior_mean=ecc,
+                                        prior_width_lo=0, prior_width_hi=0, bounds_lo=0, bounds_hi=1)
+        if isinstance(ecc, tuple):
+            if len(ecc)==2:
+                ecc = SimpleNamespace(to_fit="y",start_value=ecc[0], step_size=0.1*ecc[1], prior="p", prior_mean=ecc[0],
+                                        prior_width_lo=ecc[1], prior_width_hi=ecc[1], bounds_lo=0, bounds_hi=1)
+            elif len(ecc)==3:
+                ecc = SimpleNamespace(to_fit="y",start_value=ecc[1], step_size=0.01, prior="n", prior_mean=ecc[1],
+                                        prior_width_lo=0, prior_width_hi=0, bounds_lo=ecc[0], bounds_hi=ecc[2])
+
+        if isinstance(omega, (int,float)):
+            omega = SimpleNamespace(to_fit="n",start_value=omega, step_size=0, prior="n", prior_mean=omega,
+                                        prior_width_lo=0, prior_width_hi=0, bounds_lo=0, bounds_hi=360)
+        if isinstance(omega, tuple):
+            if len(omega)==2:
+                omega = SimpleNamespace(to_fit="y",start_value=omega[0], step_size=0.1*omega[1], prior="p", prior_mean=omega[0],
+                                        prior_width_lo=omega[1], prior_width_hi=omega[1], bounds_lo=0, bounds_hi=360)
+            elif len(omega)==3:
+                omega = SimpleNamespace(to_fit="y",start_value=omega[1], step_size=0.01, prior="n", prior_mean=omega[1],
+                                        prior_width_lo=0, prior_width_hi=0, bounds_lo=omega[0], bounds_hi=omega[2])
+        for key,val in omega.__dict__.items():   #convert to radians
+            if isinstance(val, (float,int)): omega.__dict__[key] *= np.pi/180
+            
 
     sesino=np.sqrt(ecc.start_value)*np.sin(omega.start_value)     # starting value
     sesinolo = -1.   # lower limit
@@ -185,6 +230,14 @@ def ecc_om_par(ecc, omega):
     from ._classes import _param_obj
     eos_in = _param_obj(*eos_in)
     eoc_in = _param_obj(*eoc_in)
+
+    if return_tuple:
+        eos_mean_prior_width = np.mean([eos_in.prior_width_lo,eos_in.prior_width_hi])
+        eoc_mean_prior_width = np.mean([eoc_in.prior_width_lo,eoc_in.prior_width_hi])
+
+        eos = eos_in.start_value if eos_in.to_fit=="n" else (eos_in.start_value, eos_mean_prior_width) if eos_mean_prior_width>0 else (eos_in.bounds_lo, eos_in.start_value,eos_in.bounds_hi)
+        eoc = eoc_in.start_value if eoc_in.to_fit=="n" else (eoc_in.start_value, eoc_mean_prior_width) if eoc_mean_prior_width>0 else (eoc_in.bounds_lo, eoc_in.start_value,eoc_in.bounds_hi)
+        return eos, eoc
 
     return eos_in, eoc_in
 
