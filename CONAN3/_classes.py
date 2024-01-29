@@ -662,11 +662,11 @@ def _print_output(self, section: str, file=None):
     if section == "fit":
         DA = self._fit_dict
         _print_fit_pars = f"""# ============ FIT setup ====================================================================================="""+\
-        f"""\n{'Number_steps':23s}  {DA['n_steps']} \n{'Number_chains':23s}  {DA['n_chains']} \n{'Number_of_processes':23s}  {DA['n_cpus']} """+\
-            f"""\n{'Burnin_length':23s}  {DA['n_burn']} \n{'n_live':23s}  {DA['n_live']} \n{'force_nlive':23s}  {DA['force_nlive']} \n{'d_logz':23s}  {DA['dyn_dlogz']} """+\
-                    f"""\n{'Sampler':23s}  {DA['sampler']} \n{'emcee_move':23s}  {DA['emcee_move']} \n{'leastsq_for_basepar':23s}  {DA['leastsq_for_basepar']} """+\
-                        f"""\n{'apply_LCjitter':23s}  {DA['apply_LCjitter']} \n{'apply_RVjitter':23s}  {DA['apply_RVjitter']} """+\
-                        f"""\n{'LCbasecoeff_lims':23s}  {DA['LCbasecoeff_lims']} \n{'RVbasecoeff_lims':23s}  {DA['RVbasecoeff_lims']} """
+        f"""\n{'Number_steps':33s}  {DA['n_steps']} \n{'Number_chains':33s}  {DA['n_chains']} \n{'Number_of_processes':33s}  {DA['n_cpus']} """+\
+            f"""\n{'Burnin_length':33s}  {DA['n_burn']} \n{'n_live':33s}  {DA['n_live']} \n{'force_nlive':33s}  {DA['force_nlive']} \n{'d_logz':33s}  {DA['dyn_dlogz']} """+\
+                    f"""\n{'Sampler[emcee/dynesty]':33s}  {DA['sampler']} \n{'emcee_move[stretch/demc/snooker]':33s}  {DA['emcee_move']} \n{'leastsq_for_basepar':33s}  {DA['leastsq_for_basepar']} """+\
+                        f"""\n{'apply_LCjitter':33s}  {DA['apply_LCjitter']} \n{'apply_RVjitter':33s}  {DA['apply_RVjitter']} """+\
+                        f"""\n{'LCbasecoeff_lims':33s}  {DA['LCbasecoeff_lims']} \n{'RVbasecoeff_lims':33s}  {DA['RVbasecoeff_lims']} """
         
         print(_print_fit_pars, file=file)
 

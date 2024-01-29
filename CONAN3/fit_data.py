@@ -1143,7 +1143,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
         # put starting points for all walkers, i.e. chains
-        p0 = np.random.rand(ndim * nchains).reshape((nchains, ndim))*np.asarray(steps[jumping])*2 + (np.asarray(initial[jumping])-np.asarray(steps[jumping]))
+        p0 = np.random.rand(nchains, ndim)*np.asarray(steps[jumping])*2 + (np.asarray(initial[jumping])-np.asarray(steps[jumping]))
         assert np.all([np.isfinite(logprob_multi(p0[i],*indparams)) for i in range(nchains)]),f'Range of start values of a(some) jump parameter(s) are outside the prior distribution'
 
         if emcee_move == "demc":      moves = emcee.moves.DEMove()
@@ -1185,7 +1185,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
             posterior = sampler.flatchain
             chains    = sampler.chain
-            print(("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction))))
+            print((f"Mean acceptance fraction: {np.mean(sampler.acceptance_fraction):.3f}"))
+            print((f"Mean autocorrelation time: {np.mean(sampler.get_autocorr_time()):.3f} steps"))
 
         else:
             print("\nSkipping burn-in and production. Loading chains from disk")

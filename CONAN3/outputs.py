@@ -516,9 +516,9 @@ def get_AIC_BIC(npar,ndat,chi2,out_folder):
     outfile=out_folder+'/AIC_BIC.dat'
     of=open(outfile,'w')
     of.write(f'{"data points:":20s} {ndat:10.0f} \n')
-    of.write(f'{"free parameters":20s} {npar:10.0f} \n')
-    of.write(f'{"AIC":10s} {"BIC":10s} {"reduced CHI2"}\n')
-    of.write(f'{AIC:10.3f} {BIC:10.3f} {RCHI:10.2f} \n')
+    of.write(f'{"free parameters:":20s} {npar:10.0f} \n')
+    of.write(f'{"AIC":10s}\t{"BIC":10s}\t{"reduced CHI2"}\n')
+    of.write(f'{AIC:10.3f}\t{BIC:10.3f}\t{RCHI:10.2f} \n')
     of.close()
     return
 

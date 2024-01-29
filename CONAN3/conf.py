@@ -419,6 +419,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
                             ph_off=ph_off[0] if len(ph_off)>0 else 0, plot_model=False,
                             setup_baseline=use_decorr,exclude_cols=exclude_cols,
                             enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
+        #TODO: if not use decorr compare the auto decorr pars to the user-defined ones and only use start values for those
     if nRV > 0:
         if not use_decorrRV:
             if verbose: print("\ngetting start values for RV decorrelation parameters ...")
