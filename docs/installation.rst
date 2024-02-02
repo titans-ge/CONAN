@@ -1,0 +1,34 @@
+.._installation:
+
+Installation
+============
+
+Python package requirements:
+``numpy``, ``scipy``, ``matplotlib``, ``batman``, ``emcee``, ``corner``, ``pandas``
+Fortran packages: Routines from Mandel & Agol 2002, compiled with f2py:
+
+To avoid requirement conflicts with other packages, it is better to create a new environment to install ``CONAN``
+
+.. code-block:: bash
+
+    conda create -n conan_env numpy python=3.10
+    conda activate conan_env
+
+``CONAN`` can be installed in this new environment by: 
+
+- downloading the source files from github: 
+
+.. code-block:: bash
+
+    git clone https://github.com/mlendl42/CONAN3.git
+.. code-block:: bash
+
+    cd CONAN3    
+    python setup.py develop
+
+- or directly using pip to install from the github repository:
+.. code-block:: bash
+
+    pip install -e git+https://github.com/mlendl42/CONAN3.git#egg=CONAN3
+
+
