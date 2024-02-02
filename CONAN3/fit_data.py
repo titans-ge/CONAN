@@ -27,7 +27,7 @@ from .utils import gp_params_convert
 from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
 
-from ._classes import _raise, fit_setup, __default_backend__, load_result
+from ._classes import _raise, fit_setup, __default_backend__, load_result, _text_format
 import matplotlib
 matplotlib.use(__default_backend__)
 
@@ -174,7 +174,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (float(rv_dict["gam_steps"][i]) != 0.) :
             njumpRV[i]=njumpRV[i]+1
 
- 
+
 #============transit and RV jump parameters===============
     #from load_lightcurves.planet_parameters()
 
@@ -346,29 +346,31 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if fit_obj is None: fit_obj = fit_setup()
     DA_mc =  fit_obj._fit_dict
 
-    nsteps      = int(DA_mc['n_steps'])   # number of steps
-    nchains     = int(DA_mc['n_chains'])  #  number of chains
-    nproc       = int(DA_mc['n_cpus'])   #  number of processes
-    burnin      = int(DA_mc['n_burn'])    # Length of bun-in
-    emcee_move  = DA_mc['emcee_move']            # Differential Evolution? 
-    fit_sampler = DA_mc['sampler']               # Which sampler to use?   
-    nlive       = DA_mc["n_live"]  
-    force_nlive = DA_mc["force_nlive"]
-    dlogz       = DA_mc["dyn_dlogz"]    
-    jit_apply   = DA_mc['apply_RVjitter']       # apply rvjitter
-    jit_LCapply = DA_mc['apply_LCjitter']     # apply lcjitter
-    LCbase_lims = DA_mc['LCbasecoeff_lims']   # bounds of the LC baseline coefficients
-    RVbase_lims = DA_mc['RVbasecoeff_lims']   # bounds of the RV baseline coefficients
-    grtest      = True if DA_mc['GR_test'] == 'y' else False  # GRtest done?
-    plots       = True if DA_mc['make_plots'] == 'y' else False  # Make plots done
-    leastsq     = True if DA_mc['leastsq'] == 'y' else False  # Do least-square?
-    savefile    = DA_mc['savefile']   # Filename of save file
-    savemodel   = DA_mc['savemodel']   # Filename of model save file
-    adaptBL     = DA_mc['adapt_base_stepsize']   # Adapt baseline coefficent
-    paraCNM     = DA_mc['remove_param_for_CNM']   # remove parametric model for CNM computation
-    baseLSQ     = DA_mc['leastsq_for_basepar']   # do a leas-square minimization for the baseline (not jump parameters)
-    lm          = True if DA_mc['lssq_use_Lev_Marq'] =='y' else False  # use Levenberg-Marquardt algorithm for minimizer?
-    cf_apply    = DA_mc['apply_CFs']  # which CF to apply
+    nsteps           = int(DA_mc['n_steps'])   # number of steps
+    nchains          = int(DA_mc['n_chains'])  #  number of chains
+    nproc            = int(DA_mc['n_cpus'])   #  number of processes
+    burnin           = int(DA_mc['n_burn'])    # Length of bun-in
+    emcee_move       = DA_mc['emcee_move']            # Differential Evolution? 
+    fit_sampler      = DA_mc['sampler']               # Which sampler to use?   
+    nlive            = DA_mc["n_live"]  
+    force_nlive      = DA_mc["force_nlive"]
+    dlogz            = DA_mc["dyn_dlogz"]    
+    jit_apply        = DA_mc['apply_RVjitter']       # apply rvjitter
+    jit_LCapply      = DA_mc['apply_LCjitter']     # apply lcjitter
+    LCjitter_loglims = DA_mc['LCjitter_loglims']   # log of the LC jitter limits
+    RVjitter_lims    = DA_mc['RVjitter_lims']      # RV jitter limits
+    LCbase_lims      = DA_mc['LCbasecoeff_lims']   # bounds of the LC baseline coefficients
+    RVbase_lims      = DA_mc['RVbasecoeff_lims']   # bounds of the RV baseline coefficients
+    grtest           = True if DA_mc['GR_test'] == 'y' else False  # GRtest done?
+    plots            = True if DA_mc['make_plots'] == 'y' else False  # Make plots done
+    leastsq          = True if DA_mc['leastsq'] == 'y' else False  # Do least-square?
+    savefile         = DA_mc['savefile']   # Filename of save file
+    savemodel        = DA_mc['savemodel']   # Filename of model save file
+    adaptBL          = DA_mc['adapt_base_stepsize']   # Adapt baseline coefficent
+    paraCNM          = DA_mc['remove_param_for_CNM']   # remove parametric model for CNM computation
+    baseLSQ          = DA_mc['leastsq_for_basepar']   # do a leas-square minimization for the baseline (not jump parameters)
+    lm               = True if DA_mc['lssq_use_Lev_Marq'] =='y' else False  # use Levenberg-Marquardt algorithm for minimizer?
+    cf_apply         = DA_mc['apply_CFs']  # which CF to apply
 
 
 
@@ -510,10 +512,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     for i in range(nphot):    #add jitter
         if (jit_LCapply=='y'):
             #in ppm
-            params      = np.concatenate((params,  [-13]), axis=0)    #20ppm
+            params      = np.concatenate((params,  [np.median(DA_mc['LCjitter_loglims'])]), axis=0)    #20ppm
             stepsize    = np.concatenate((stepsize,[0.1]), axis=0)
-            pmin        = np.concatenate((pmin,    [-15]), axis=0)
-            pmax        = np.concatenate((pmax,    [-4.]), axis=0)
+            pmin        = np.concatenate((pmin,    [DA_mc['LCjitter_loglims'][0]]), axis=0)
+            pmax        = np.concatenate((pmax,    [DA_mc['LCjitter_loglims'][1]]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
@@ -543,8 +545,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (jit_apply=='y'):
             params      = np.concatenate((params,  [0.001]), axis=0)
             stepsize    = np.concatenate((stepsize,[0.0001]), axis=0)
-            pmin        = np.concatenate((pmin,    [0.]), axis=0)
-            pmax        = np.concatenate((pmax,    [100]), axis=0)
+            pmin        = np.concatenate((pmin,    [DA_mc["RVjitter_lims"][0]]), axis=0)
+            pmax        = np.concatenate((pmax,    [DA_mc["RVjitter_lims"][1]]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
@@ -554,7 +556,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             params      = np.concatenate((params,  [0.]), axis=0)
             stepsize    = np.concatenate((stepsize,[0.]), axis=0)
             pmin        = np.concatenate((pmin,    [0.]), axis=0)
-            pmax        = np.concatenate((pmax,    [0]), axis=0)
+            pmax        = np.concatenate((pmax,    [0]),  axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
@@ -1059,7 +1061,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     t_norm = lambda a,b,mu,sig: truncnorm((a-mu)/sig, (b-mu)/sig, mu, sig) # normal prior(mu,sig) truncated  between a and b
 
     prior_distr = []      # list of prior distributions for the jumping parameters
-
     for jj in range(ndim):
         if jnames[jj].startswith('GP'):    #if GP parameter then convert to the correct amplitude units
             gpparunit = ppm if (jnames[jj].startswith('GPlc') and 'Amp' in jnames[jj]) else 1
@@ -1132,9 +1133,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     nplotpars = int(np.ceil(ndim/nplot))  #number of parameters to plot in each plot
 
     if fit_sampler == "emcee":
-        if nchains < 2*ndim:
-            print('WARNING: Number of chains is less than twice the number of dimensions. Increasing number of chains to 2*ndim')
-            nchains = 2*ndim
+        if nchains < 3*ndim:
+            print('WARNING: Number of chains is less than 3 times the number of dimensions. Increasing number of chains to 3*ndim')
+            nchains = 3*ndim
         print('No of chains: ', nchains)
         print('fitting parameters: ', pnames_all[jumping])
         if debug: 
@@ -1186,7 +1187,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             posterior = sampler.flatchain
             chains    = sampler.chain
             print((f"Mean acceptance fraction: {np.mean(sampler.acceptance_fraction):.3f}"))
-            print((f"Mean autocorrelation time: {np.mean(sampler.get_autocorr_time()):.3f} steps"))
+            # print((f"Mean autocorrelation time: {np.mean(sampler.get_autocorr_time()):.3f} steps"))
 
         else:
             print("\nSkipping burn-in and production. Loading chains from disk")
@@ -1348,6 +1349,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if nphot > 0:
         bw, br, brt, cf, cfn = corfac(rarr, t_arr, e_arr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
         of=open(out_folder+"/CF.dat",'w')
+        of.write(f"{'beta_w':8s} {'beta_r':8s} {'beta_rtot':8s} {'CF':8s} {'CFerr':10s} \n")
         for i in range(nphot):   #adapt the error values
         # print(earr[indlist[i][0]])
             of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
@@ -1370,4 +1372,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         fig.savefig(out_folder+"/bestfit_RV.png", bbox_inches="tight")
         
     matplotlib.use(__default_backend__)
+
+    #make print out statement in the fashion of conan the barbarian
+    print(_text_format.RED + "\nCONAN: I have now crushed your data," +\
+          "\n\tthe planetary information it hides is now laid bare in the results."+\
+          "\n\t\tI am now ready for another quest. \n" + _text_format.END)
     return result

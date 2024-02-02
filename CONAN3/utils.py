@@ -539,7 +539,7 @@ class gp_params_convert:
             
         log_pars = []
         for i,kern in enumerate(kernels):
-            assert kern in ["g_mat32","g_mat52","g_expsq","g_exp","sho","mat32","real"],  \
+            assert kern in ["g_mat32","g_mat52","g_expsq","g_exp","g_cos","sho","mat32","real"],  \
                 f'gp_params_convert(): kernel to convert must be one of ["any_george","sho","mat32","real"] but "{kern}" given'
 
             # call class function with the name kern
@@ -607,6 +607,15 @@ class gp_params_convert:
         log_metric = np.log(metric)
         return log_var, log_metric
     
+    def g_cos(self, data, amplitude, lengthscale):
+        """
+        George CosineKernel
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_var    = np.log(amplitude**2)
+        log_period = np.log(lengthscale)
+        return log_var, log_period
+
     def g_mat52(self, data, amplitude, lengthscale):
         """
         George mat52

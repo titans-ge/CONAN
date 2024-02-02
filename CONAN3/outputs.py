@@ -239,7 +239,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
         of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (jnames[i], medvals[i],sig1[i,0],sig1[i,1], sig3[i,0], sig3[i,1]))       
     
     of.write('====================================================================================================\n')
-    of.write('Additional input parameters: \n')
+    of.write('Stellar input parameters: \n')
     of.write('====================================================================================================\n')
     vals=Rs_PDF
     # calculate median
@@ -311,7 +311,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
         param_histbp(vals,jnames[i],medvals[i],sig1[i],sig3[i],maxvals[i],sig1m[i],sig3m[i],bp[ijnames[0][i]],s1bps,out_folder)
 
     of2.write('====================================================================================================\n')
-    of2.write('Additional input parameters: \n')
+    of2.write('Stellar input parameters: \n')
     of2.write('====================================================================================================\n')
     vals=Rs_PDF
     pdf, xpdf, HPDmin, iHDP = credregionML(vals)
@@ -411,8 +411,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
         of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (jnames[i],bp[ijnames[0][i]],s1bps[0],s1bps[1],s3bps[0],s3bps[1]))     
         
     of3.write('====================================================================================================\n')
-    
-    of3.write('Additional input parameters: \n')
+    of3.write('Stellar input parameters: \n')
     of3.write('====================================================================================================\n')
     vals=Rs_PDF
     pdf, xpdf, HPDmin, iHDP = credregionML(vals)

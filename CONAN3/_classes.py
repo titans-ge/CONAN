@@ -448,7 +448,6 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
             mod,_   = RadialVelocity_Model(t, t0, per, K, sesinw, secosw, planet_only=True)  
             rvmod += mod
         
-        # rvmod_kms = rvmod_ms/1000 # to km/s
         return rvmod + rv_params["gamma"]
 
 
@@ -510,6 +509,7 @@ def _print_output(self, section: str, file=None):
                             "phasecurve", "limb_darkening", "contamination"]
     rv_possible_sections = ["rv_baseline", "rv_gp"]
     fit_possible_sections = ["fit", "stellar_pars"]
+    spacing = "" if file is None else "\t"
 
     if self._obj_type == "lc_obj":
         assert section in lc_possible_sections, f"{section} not a valid section of `lc_obj`. Section must be one of {lc_possible_sections}."
@@ -523,9 +523,9 @@ def _print_output(self, section: str, file=None):
 
     if section == "lc_baseline":
         _print_lc_baseline = """# ============ Input lightcurves, filters baseline function =======================================================""" +\
-                            f""" \n{"name":{max_name_len}s} {"filt":{max_filt_len}s} {"𝜆_𝜇m":5s}|{"s_samp ":7s} {"clip   ":7s} {"scl_col":8s}|{"col0":4s} {"col3":4s} {"col4":4s} {"col5":4s} {"col6":4s} {"col7":4s}|{"sin":3s} {"id":2s} {"GP":2s} {"spline_config  ":15s}"""
+                            f"""\n{spacing}{"name":{max_name_len}s} {"filt":{max_filt_len}s} {"𝜆_𝜇m":5s}|{"s_samp ":7s} {"clip   ":7s} {"scl_col":8s}|{"col0":4s} {"col3":4s} {"col4":4s} {"col5":4s} {"col6":4s} {"col7":4s}|{"sin":3s} {"id":2s} {"GP":2s} {"spline_config  ":15s}"""
         #define print out format
-        txtfmt = f"\n{{0:{max_name_len}s}} {{1:{max_filt_len}s}}"+" {2:5s}|{3:7s} {4:7s} {5:8s}|{6:4d} {7:4d} {8:4d} {9:4d} {10:4d} {11:4d}|{12:3d} {13:2d} {14:2s} {15:15s}"        
+        txtfmt = f"\n{spacing}{{0:{max_name_len}s}} {{1:{max_filt_len}s}}"+" {2:5s}|{3:7s} {4:7s} {5:8s}|{6:4d} {7:4d} {8:4d} {9:4d} {10:4d} {11:4d}|{12:3d} {13:2d} {14:2s} {15:15s}"        
         for i in range(len(self._names)):
             t = txtfmt.format(self._names[i], self._filters[i], str(self._lamdas[i]), self._ss[i].config,self._clipped_data.config[i], self._rescaled_data.config[i],
                               *self._bases[i][:-1], self._groups[i], self._useGPphot[i],self._lcspline[i].conf, 
@@ -535,11 +535,12 @@ def _print_output(self, section: str, file=None):
 
     if section == "gp":
         DA = self._GP_dict
-        _print_gp = f"""# ==================== Photometry GP properties =================================================================="""+\
-                     f"""\n{"name":{max_name_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1_ppm':18s} {'length_scale':17s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2_ppm':18s} {'length_scale2':17s}"""
+        _print_gp = f"""# ==================== Photometry GP properties =================================================================="""
+        # _print_gp += f"""\nsame_GP: {self._sameLCgp.flag}"""
+        _print_gp += f"""\n{spacing}{"name":{max_name_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1_ppm':18s} {'length_scale':17s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2_ppm':18s} {'length_scale2':17s}"""
         if DA != {}: 
             #define gp print out format
-            txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:17s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:17s} "        
+            txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:17s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:17s} "        
 
             for lc in DA.keys():
                 ngp = DA[lc]["ngp"]
@@ -555,29 +556,30 @@ def _print_output(self, section: str, file=None):
                             prior[p+str(j)] = f"N({DA[lc][p+str(j)].prior_mean},{DA[lc][p+str(j)].prior_width_lo})"
 
                 if ngp == 2:
-                    t = txtfmt.format(lc,DA[lc]["amplitude0"].user_data[1], DA[lc]["amplitude0"].user_data[0],  
+                    t = txtfmt.format('same' if self._sameLCgp.flag else lc,DA[lc]["amplitude0"].user_data[1], DA[lc]["amplitude0"].user_data[0],  
                                                     prior["amplitude0"], prior["lengthscale0"], DA[lc]["op"], 
                                         DA[lc]["amplitude1"].user_data[1], DA[lc]["amplitude1"].user_data[0],
                                                     prior["amplitude1"], prior["lengthscale1"])
                 else:
-                    t = txtfmt.format(lc,DA[lc]["amplitude0"].user_data[1], DA[lc]["amplitude0"].user_data[0],  
+                    t = txtfmt.format('same' if self._sameLCgp.flag else lc,DA[lc]["amplitude0"].user_data[1], DA[lc]["amplitude0"].user_data[0],  
                                                     prior["amplitude0"], prior["lengthscale0"], "--", 
                                         "None", "None", "None", "None")
-
                 _print_gp += t
+                if self._sameLCgp.flag:      #dont print the other GPs if same_GP is True
+                    break
         print(_print_gp, file=file)
 
     if section == "planet_parameters":
         DA = self._config_par
         _print_planet_parameters = f"""# ============ Planet parameters (Transit and RV) setup ========================================================== """+\
-                                    f"""\n{'name':12s}\tfit\tprior"""
+                                    f"""\n{spacing}{'name':12s}\tfit\tprior"""
         #define print out format
-        txtfmt = "\n{0:12s}\t{1:3s}\t{2:}"
+        txtfmt = f"\n{spacing}"+"{0:12s}\t{1:3s}\t{2:}"
         #print line for stellar density
         p = "rho_star"
         pri_par = f"N({DA[f'pl{1}'][p].prior_mean},{DA[f'pl{1}'][p].prior_width_lo})" if DA[f'pl{1}'][p].prior == "p" else f"U({DA[f'pl{1}'][p].bounds_lo},{DA[f'pl{1}'][p].start_value},{DA[f'pl{1}'][p].bounds_hi})" if DA[f'pl{1}'][p].bounds_hi else f"F({DA[f'pl{1}'][p].start_value})"
         _print_planet_parameters +=  txtfmt.format( p, DA[f'pl{1}'][p].to_fit, pri_par)
-        _print_planet_parameters +=  "\n---------------------"
+        _print_planet_parameters +=  f"\n{spacing}------------"
         #then cycle through parameters for each planet       
         for n in range(1,self._nplanet+1):        
             for i,p in enumerate(self._TR_RV_parnames):
@@ -585,17 +587,17 @@ def _print_output(self, section: str, file=None):
                     pri_par = f"N({DA[f'pl{n}'][p].prior_mean},{DA[f'pl{n}'][p].prior_width_lo})" if DA[f'pl{n}'][p].prior == "p" else f"U({DA[f'pl{n}'][p].bounds_lo},{DA[f'pl{n}'][p].start_value},{DA[f'pl{n}'][p].bounds_hi})" if DA[f'pl{n}'][p].bounds_hi else f"F({DA[f'pl{n}'][p].start_value})"
                     t = txtfmt.format(  p+(f"_{n}" if self._nplanet>1 else ""), DA[f'pl{n}'][p].to_fit, pri_par)
                     _print_planet_parameters += t
-            if n!=self._nplanet: _print_planet_parameters += "---------------------"
+            if n!=self._nplanet: _print_planet_parameters += f"\n{spacing}------------"
         print(_print_planet_parameters, file=file)
 
     if section == "depth_variation":
         grnames    = np.array(list(sorted(set(self._groups))))
         ngroup     = len(grnames)
         _print_depth_variation = f"""# ============ ddF setup ========================================================================================"""+\
-                                    f"""\n{"Fit_ddFs":8s}\t{"dRpRs":16s}\tdiv_white"""
+                                    f"""\n{spacing}{"Fit_ddFs":8s}\t{"dRpRs":16s}\tdiv_white"""
 
         #define print out format
-        txtfmt = "\n{0:8s}\t{1:16s}\t{2:3s}"        
+        txtfmt = f"\n{spacing}"+"{0:8s}\t{1:16s}\t{2:3s}"        
         pri_ddf = f"N({self._ddfs.drprs_op[4]},{self._ddfs.drprs_op[5]})" if self._ddfs.drprs_op[5] else f"U({self._ddfs.drprs_op[2]},{self._ddfs.drprs_op[0]},{self._ddfs.drprs_op[3]})"
         t = txtfmt.format(self._ddfs.ddfYN, pri_ddf, self._ddfs.divwhite)
         _print_depth_variation += t
@@ -611,9 +613,9 @@ def _print_output(self, section: str, file=None):
     if section == "phasecurve":
         pars = ["D_occ", "A_pc", "ph_off"]
         _print_phasecurve = f"""# ============ Phase curve setup ================================================================================ """+\
-                                f"""\n{'filt':{max_filt_len}s}  {'param':6s}  fit \tprior"""
+                                f"""\n{spacing}{'filt':{max_filt_len}s}  {'param':6s}  fit \tprior"""
         #define print out format
-        txtfmt = f"\n{{0:{max_filt_len}s}}"+"  {1:6s}  {2:3s} \t{3:}"       
+        txtfmt = f"\n{spacing}{{0:{max_filt_len}s}}"+"  {1:6s}  {2:3s} \t{3:}"       
         
         for par in pars:
             DA = self._PC_dict[par]
@@ -621,15 +623,15 @@ def _print_output(self, section: str, file=None):
                 pri_PC = f"N({DA[f].prior_mean},{DA[f].prior_width_lo})" if DA[f].prior == "p" else f"U({DA[f].bounds_lo},{DA[f].start_value},{DA[f].bounds_hi})" if DA[f].bounds_hi else f"F({DA[f].start_value})" 
                 t = txtfmt.format( f, par, DA[f].to_fit, pri_PC)
                 _print_phasecurve += t
-            if par != pars[-1]: _print_phasecurve +=  "\n" +"-"*max_filt_len+"--------"
+            if par != pars[-1]: _print_phasecurve +=  f"\n{spacing}"+"-"*max_filt_len+"---"
         print(_print_phasecurve, file=file)
 
     if section == "limb_darkening":
         DA = self._ld_dict
         _print_limb_darkening = f"""# ============ Limb darkening setup ============================================================================= """+\
-                                f"""\n{'filters':7s}\tfit\t{'q_1':17s}\t{'q_2':17s}"""
+                                f"""\n{spacing}{'filters':7s}\tfit\t{'q_1':17s}\t{'q_2':17s}"""
         #define print out format
-        txtfmt = "\n{0:7s}\t{1:3s}\t{2:17s}\t{3:17s}"       
+        txtfmt = f"\n{spacing}"+"{0:7s}\t{1:3s}\t{2:17s}\t{3:17s}"       
         for i in range(len(self._filnames)):
             pri_q1 = f"N({DA['q1'][i]},{DA['sig_lo1'][i]})" if DA['sig_lo1'][i] else f"U({DA['bound_lo1'][i]},{DA['q1'][i]},{DA['bound_hi1'][i]})"  if DA['bound_hi1'][i] else f"F({DA['q1'][i]})"
             pri_q2 = f"N({DA['q2'][i]},{DA['sig_lo2'][i]})" if DA['sig_lo2'][i] else f"U({DA['bound_lo2'][i]},{DA['q2'][i]},{DA['bound_hi2'][i]})" if DA['bound_hi2'][i] else f"F({DA['q2'][i]})"
@@ -642,9 +644,9 @@ def _print_output(self, section: str, file=None):
     if section == "contamination":
         DA = self._contfact_dict
         _print_contamination = f"""# ============ contamination setup (give contamination as flux ratio) ======================================== """+\
-                                f"""\n{'filters':7s}\tcontam_factor"""
+                                f"""\n{spacing}{'filters':7s}\tcontam_factor"""
         #define print out format
-        txtfmt = "\n{0:7s}\t{1}"       
+        txtfmt = f"\n{spacing}"+"{0:7s}\t{1}"       
         for i in range(len(self._filnames)):
             t = txtfmt.format(self._filnames[i],f'F({DA["cont_ratio"][i][0]})')
             _print_contamination += t
@@ -653,29 +655,31 @@ def _print_output(self, section: str, file=None):
     if section == "stellar_pars":
         DA = self._stellar_dict
         _print_stellar_pars = f"""# ============ Stellar input properties ======================================================================"""+\
-        f"""\n{'# parameter':13s}   value """+\
-        f"""\n{'Radius_[Rsun]':13s}  N({DA['R_st'][0]:.3f},{DA['R_st'][1]:.3f})"""+\
-        f"""\n{'Mass_[Msun]':13s}  N({DA['M_st'][0]:.3f},{DA['M_st'][1]:.3f})"""+\
-            f"""\nInput_method:[R+rho(Rrho), M+rho(Mrho)]: {DA['par_input']}"""
+        f"""\n{spacing}{'# parameter':13s}   value """+\
+        f"""\n{spacing}{'Radius_[Rsun]':13s}  N({DA['R_st'][0]:.3f},{DA['R_st'][1]:.3f})"""+\
+        f"""\n{spacing}{'Mass_[Msun]':13s}  N({DA['M_st'][0]:.3f},{DA['M_st'][1]:.3f})"""+\
+            f"""\n{spacing}Input_method:[R+rho(Rrho), M+rho(Mrho)]: {DA['par_input']}"""
         print(_print_stellar_pars, file=file)           
 
     if section == "fit":
         DA = self._fit_dict
         _print_fit_pars = f"""# ============ FIT setup ====================================================================================="""+\
-        f"""\n{'Number_steps':33s}  {DA['n_steps']} \n{'Number_chains':33s}  {DA['n_chains']} \n{'Number_of_processes':33s}  {DA['n_cpus']} """+\
-            f"""\n{'Burnin_length':33s}  {DA['n_burn']} \n{'n_live':33s}  {DA['n_live']} \n{'force_nlive':33s}  {DA['force_nlive']} \n{'d_logz':33s}  {DA['dyn_dlogz']} """+\
-                    f"""\n{'Sampler[emcee/dynesty]':33s}  {DA['sampler']} \n{'emcee_move[stretch/demc/snooker]':33s}  {DA['emcee_move']} \n{'leastsq_for_basepar':33s}  {DA['leastsq_for_basepar']} """+\
-                        f"""\n{'apply_LCjitter':33s}  {DA['apply_LCjitter']} \n{'apply_RVjitter':33s}  {DA['apply_RVjitter']} """+\
-                        f"""\n{'LCbasecoeff_lims':33s}  {DA['LCbasecoeff_lims']} \n{'RVbasecoeff_lims':33s}  {DA['RVbasecoeff_lims']} """
+        f"""\n{spacing}{'Number_steps':33s}  {DA['n_steps']} \n{spacing}{'Number_chains':33s}  {DA['n_chains']} \n{spacing}{'Number_of_processes':33s}  {DA['n_cpus']} """+\
+            f"""\n{spacing}{'Burnin_length':33s}  {DA['n_burn']} \n{spacing}{'n_live':33s}  {DA['n_live']} \n{spacing}{'force_nlive':33s}  {DA['force_nlive']} \n{spacing}{'d_logz':33s}  {DA['dyn_dlogz']} """+\
+                    f"""\n{spacing}{'Sampler[emcee/dynesty]':33s}  {DA['sampler']} \n{spacing}{'emcee_move[stretch/demc/snooker]':33s}  {DA['emcee_move']} \n{spacing}{'leastsq_for_basepar':33s}  {DA['leastsq_for_basepar']} """+\
+                        f"""\n{spacing}{'apply_LCjitter':33s}  {DA['apply_LCjitter']} \n{spacing}{'apply_RVjitter':33s}  {DA['apply_RVjitter']} """+\
+                            f"""\n{spacing}{'LCjitter_loglims':33s}  {DA['LCjitter_loglims']} \n{spacing}{'RVjitter_lims':33s}  {DA['RVjitter_lims']} """+\
+                                f"""\n{spacing}{'LCbasecoeff_lims':33s}  {DA['LCbasecoeff_lims']} \n{spacing}{'RVbasecoeff_lims':33s}  {DA['RVbasecoeff_lims']} """
+
         
         print(_print_fit_pars, file=file)
 
     if section == "rv_baseline":
         _print_rv_baseline = """# ============ Input RV curves, baseline function, GP, spline,  gamma ============================================ """+\
-                                f"""\n{'name':{max_name_len}s} {"scl_col":7s} |{'col0':4s} {'col3':4s} {'col4':4s} {"col5":4s}| {'sin':3s} {"GP":2s} {"spline_config  ":15s} | {f'gamma_{self._RVunit}':9s}"""
+                                f"""\n{spacing}{'name':{max_name_len}s} {"scl_col":7s} |{'col0':4s} {'col3':4s} {'col4':4s} {"col5":4s}| {'sin':3s} {"GP":2s} {"spline_config  ":15s} | {f'gamma_{self._RVunit}':9s}"""
         if self._names != []:
             DA = self._rvdict
-            txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:7s} |{2:4d} {3:4d} {4:4d} {5:4d}| {6:3d} {7:2s} {8:15s} | {9} "         
+            txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:7s} |{2:4d} {3:4d} {4:4d} {5:4d}| {6:3d} {7:2s} {8:15s} | {9} "         
             for i in range(self._nRV):
                 gam_pri_ = f'N({DA["gammas"][i]},{DA["sig_lo"][i]})' if DA["sig_lo"][i] else f'U({DA["bound_lo"][i]},{DA["gammas"][i]},{DA["bound_hi"][i]})' if DA["bound_hi"][i] else f"F({DA['gammas'][i]})"
                 t = txtfmt.format(self._names[i],self._rescaled_data.config[i], *self._RVbases[i],
@@ -685,36 +689,38 @@ def _print_output(self, section: str, file=None):
 
     if section == "rv_gp":
         DA = self._rvGP_dict
-        _print_gp = f"""# ==================== RV GP properties ========================================================================== """+\
-                     f"""\n{"name":{max_name_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1':18s} {'length_scale':15s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2':18s} {'length_scale2':15s}"""
+        _print_gp = f"""# ==================== RV GP properties ========================================================================== """
+        # _print_gp += f"""\nsame_GP: {self._sameRVgp.flag}"""
+        _print_gp += f"""\n{spacing}{"name":{max_name_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1':18s} {'length_scale':17s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2':18s} {'length_scale2':15s}"""
         if DA != {}: 
             #define gp print out format
-            txtfmt = f"\n{{0:{max_name_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:15s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:15s} "        
+            txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:17s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:15s} "        
 
-            for lc in DA.keys():
-                ngp = DA[lc]["ngp"]
+            for rv in DA.keys():
+                ngp = DA[rv]["ngp"]
                 prior={}
                 for p in ["amplitude", "lengthscale"]:
                     for j in range(ngp):
-                        if DA[lc][p+str(j)].to_fit == "n":
-                            prior[p+str(j)] = f"F({DA[lc][p+str(j)].start_value})"
-                        elif DA[lc][p+str(j)].to_fit == "y" and DA[lc][p+str(j)].prior == "n":
-                            b_lo = 0 if DA[lc][p+str(j)].bounds_lo==1e-20 else DA[lc][p+str(j)].bounds_lo
-                            prior[p+str(j)] = f"LU({b_lo},{DA[lc][p+str(j)].start_value},{DA[lc][p+str(j)].bounds_hi})"
-                        elif DA[lc][p+str(j)].to_fit == "y" and DA[lc][p+str(j)].prior == "p":
-                            prior[p+str(j)] = f"N({DA[lc][p+str(j)].prior_mean},{DA[lc][p+str(j)].prior_width_lo})"
+                        if DA[rv][p+str(j)].to_fit == "n":
+                            prior[p+str(j)] = f"F({DA[rv][p+str(j)].start_value})"
+                        elif DA[rv][p+str(j)].to_fit == "y" and DA[rv][p+str(j)].prior == "n":
+                            b_lo = 0 if DA[rv][p+str(j)].bounds_lo==1e-20 else DA[rv][p+str(j)].bounds_lo
+                            prior[p+str(j)] = f"LU({b_lo},{DA[rv][p+str(j)].start_value},{DA[rv][p+str(j)].bounds_hi})"
+                        elif DA[rv][p+str(j)].to_fit == "y" and DA[rv][p+str(j)].prior == "p":
+                            prior[p+str(j)] = f"N({DA[rv][p+str(j)].prior_mean},{DA[rv][p+str(j)].prior_width_lo})"
 
                 if ngp == 2:
-                    t = txtfmt.format(lc,DA[lc]["amplitude0"].user_data[1], DA[lc]["amplitude0"].user_data[0],  
-                                                    prior["amplitude0"], prior["lengthscale0"], DA[lc]["op"], 
-                                        DA[lc]["amplitude1"].user_data[1], DA[lc]["amplitude1"].user_data[0],
+                    t = txtfmt.format('same' if self._sameRVgp.flag else rv,DA[rv]["amplitude0"].user_data[1], DA[rv]["amplitude0"].user_data[0],  
+                                                    prior["amplitude0"], prior["lengthscale0"], DA[rv]["op"], 
+                                        DA[rv]["amplitude1"].user_data[1], DA[rv]["amplitude1"].user_data[0],
                                                     prior["amplitude1"], prior["lengthscale1"])
                 else:
-                    t = txtfmt.format(lc,DA[lc]["amplitude0"].user_data[1], DA[lc]["amplitude0"].user_data[0],  
+                    t = txtfmt.format('same' if self._sameRVgp.flag else rv,DA[rv]["amplitude0"].user_data[1], DA[rv]["amplitude0"].user_data[0],  
                                                     prior["amplitude0"], prior["lengthscale0"], "--", 
                                         "None", "None", "None", "None")
-
                 _print_gp += t
+                if self._sameRVgp.flag:      #dont print the other GPs if same_GP is True
+                    break
         print(_print_gp, file=file)
 
 class _param_obj():
@@ -831,7 +837,7 @@ class load_lightcurves:
 
         Example:
         --------
-        >>> lc_obj = load_lightcurves(file_list=["lc1.dat","lc2.dat"], filters=["V","I"], lamdas=[6000,8000])
+        >>> lc_obj = load_lightcurves(file_list=["lc1.dat","lc2.dat"], filters=["V","I"], lamdas=[0.6,0.8])
         
     """
     def __init__(self, file_list=None, data_filepath=None, filters=None, lamdas=None, nplanet=1,
@@ -882,7 +888,7 @@ class load_lightcurves:
                                 for _ in range(self._nphot)]
 
         self._show_guide = show_guide
-        self._clipped_data  = SimpleNamespace(flag=False, config=["None"]*self._nphot)
+        self._clipped_data  = SimpleNamespace(flag=False, lc_list=self._names, config=["None"]*self._nphot)
         self._rescaled_data = SimpleNamespace(flag=False, config=["None"]*self._nphot)
         self.lc_baseline(re_init = hasattr(self,"_bases"), verbose=False)   
 
@@ -1005,7 +1011,7 @@ class load_lightcurves:
         if isinstance(q2, list): assert len(q2) == nfilt, f"get_decorr(): q2 must be a list of same length as number of unique filters {nfilt} but {len(q2)} given." 
         else: q2=[q2]*nfilt
 
-        blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[], "dcol6":[], "dcol7":[],"gp":[]}  #inputs to lc_baseline method
+        blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[], "dcol6":[], "dcol7":[]}  #inputs to lc_baseline method
         self._decorr_result = []   #list of decorr result for each lc.
 
         input_pars = dict(T_0=T_0, Period=Period, rho_star=rho_star, Impact_para=Impact_para, \
@@ -1138,7 +1144,6 @@ class load_lightcurves:
             blpars["dcol5"].append( 2 if pps["B5"]!=0 else 1 if  pps["A5"]!=0 else 0)
             blpars["dcol6"].append( 2 if pps["B6"]!=0 else 1 if  pps["A6"]!=0 else 0)
             blpars["dcol7"].append( 2 if pps["B7"]!=0 else 1 if  pps["A7"]!=0 else 0)
-            blpars["gp"].append("n")
             # store baseline model coefficients for each lc, to used as start values of mcmc
             self._bases_init[j] = dict(off=1+pps["offset"], 
                                             A0=pps["A0"], B0=pps["B0"], C0=0, D0=0,
@@ -1179,8 +1184,8 @@ class load_lightcurves:
 
             # baseline
             if verbose: print(_text_format.BOLD + "\nSetting-up baseline model from result" +_text_format.END)
-            self.lc_baseline(**blpars, verbose=verbose)
-            if verbose: print(_text_format.RED + f"\n Note: GP flag for the lcs has been set to {self._useGPphot}. "+\
+            self.lc_baseline(**blpars, gp=self._useGPphot, verbose=verbose)
+            if verbose: print(_text_format.RED + f"\nNote: GP flag for the lcs has been set to {self._useGPphot}. "+\
                     "Use `._useGPphot` attribute to modify this list with 'y','ce' or 'n' for each loaded lc\n" + _text_format.END)
 
         if setup_planet:
@@ -1232,9 +1237,10 @@ class load_lightcurves:
             print("Data has already been clipped. run `load_lightcurves()` again to reset.")
             return None
 
-        if lc_list == None: 
+        if lc_list == None or lc_list == []: 
             print("lc_list is None: No lightcurve to clip outliers.")
             return None
+        
         if isinstance(lc_list, str) and (lc_list != 'all'): lc_list = [lc_list]
         if lc_list == "all": lc_list = self._names
 
@@ -1248,15 +1254,16 @@ class load_lightcurves:
             if len(clip)==1: clip = clip*len(lc_list)
         else: _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {clip} given.")
             
-            
         assert len(width) == len(clip) == len(lc_list), f"clip_outliers(): width, clip and lc_list must have same length but {len(width)}, {len(clip)} and {len(lc_list)} given."
 
-        conf=[]
+        # conf=[]
         for i,file in enumerate(lc_list):
             assert file in self._names, f"clip_outliers(): filename {file} not in loaded lightcurves."
-
+            
             if width[i]%2 == 0: width[i] += 1   #if width is even, make it odd
-            conf.append(f"W{width[i]}C{clip[i]}")
+            
+            self._clipped_data.config[self._names.index(file)] = f"W{width[i]}C{clip[i]}"
+            # conf.append(f"W{width[i]}C{clip[i]}")
 
             thisLCdata = self._input_lc[file]#  np.loadtxt(self._fpath+file)
 
@@ -1275,7 +1282,7 @@ class load_lightcurves:
             #replace all columns of input file with the clipped data
             self._input_lc[file] = {k:v[ok] for k,v in thisLCdata.items()}
 
-        self._clipped_data = SimpleNamespace(flag=True, width=width, clip=clip, lc_list=lc_list, config=conf)
+        self._clipped_data.flag = True # SimpleNamespace(flag=True, width=width, clip=clip, lc_list=lc_list, config=conf)
 
     
     def split_transits(self, filename=None, P=None, t_ref=None, baseline_amount=0.3, input_t0s=None, show_plot=True, save_separate=True, same_filter=True):
@@ -1688,7 +1695,7 @@ class load_lightcurves:
         self._GP_dict  = {}
         self._sameLCgp  = SimpleNamespace(flag = False, first_index =None)
 
-        if lc_list is None:
+        if lc_list is None or lc_list == []:
             if self._nphot>0:
                 if len(self._gp_lcs())>0: print(f"\nWarning: GP was expected for the following lcs {self._gp_lcs()} \nMoving on ...")
                 if verbose:_print_output(self,"gp")
@@ -1696,7 +1703,7 @@ class load_lightcurves:
         elif isinstance(lc_list, str): 
             if lc_list == "same":
                 self._sameLCgp.flag        = True
-                self._sameLCgp.first_index = self._names.index(lc_list[0])
+                self._sameLCgp.first_index = self._names.index(self._gp_lcs()[0])
             if lc_list in ["all","same"]:
                 lc_list = self._gp_lcs()
             else: lc_list=[lc_list]
@@ -1717,8 +1724,9 @@ class load_lightcurves:
             if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]
             if isinstance(DA[p], list): 
                 if self._sameLCgp.flag: 
-                    assert len(DA[p])==1, f"add_GP(): {p} must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs)."
-                DA[p] = DA[p]*len(lc_list)
+                    assert len(DA[p])==1 or len(DA[p])==len(lc_list), f"add_GP(): {p} must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs)."
+                    if len(DA[p])==2: assert DA[p][0]==DA[p][1], f"add_GP(): {p} must be same for all lc files if sameGP is used."
+                if len(DA[p])==1: DA[p] = DA[p]*len(lc_list)
 
             assert len(DA[p])==len(lc_list), f"add_GP(): {p} must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs)."
             
@@ -2021,7 +2029,8 @@ class load_lightcurves:
         """
         assert hasattr(self, "_config_par"), "transit_depth_variation(): planet_parameters() must be called before transit_depth_variation()."
         assert isinstance(dRpRs, tuple),f"transit_depth_variation(): dRpRs must be tuple of len 2/3 specifying (mu,std)/(min,start,max)."
-        if ddFs == "y": assert self._config_par["pl1"]["RpRs"].to_fit == "n",'Fix `RpRs` in `planet_parameters` to a reference value in order to setup depth variation.'
+        if ddFs == "y": 
+            assert self._config_par["pl1"]["RpRs"].to_fit == "n" or self._config_par["pl1"]["RpRs"].step_size ==0,'Fix `RpRs` in `.planet_parameters()` to a reference value in order to setup depth variation.'
         
             
         grnames    = np.array(list(sorted(set(self._groups))))
@@ -2620,7 +2629,7 @@ class load_rvs:
 
             result = _decorr_RV(df, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet)
             self._rvdecorr_result.append(result)
-            print(f"\nBEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
+            if verbose: print(f"\nBEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
             
             #calculate determined trend and rv model over all data
             pps = result.params.valuesdict()
@@ -2810,13 +2819,13 @@ class load_rvs:
         elif isinstance(rv_list, str):
             if rv_list == "same": 
                 self._sameRVgp.flag        = True 
-                self._sameRVgp.first_index = self._names.index(rv_list[0])
+                self._sameRVgp.first_index = self._names.index(self._gp_rvs()[0])
             if rv_list in ["all","same"]: 
                 rv_list = self._gp_rvs()
             else: rv_list=[rv_list]
 
 
-        for rv in self._gp_rvs(): assert rv in rv_list,f"add_rvGP(): GP was expected for {rv} but was not given in rv_list."
+        for rv in self._gp_rvs(): assert rv in rv_list,f"add_rvGP(): GP was expected for {rv} but was not given in rv_list {rv_list}."
         for rv in rv_list: 
             assert rv in self._names,f"add_rvGP(): {rv} not in loaded rv files."
             assert rv in self._gp_rvs(),f"add_rvGP(): GP was not expected for {rv} but was given in rv_list."
@@ -2831,8 +2840,9 @@ class load_rvs:
             if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]   #convert to list
             if isinstance(DA[p], list): 
                 if self._sameRVgp.flag:    #ensure same inputs for all rvs with indicated gp
-                    assert len(DA[p])==1, f"add_rvGP(): {p} must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
-                DA[p] = DA[p]*len(rv_list)
+                    assert len(DA[p])==1 or len(DA[p])==len(rv_list), f"add_rvGP(): {p} must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
+                    if len(DA[p])==2: assert DA[p][0] == DA[p][1],f"add_rvGP(): {p} must be same for all rv files if sameGP is used."
+                if len(DA[p])==1: DA[p] = DA[p]*len(rv_list)
             
             assert len(DA[p])==len(rv_list), f"add_rvGP(): {p} must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
             
@@ -3140,8 +3150,10 @@ class fit_setup:
     """
 
     def __init__(self, R_st=None, M_st=None, par_input = "Rrho",
-                    apply_LCjitter="y", apply_RVjitter="y", leastsq_for_basepar="n",
-                    LCbasecoeff_lims = [-1,1], RVbasecoeff_lims = [-2,2], verbose=True):
+                    apply_LCjitter="y", apply_RVjitter="y", 
+                    LCjitter_loglims=[-15,-4], RVjitter_lims=[0,5],
+                    LCbasecoeff_lims = [-1,1], RVbasecoeff_lims = [-5,5], 
+                    leastsq_for_basepar="n", verbose=True):
         
         self._obj_type = "fit_obj"
         self._stellar_parameters(R_st=R_st, M_st=M_st, par_input = par_input, verbose=verbose)
@@ -3153,7 +3165,7 @@ class fit_setup:
         self._fit_dict = DA
         self.sampling(verbose=False)
 
-    def sampling(self, sampler="emcee", n_cpus=2,
+    def sampling(self, sampler="dynesty", n_cpus=2,
                     n_chains=64, n_steps=2000, n_burn=500, emcee_move="stretch",  
                     n_live=300, dyn_dlogz=0.1, force_nlive=False, verbose=True,  
                     apply_CFs="y",remove_param_for_CNM="n", lssq_use_Lev_Marq="n",
@@ -3166,7 +3178,7 @@ class fit_setup:
         -----------
 
         sampler: str;
-            sampler to use. Default is "emcee". Options are ["emcee","dynesty"].
+            sampler to use. Default is "dynesty". Options are ["emcee","dynesty"].
         
         n_cpus: int;
             number of cpus to use for parallelization.
@@ -3345,23 +3357,23 @@ class load_result:
                     tmin, tmax = input_lcs[lc]["col0"].min(), input_lcs[lc]["col0"].max()
 
                 self._lc_smooth_time_mod[lc].time    = np.linspace(tmin,tmax,max(2000, len(input_lcs[lc]["col0"])))
-                self._lc_smooth_time_mod[lc].model   = self._evaluate_lc(file=lc, time=self._lc_smooth_time_mod[lc].time)
+                self._lc_smooth_time_mod[lc].model   = self._evaluate_lc(file=lc, time=self._lc_smooth_time_mod[lc].time).planet_model
 
 
             # evaluate model of each rv at a smooth time grid
             self._rv_smooth_time_mod = {}
-            for rv in rv_names:
+            for i,rv in enumerate(rv_names):
                 self._rv_smooth_time_mod[rv] = SimpleNamespace()
-                if self._nplanet == 1:
-                    this_T0 = get_transit_time(t=input_rvs[rv]["col0"],per=self.params.P[0],t0=self.params.T0[0])
-                    ph_sm = np.linspace(-0.5,0.5, max(2000, len(input_rvs[rv]["col0"])))
-                    t_sm  = ph_sm*self.params.P[0] + this_T0
-                else:
-                    tmin, tmax = input_rvs[rv]["col0"].min(), input_rvs[rv]["col0"].max()
-                    t_sm  = np.linspace(tmin,tmax,max(2000, len(input_rvs[rv]["col0"])))
-
+                # if self._nplanet == 1:
+                #     this_T0 = get_transit_time(t=input_rvs[rv]["col0"],per=self.params.P[0],t0=self.params.T0[0])
+                #     ph_sm = np.linspace(-0.5,0.5, max(2000, len(input_rvs[rv]["col0"])))
+                #     t_sm  = ph_sm*self.params.P[0] + this_T0
+                # else:
+                tmin, tmax = input_rvs[rv]["col0"].min(), input_rvs[rv]["col0"].max()
+                t_sm  = np.linspace(tmin,tmax,max(2000, len(input_rvs[rv]["col0"])))
+                gam = self.params_dict[f"rv{i+1}_gamma"]
                 self._rv_smooth_time_mod[rv].time    = t_sm
-                self._rv_smooth_time_mod[rv].model   = self._evaluate_lc(file=rv, time=self._rv_smooth_time_mod[rv].time)
+                self._rv_smooth_time_mod[rv].model   = self._evaluate_rv(file=rv, time=self._rv_smooth_time_mod[rv].time).planet_model+gam
         
 
             #LC data and functions
@@ -3536,6 +3548,24 @@ class load_result:
                 giving the fraction of samples to include in bounds, e.g.,
                 [(0.,10.), (1.,5), 0.999, etc.].
                 If a fraction, the bounds are chosen to be equal-tailed.
+            
+            show_titles : bool;
+                whether to show titles for 1d histograms
+
+            title_fmt : str;
+                format string for the quantiles given in titles. Default is ".3f" for 3 decimal places.
+
+            titlesize : int;
+                size of the titles in the plot.
+
+            labelsize : int;
+                size of the labels in the plot.
+
+            multiply_by : float or list of floats;
+                factor by which to multiply the chains. Default is 1. If list, must be same length as pars.
+
+            add_value : float or list of floats;
+                value to add to the chains. Default is 0. If list, must be same length as pars.
         """
         assert pars is None or isinstance(pars, list) or pars == "all", \
              f'pars must be None, "all", or list of relevant parameters.'
@@ -3561,7 +3591,7 @@ class load_result:
             if self.fit_sampler=="emcee":
                 samples[:,i] = self._chains[p][:,discard::thin].reshape(-1) * multiply_by[i] + add_value[i]
             else:
-                samples[:,i] = self._chains[p]
+                samples[:,i] = self._chains[p]* multiply_by[i] + add_value[i]
         
         fig = corner.corner(samples, bins=bins, labels=pars, show_titles=show_titles, range=range,
                     title_fmt=title_fmt,quantiles=q,title_kwargs={"fontsize": titlesize},
@@ -3672,9 +3702,10 @@ class load_result:
         
         if obj.names != []:
             model_overplot = []
-            for lc,df in obj.outdata.items():
-                ks = list(df.keys())
-                mop = SimpleNamespace(tot_trnd_mod=df[ks[4]], time_smooth=self._lc_smooth_time_mod[lc].time,
+            for lc in obj.names:
+                df = obj.outdata[lc]
+                bl = list(df.keys())[4] #baseline name
+                mop = SimpleNamespace(tot_trnd_mod=df[bl], time_smooth=self._lc_smooth_time_mod[lc].time,
                                     planet_mod=df["transit"], planet_mod_smooth=self._lc_smooth_time_mod[lc].model,
                                     residual=df["flux"]-df["full_mod"])
                 model_overplot.append(mop)
@@ -3721,10 +3752,11 @@ class load_result:
         
         if obj.names != []:
             model_overplot = []
-            for df in obj.outdata.values():
-                ks = list(df.keys())
-                mop = SimpleNamespace(tot_trnd_mod=df[ks[4]], time_smooth=df["time"],
-                                    planet_mod=df["Rvmodel"], planet_mod_smooth= df["Rvmodel"],
+            for rv in obj.names:
+                df = obj.outdata[rv]
+                bl = list(df.keys())[4] #baseline name 
+                mop = SimpleNamespace(tot_trnd_mod=df[bl], time_smooth=self._rv_smooth_time_mod[rv].time,
+                                    planet_mod=df["Rvmodel"], planet_mod_smooth=self._rv_smooth_time_mod[rv].model,
                                     residual=df["RV"]-df["full_mod"])
                 model_overplot.append(mop)
 
@@ -3800,7 +3832,7 @@ class load_result:
 
         return
         
-    def _evaluate_lc(self, file, time=None,params=None, nsamp=5000,return_std=False, return_components=False):
+    def _evaluate_lc(self, file, time=None,params=None, nsamp=500,return_std=False):
         """
         Compute transit model from CONAN3 fit for a given input file at the given times using specified parameters.
 
@@ -3816,19 +3848,17 @@ class load_result:
             parameters to evaluate the model at. The median posterior parameters from the fit are used if params is None
 
         nsamp : int;
-            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 5000.
+            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 500.
 
         return_std : bool;
             if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
 
-        return_components : bool;
-            if True, return transit model for each planet in the system. If False, return only the total lc model.
-
         Returns:
         --------
-        lcmodel, lc_comps, 1sigma_lo, 1sigma_hi : array, dict, array, array,  respectively;
-            Transit model array evaluated at the given times, for a specific file. transit_components are return if return_components is True.
-            if return_std is True, 1sigma quantiles (lo and hi) of the model is returned.
+        object : SimpleNamespace;
+            planet_model: LC model array evaluated at the given times, for a specific file. 
+            components: lc_components of each planet in the system.
+            sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
         """
 
         from CONAN3.logprob_multi import logprob_multi
@@ -3837,8 +3867,11 @@ class load_result:
         mod  = logprob_multi(params,*self._ind_para,t=time,get_model=True)
         keys = mod.lc.keys() 
 
-        if not return_std:    #return only the model
-            return mod.lc[file] if return_components else mod.lc[file][0]
+        if not return_std:     #return only the model
+            output = SimpleNamespace(planet_model=mod.lc[file][0], components=mod.lc[file][1], 
+                                        sigma_low=None, sigma_high=None)
+            return output
+ 
         else:                 #return model and quantiles
             lenpost = len(self.flat_posterior)
             mods    = []  #store model realization for each parameter combination
@@ -3849,9 +3882,11 @@ class load_result:
 
             qs = np.quantile(mods,q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
 
-            return (mod.lc[file][0],mod.lc[file][1],qs[0],qs[1]) if return_components else (mod.lc[file][0],qs[0],qs[1])
-        
-    def _evaluate_rv(self, file, time=None,params=None, nsamp=5000,return_std=False, return_components=False):
+            output = SimpleNamespace(planet_model=mod.lc[file][0], components=mod.lc[file][1], 
+                                        sigma_low=qs[0], sigma_high=qs[1])
+            return output
+                
+    def _evaluate_rv(self, file, time=None,params=None, nsamp=500,return_std=False):
         """
         Compute RV model from CONAN3 fit for a given input file at the given times using specified parameters.
 
@@ -3867,19 +3902,17 @@ class load_result:
             parameters to evaluate the model at. The median posterior parameters from the fit are used if params is None
 
         nsamp : int;    
-            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 5000.
+            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 500.
 
         return_std : bool;
             if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
 
-        return_components : bool;
-            if True, return rv model for each planet in the system. If False, return only the total rv model.
-
         Returns:
         --------
-        rvmodel, rv_comps, 1sigma_lo, 1sigma_hi : array, dict, array, array,  respectively;
-            RV model array evaluated at the given times, for a specific file. rv_components are return if return_components is True.
-            if return_std is True, 1sigma quantiles (lo and hi) of the model is returned.
+        object : SimpleNamespace;
+            planet_model: RV model array evaluated at the given times, for a specific file. 
+            components: rv_components of each planet in the system.
+            sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
         """
 
         from CONAN3.logprob_multi import logprob_multi
@@ -3888,7 +3921,10 @@ class load_result:
         mod  = logprob_multi(params,*self._ind_para,t=time,get_model=True)
 
         if not return_std:     #return only the model
-            return mod.rv[file] if return_components else mod.rv[file][0]
+            output = SimpleNamespace(planet_model=mod.rv[file][0], components=mod.rv[file][1], 
+                                        sigma_low=None, sigma_high=None)
+            return output
+        
         else:                 #return model and quantiles
             lenpost = len(self.flat_posterior)
             mods    = []
@@ -3899,4 +3935,6 @@ class load_result:
 
             qs = np.quantile(mods,q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
             
-            return (mod.rv[file][0],mod.rv[file][1],qs[0],qs[1]) if return_components else (mod.rv[file][0],qs[0],qs[1])
+            output = SimpleNamespace(planet_model=mod.rv[file][0], components=mod.rv[file][1], 
+                                        sigma_low=qs[0], sigma_high=qs[1])
+            return output

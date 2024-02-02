@@ -232,17 +232,21 @@ class Transit_Model(Model):
                 RR=grprs_here+self.ddf    # the specified GROUP rprs + the respective ddf (deviation)
             else:
                 RR=np.copy(self.RpRs[n])
-            mm0[ph_transit],m0[ph_transit] = occultquad(z[ph_transit],u1,u2,RR,npo_transit)   # mm0 is the transit model
             
+            mm0[ph_transit],m0[ph_transit] = occultquad(z[ph_transit],u1,u2,abs(RR),npo_transit)   # mm0 is the transit model
+            
+            if RR < 0: mm0[ph_transit] = 1-mm0[ph_transit]+1   #allow negative depths
             #============= OCCULTATION ==========================
             ph_occultation  = np.where((y < 0))
             npo_occultation = len(z[ph_occultation])
 
-            Fp = self.occ       # the occultation depth or dayside flux
-            RR = np.sqrt(Fp)    # the occultation depth converted into a radius ratio
-            u1, u2 = 0., 0.     # no limb darkening
+            Fp = abs(self.occ)           # the occultation depth or dayside flux
+            RR = np.sqrt(Fp)             # the occultation depth converted into a radius ratio
+            u1, u2 = 0., 0.              # no limb darkening
             mm0[ph_occultation],m0[ph_occultation] = occultquad(z[ph_occultation],u1,u2,RR,npo_occultation)   # mm0 is the occultation model
 
+            if self.occ < 0: mm0[ph_occultation] = 1-mm0[ph_occultation]+1  #allow negative depths
+            
             if self.A not in [None,0]:    
                 #sepate the transit and occultation models and add the atmospheric variation
                 f_trans[ph_transit]   = mm0[ph_transit]

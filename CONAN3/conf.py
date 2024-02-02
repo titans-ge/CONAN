@@ -67,25 +67,25 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     f.write("# ========================================== CONAN configuration file ============================================= \n")
     f.write("#             *********** KEYS *****************************************************************************************\n")
     f.write("#             PRIORS: *Fixed - F(val), *Normal - N(mu,std), *Uniform - U(min,start,max), *LogUniform - LU(min,start,max)\n")
-    f.write("#             s_samp: supersampling - x{exp_time}\n")
+    f.write("#             s_samp: supersampling - x{exp_time(mins)}\n")
     f.write("#             clip:   clip outliers - W{window_width}C{clip_sigma}\n")
     f.write("#             scl_col: scale data columns – ['med_sub','rs0to1','rs-1to1','None']\n")
     f.write("#             spline_config: spline - c{column_no}:d{degree}K{knot_spacing}\n")
     f.write("#             ***********************************************************************************************************\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    f.write(f"LC_filepath: {lc_obj._fpath}\n")
-    f.write(f"RV_filepath: {lc_obj._fpath}\n")
-    f.write(f"n_planet: {lc_obj._nplanet}\n")
+    f.write(f"\tLC_filepath: {lc_obj._fpath}\n")
+    f.write(f"\tRV_filepath: {lc_obj._fpath}\n")
+    f.write(f"\tn_planet: {lc_obj._nplanet}\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    f.write(f"{'LC_auto_decorr:':15s} False       # automatically determine baseline function for the LCs\n")
-    f.write(f"{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
-    f.write(f"{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
+    f.write(f"\t{'LC_auto_decorr:':15s} False       # automatically determine baseline function for the LCs\n")
+    f.write(f"\t{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
+    f.write(f"\t{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
     _print_output(lc_obj,"lc_baseline",file=f)
     _print_output(lc_obj,"gp",file=f)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    f.write(f"{'RV_auto_decorr:':15s} False       # automatically determine baseline function for the RVs\n")
-    f.write(f"{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
-    f.write(f"{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
+    f.write(f"\t{'RV_auto_decorr:':15s} False       # automatically determine baseline function for the RVs\n")
+    f.write(f"\t{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
+    f.write(f"\t{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
     _print_output(rv_obj,"rv_baseline",file=f)
     _print_output(rv_obj,"rv_gp",file=f)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
@@ -99,6 +99,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
     _print_output(fit_obj, "fit",file=f)
     f.close()
+    print(f"configuration file saved as {filename}")
 
 
 def load_configfile(configfile="input_config.dat", return_fit=False, verbose=True):
@@ -217,6 +218,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         #move to next LC
         dump =_file.readline() 
     
+
     nphot = len(_names)
     _skip_lines(_file,1)                                      #remove 1 comment lines
     
@@ -235,10 +237,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         
         op.append(_adump[5].strip("|"))
         if op[-1] != "--":    #if theres a second kernel 
-            gp_pars[-1]     = (gp_pars[-1],_adump[6])
-            kernels[-1]     = (kernels[-1],_adump[7])
-            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[8]))
-            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[9]))
+            gp_pars[-1]     = (gp_pars[-1],_adump[7])
+            kernels[-1]     = (kernels[-1],_adump[8])
+            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9]))
+            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10]))
 
         #move to next LC
         dump =_file.readline()
@@ -248,13 +250,14 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     # instantiate light curve object
     lc_obj = load_lightcurves(_names, fpath, _filters, _lamdas, nplanet)
     lc_obj.lc_baseline(*np.array(_bases).T, grp_id=None, gp=_useGPphot,verbose=False )
-    lc_obj.clip_outliers(lc_list=_clip_lclist, clip=_clip, width=_clip_width,show_plot=False,verbose=False )
+    lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,show_plot=False,verbose=False )
     lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
     lc_obj.supersample(lc_list=_ss_lclist, exp_time=_ss_exp, verbose=False)
     lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
                         knot_spacing=_spl_knot , verbose=False)
     if verbose: lc_obj.print("lc_baseline")
-    lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation="op",
+    if gp_lclist !=[]: gp_lclist = gp_lclist[0] if gp_lclist[0]=='same' else gp_lclist
+    lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
                     amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
     
     ## RV ==========================================================
@@ -299,6 +302,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         #move to next RV
         dump =_file.readline()
     
+
     nRV = len(RVnames)
     _skip_lines(_file,1)                                      #remove 1 comment lines
     
@@ -317,10 +321,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         
         op.append(_adump[5].strip("|"))
         if op[-1] != "––":    #if theres a second kernel 
-            gp_pars[-1]     = (gp_pars[-1],_adump[6])
-            kernels[-1]     = (kernels[-1],_adump[7])
-            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[8]))
-            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[9]))
+            gp_pars[-1]     = (gp_pars[-1],_adump[7])
+            kernels[-1]     = (kernels[-1],_adump[8])
+            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9]))
+            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10]))
 
         #move to next LC
         dump =_file.readline()
@@ -332,9 +336,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     rv_obj.add_spline(rv_list=_spl_rvlist ,par=_spl_par, degree=_spl_deg,
                         knot_spacing=_spl_knot, verbose=False)
     if verbose: rv_obj.print("rv_baseline")
-
-    rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation="op",
-                        amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
+    if gp_rvlist !=[]: gp_rvlist = gp_rvlist[0] if gp_rvlist[0]=='same' else gp_rvlist
+    rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
+                    amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
     
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
@@ -419,15 +423,33 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
                             ph_off=ph_off[0] if len(ph_off)>0 else 0, plot_model=False,
                             setup_baseline=use_decorr,exclude_cols=exclude_cols,
                             enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
-        #TODO: if not use decorr compare the auto decorr pars to the user-defined ones and only use start values for those
+        #TODO: if not use_decorr, compare the auto decorr pars to the user-defined ones and only use start values for those
+        rel_cols = [b[:6] for b in lc_obj._bases]
+        _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
+        for j in range(lc_obj._nphot):
+            for i,v in enumerate(rel_cols[j]):
+                if i in [1,2]: continue
+                if v == 0: lc_obj._bases_init[j][f"A{i}"] = lc_obj._bases_init[j][f"B{i}"] = 0
+                if v >= 1: lc_obj._bases_init[j][f"A{i}"] = lc_obj._bases_init[j][f"A{i}"]
+                if v == 2: lc_obj._bases_init[j][f"B{i}"] = lc_obj._bases_init[j][f"B{i}"]
+
+
     if nRV > 0:
         if not use_decorrRV:
-            if verbose: print("\ngetting start values for RV decorrelation parameters ...")
+            if verbose: print("getting start values for RV decorrelation parameters ...\n")
         rv_obj.get_decorr(T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
                             sesinw=sesinw,secosw=secosw,
-                            gamma=gammas if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
+                            gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
                             exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, 
                             plot_model=False,verbose=verbose if use_decorrRV else False)
+        rel_cols = [b[:6] for b in rv_obj._RVbases]
+        _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
+        for j in range(rv_obj._nRV):
+            for i,v in enumerate(rel_cols[j]):
+                if i in [1,2]: continue
+                if v == 0: rv_obj._RVbases_init[j][f"A{i}"] = rv_obj._RVbases_init[j][f"B{i}"] = 0
+                if v >= 1: rv_obj._RVbases_init[j][f"A{i}"] = rv_obj._RVbases_init[j][f"A{i}"]
+                if v == 2: rv_obj._RVbases_init[j][f"B{i}"] = rv_obj._RVbases_init[j][f"B{i}"]
         
     
     # stellar params
@@ -456,6 +478,17 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     lsq_base  = _file.readline().split()[1]
     lcjitt    = _file.readline().split()[1]
     rvjitt    = _file.readline().split()[1]
+
+    _adump    = _file.readline().split()
+    jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
+    jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+    lcjittlim = [jittlo, jitthi]
+
+    _adump    = _file.readline().split()
+    jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
+    jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+    rvjittlim = [jittlo, jitthi]
+
     
     _adump    = _file.readline().split()
     baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
@@ -466,11 +499,13 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
     basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
     rvbaselim = [baselo, basehi]
-    
+
+
     fit_obj = fit_setup(R_st = st_rad, M_st = st_mass, par_input=par_in,
                         apply_LCjitter=lcjitt, apply_RVjitter=rvjitt,
                         leastsq_for_basepar=lsq_base, 
                         LCbasecoeff_lims=lcbaselim, RVbasecoeff_lims=rvbaselim,
+                        LCjitter_loglims=lcjittlim, RVjitter_lims=rvjittlim, 
                         verbose=verbose)
     
     fit_obj.sampling(sampler=sampler,n_cpus=ncpus, emcee_move=mc_move,

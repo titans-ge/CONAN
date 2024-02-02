@@ -115,8 +115,8 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
     rvGPindex   = args[64]
     # jumping_rvGP  = args[65]
     # jumping_lcGP  = args[66]
-    input_lcs   = args[65]
-    input_rvs   = args[66]
+    input_lcs   = args[65]   #used in result object to access the input data
+    input_rvs   = args[66]   #used to result object to access the input data
     RVunit      = args[67]
     rv_pargps   = args[68]
     rv_gpkerns  = args[69]
@@ -599,7 +599,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 if make_outfile:   
                     out_data = np.hstack((out_data,phases))
                     outfile  = out_folder+"/"+RVnames[j][:-4]+'_rvout.dat'
-                    if verbose: print(f"Writing RV output with GP{which_GP} to file: {outfile}")
+                    if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
                     np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
 
 

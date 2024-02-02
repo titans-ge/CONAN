@@ -1,19 +1,21 @@
-12-Jan-2024: version dev
+2-Feb-2024: version 3.1.0
 ~~~~~~~~~~~~
 * added function get_decorr() now available for lc and rv objects
-* get_decorr() can now use spline. useful when analysing CHEOPS data
-* added function clip_outliers() and split_transits() to lc object
+* get_decorr() can now use spline. useful when analysing CHEOPS data or to remove other long-term trend in the data
+* added function clip_outliers() and rescale_column_data() to lc object
 * download data directly from TESS archive using function get_tess_data()
+* changed transit_rv_pars() function of the lc object to planet_parameters()
 * get system parameters from NASA exoplanet archive
+* limb darkening model now uses kipping parameterization.
 * get LD priors from phoenix
 * automatically fit .FITS and .dat files from EULER pipeline
 * supersampling of long cadence data 
-* improved results object that allows to re-evaluate the model at user-defined times
+* improved results object that allows to re-evaluate the model at user-defined times and make plots
 * phase curve fitting
-* sampling also with dynesty. default is still emcee
+* sampling also with dynesty, now the default sampler
 * reimplementation of GP, for lc and rv, including more kernels and combinations of kernels
 * support for multiplanet system in lc and rv. no defined limit on the number of planets
-
+* see example implementations in the Notebooks folder
 
 20-11-2023: version 3.0.5(dev)
 ~~~~~~~~~~~~
