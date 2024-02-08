@@ -16,30 +16,28 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
     phase_phasefold = {}    # dictionary containing phase of each planet across several datasets
     flux_phasefold  = {}
     model_phasefold = {}
+    err_phasefold   = {}
+
     for n in range(npl):
         phase_phasefold[n] = np.empty(0) #array containing phase of each data point
         flux_phasefold[n]  = np.empty(0) #array containig baseline corrected flux of each data point
         model_phasefold[n] = np.empty(0) #array containg baseline corrected model of each data point
+        err_phasefold[n]   = np.empty(0) #array containg errors of each data point
 
         
     for j in range(nphot):
-        mod  = yval[indlist[j][0]]
-        time = tarr[indlist[j][0]]
-        flux = farr[indlist[j][0]]
-        err  = earr[indlist[j][0]]
 
         infile=prefix.split("/")[0] + "/" + names[j][:-4]+'_lcout.dat'
-        tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
+        tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
 
         # bin the lightcurve data
         binsize_min=15.
         binsize    = binsize_min/(24.*60.)
-        nbin = int((np.max(tt)-np.min(tt))/binsize)  # number of bins
-        # bins_edges = np.linspace(np.min(tt),np.max(tt),nbin+1)
+        nbin = int(np.ptp(tt)/binsize)  # number of bins
 
-        tbin, ftbin, etbin = bin_data(tt, ft,et,statistic='mean',bins=nbin)
-        _,    fcobin       = bin_data(tt, fco,  statistic='mean',bins=nbin)
-        _,    resbin       = bin_data(tt, ft-mt,statistic='mean',bins=nbin)
+        t_bin, f_bin, err_bin = bin_data(tt, flux,err,     statistic='mean',bins=nbin)
+        _,    det_fbin        = bin_data(tt, det_flux,     statistic='mean',bins=nbin)
+        _,    resbin          = bin_data(tt, flux-full_mod,statistic='mean',bins=nbin)
 
         ########## Plot and save lightcurve with fit ########
         titl='Fit for lightcurve '+names[j][:-4]
@@ -48,30 +46,29 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         fig,ax = plt.subplots(3,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title(titl)
         ax[0].set_ylabel("Flux")
-        ax[0].plot(tt, ft,'.',c='skyblue', ms=2, zorder=1, label='Data')
-        ax[0].plot(tt, mt, "-r", lw=2,zorder=5,label='Full Model fit')
+        ax[0].plot(tt, flux,'.',c='skyblue', ms=2, zorder=1, label='Data')
+        ax[0].plot(tt, full_mod, "-r", lw=2,zorder=5,label='Full Model fit')
         ax[0].plot(tt, bfunc, "g--",  zorder=5,label='Baseline')
-        ax[0].errorbar(tbin, ftbin, yerr=etbin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
-        ax[0].set_ylim([min([min(ft),min(mt)])-0.1*np.ptp(min(ft)), 
-                        max([max(ft),max(mt)])+0.1*np.ptp(max(ft))])
+        ax[0].errorbar(t_bin, f_bin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
+        ax[0].set_ylim([min([min(flux),min(full_mod)])-0.1*np.ptp(min(flux)), 
+                        max([max(flux),max(full_mod)])+0.1*np.ptp(max(flux))])
         ax[0].legend()
 
         ax[1].set_ylabel("Flux - baseline")
-        ax[1].plot(tt, fco,'.',c='skyblue',ms=2, zorder=1, label="Detrended data")
+        ax[1].plot(tt, det_flux,'.',c='skyblue',ms=2, zorder=1, label="Detrended data")
         ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
-        ax[1].errorbar(tbin, fcobin, yerr=etbin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
-        ax[1].set_ylim([min(fco)-0.1*(1-min(fco)), max(fco)+0.1*(max(fco)-1)])
+        ax[1].errorbar(t_bin, det_fbin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
+        ax[1].set_ylim([min(det_flux)-0.1*(1-min(det_flux)), max(det_flux)+0.1*(max(det_flux)-1)])
         ax[1].legend()
 
         ax[2].set_ylabel("O – C [ppm]")
-        ax[2].plot(tt, 1e6*(ft-mt),'.',c='skyblue',ms=2, zorder=1)
-        ax[2].plot(tbin, 1e6*resbin,'o', c='midnightblue', ms=3, zorder=3)
+        ax[2].plot(tt, 1e6*(flux-full_mod),'.',c='skyblue',ms=2, zorder=1)
+        ax[2].plot(t_bin, 1e6*resbin,'o', c='midnightblue', ms=3, zorder=3)
         ax[2].axhline(0,ls="--", color="k", alpha=0.3)
 
         ax[2].set_xlabel("Time")
         plt.subplots_adjust(hspace=0.02)
         fig.savefig(outname,bbox_inches='tight')
-
 
 
         for n in range(npl):
@@ -80,10 +77,9 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
 
             #Add data to array to phasefold them later
             phase_phasefold[n] = np.append(phase_phasefold[n], ph)
-            flux_phasefold[n]  = np.append(flux_phasefold[n],  fco)
+            flux_phasefold[n]  = np.append(flux_phasefold[n],  det_flux)
             model_phasefold[n] = np.append(model_phasefold[n], mm)
-
-
+            err_phasefold[n]   = np.append(err_phasefold[n],   err)
 
 
     ######### PLOT phasecurve ##############
@@ -95,40 +91,23 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
                 phase_phasefold[n][phase_phasefold[n] > 0.5] = phase_phasefold[n][phase_phasefold[n] >= 0.5] - 1.0
 
             ### Order by phase and calculate residuals
-            phorder = phase_phasefold[n].argsort()
-            phase_phasefold[n] = phase_phasefold[n][phorder[::1]]
-            flux_phasefold[n]  = flux_phasefold[n][phorder[::1]]
-            model_phasefold[n] = model_phasefold[n][phorder[::1]]
-
+            phorder = np.argsort(phase_phasefold[n])
+            phase_phasefold[n] = phase_phasefold[n][phorder]
+            flux_phasefold[n]  = flux_phasefold[n][phorder]
+            model_phasefold[n] = model_phasefold[n][phorder]
+            err_phasefold[n]   = err_phasefold[n][phorder]
             res_phasefold      = flux_phasefold[n] - model_phasefold[n]
 
             #Bin the data
-            binsize      = 15./(24.*60.) / period[n] #10 minute bins in units of one phase
+            binsize      = 15./(24.*60.) / period[n] #15 minute bins in units of one phase
             Tdur_phase   = Dur[n]/period[n]
-            nbin         = int((np.max(phase_phasefold[n])-np.min(phase_phasefold[n]))/binsize)
+            nbin         = int(np.ptp(phase_phasefold[n])/binsize)
             phase_bins   = np.linspace(np.min(phase_phasefold[n]),np.max(phase_phasefold[n]),nbin+1)
-            pbin         = phase_bins+0.5*binsize # MONIKA: defining the bin centers for plotting
-            flux_bins    = np.zeros(np.size(phase_bins))
-            res_bins     = np.zeros(np.size(phase_bins))
-            error_bins   = np.zeros(np.size(phase_bins))
-            res_err_bins = np.zeros(np.size(phase_bins))
 
-            for i in range(np.size(phase_bins)-1):
-                fluxes_in_bin = flux_phasefold[n][(phase_phasefold[n] >= phase_bins[i]) & (phase_phasefold[n] < phase_bins[i+1])]
-                if fluxes_in_bin.size == 0: #Check whether bin is empty
-                    flux_bins[i]  = np.nan
-                    error_bins[i] = np.nan
-                else:
-                    flux_bins[i]  = np.mean(fluxes_in_bin)
-                    error_bins[i] = np.std(fluxes_in_bin)/np.sqrt(np.size(fluxes_in_bin))
+            pbin, flux_bins, error_bins = bin_data(phase_phasefold[n], flux_phasefold[n], err_phasefold[n], statistic='mean',bins=nbin)
+            _,    det_fbin        = bin_data(phase_phasefold[n], model_phasefold[n], statistic='mean',bins=nbin)
+            _,    res_bins      = bin_data(phase_phasefold[n], res_phasefold, statistic='mean',bins=nbin)
 
-                res_in_bin = res_phasefold[(phase_phasefold[n] >= phase_bins[i]) & (phase_phasefold[n] < phase_bins[i+1])]
-                if res_in_bin.size == 0: #Check whether bin is empty
-                    res_bins[i]     = np.nan
-                    res_err_bins[i] = np.nan
-                else:
-                    res_bins[i]     = np.mean(res_in_bin)
-                    res_err_bins[i] = np.std(res_in_bin)/np.sqrt(np.size(res_in_bin))
 
             ### Plot Phasecurve
             fig,ax=plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios':[2,1]},figsize=(12,9))
@@ -139,11 +118,11 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
             ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
             ax[0].set_ylim([np.min(flux_phasefold[n]) - 0.1 *np.abs((1.0 - np.min(flux_phasefold[n]))),np.max(flux_phasefold[n]) + 0.1 * np.abs((np.max(flux_phasefold[n])-1.0))])
             ax[0].set_ylabel('Flux - Baseline')
-            ax[0].set_xlim([-Tdur_phase,Tdur_phase])
+            # ax[0].set_xlim([-Tdur_phase,Tdur_phase])
             ax[0].legend(['Flux - Baseline','Model','Binned data'])
 
             ax[1].plot(phase_phasefold[n], 1e6*res_phasefold,'o',c='skyblue',ms=2, zorder=1)
-            ax[1].errorbar(pbin, 1e6*res_bins, yerr=res_err_bins*1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
+            ax[1].errorbar(pbin, 1e6*res_bins, yerr=error_bins*1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
             ax[1].axhline(0, ls="--",color="k", alpha=0.3)
             ax[1].set_ylim([np.min(res_phasefold*1e6) + 0.1 * np.min(res_phasefold*1e6),np.max(res_phasefold*1e6) + 0.1 * np.max(res_phasefold)])
             ax[1].set_xlabel('Phase')

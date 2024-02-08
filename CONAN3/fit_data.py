@@ -1176,7 +1176,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     fit_pars = list(burn_result._par_names)[i*nplotpars:(i+1)*nplotpars]
                     fig      = burn_result.plot_burnin_chains(fit_pars)
                     fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
-                print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
+                print(f"saved {nplot} burn-in chain plot(s) as {out_folder}/burnin_chains_*.png")
                 matplotlib.use(__default_backend__)
             sampler.reset()
 
@@ -1274,7 +1274,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
             fig = result.plot_chains(fit_pars)
             fig.savefig(out_folder+f"/chains_{i}.png", bbox_inches="tight") 
-        print(f"\nsaved {nplot} chain plots as {out_folder}/chains_*.png")
+        print(f"\nsaved {nplot} chain plot(s) as {out_folder}/chains_*.png")
     
     
     #corner plot
@@ -1282,7 +1282,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
         fig = result.plot_corner(fit_pars, force_plot=True)
         fig.savefig(out_folder+f"/corner_{i}.png", bbox_inches="tight")
-    print(f"saved {nplot} corner plots as {out_folder}/corner_*.png")
+    print(f"saved {nplot} corner plot(s) as {out_folder}/corner_*.png")
     matplotlib.use(__default_backend__)
 
     dim=posterior.shape

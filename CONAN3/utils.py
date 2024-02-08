@@ -27,7 +27,7 @@ def phase_fold(t, per, t0,phase0=-0.5):
 
 
 def get_transit_time(t, per, t0):
-    """Get the transit time of a light curve.
+    """Get the transit time within a light curve.
 
     Parameters
     ----------
@@ -43,7 +43,7 @@ def get_transit_time(t, per, t0):
     tt : array-like
         Transit times.
     """
-    return t0 + per * np.round((np.median(t) - t0)/per)
+    return t0 + per * np.floor((np.median(t) - t0)/per)
 
 def bin_data(t,f,err=None,statistic="mean",bins=20):
     """

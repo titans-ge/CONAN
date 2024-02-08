@@ -5,16 +5,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 try:
     import lightkurve as lk
-except ImportError:
-    raise ImportError("lightkurve not installed. run `pip install lightkurve`")
+except:
+    print("Warning: LightKurve not installed, won't be able to download TESS data. run `pip install lightkurve`")
 try:
     from pycheops import Dataset
-except ImportError:
-    raise ImportError("pycheops not installed. run `pip install pycheops`")
+except:
+    print("Warning: pycheops not installed, won't be able to download CHEOPS data. run `pip install pycheops`")
 try:
     from dace_query.cheops import Cheops
-except ImportError:
-    raise ImportError("dace_query not installed. run `pip install dace_query`")
+except:
+    print("Warning: dace_query not installed, won't be able to download CHEOPS data. run `pip install dace_query`")
 
 class get_TESS_data(object):
     """

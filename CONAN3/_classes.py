@@ -1681,7 +1681,7 @@ class load_lightcurves:
         if verbose: _print_output(self,"gp")
     
     
-    def planet_parameters(self, RpRs=0., Impact_para=0, rho_star=0, T_0=0, Period=0, 
+    def planet_parameters(self, RpRs=0., Impact_para=0, rho_star=1, T_0=0, Period=0, 
                             Eccentricity=0, omega=90, K=0, verbose=True):
         """
             Define parameters an priors of model parameters.
@@ -1776,7 +1776,7 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_phasecurve` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
 
 
-    def update_planet_parameters(self, RpRs=0., Impact_para=0, rho_star=0, T_0=0, Period=0, 
+    def update_planet_parameters(self, RpRs=0., Impact_para=0, rho_star=1, T_0=0, Period=0, 
                  Eccentricity=0, omega=90, K=0, verbose=True):
         """
             update parameters and priors of model parameters.
@@ -3216,6 +3216,9 @@ class load_result:
                 self._lc_smooth_time_mod[lc] = SimpleNamespace()
                 if self._nplanet == 1:
                     this_T0 = get_transit_time(t=input_lcs[lc]["col0"],per=self.params.P[0],t0=self.params.T0[0])
+                    if this_T0 < input_lcs[lc]["col0"].min(): #occultation
+                        this_T0 += 0.5*self.params.P[0]
+
                     if input_lcs[lc]["col0"].min() >= this_T0-0.75*self.params.dur[0]:     #data starts after/too close to ingress
                         tmin   = this_T0 - 0.75*self.params.dur[0]
                     else: tmin = input_lcs[lc]["col0"].min()
