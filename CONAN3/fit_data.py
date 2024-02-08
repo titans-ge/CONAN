@@ -1129,8 +1129,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     indparams[25] = inmcmc
     print('No of dimensions: ', ndim)
 
-    nplot = round(ndim/15)                #number of chain and corner plots to make
-    nplotpars = int(np.ceil(ndim/nplot))  #number of parameters to plot in each plot
+    nplot     = int(np.ceil(ndim/15))                #number of chain and corner plots to make
+    nplotpars = int(np.ceil(ndim/nplot))             #number of parameters to plot in each plot
 
     if fit_sampler == "emcee":
         if nchains < 3*ndim:
