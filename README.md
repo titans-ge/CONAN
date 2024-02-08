@@ -26,6 +26,7 @@ python setup.py develop
 ```
 pip install -e git+https://github.com/mlendl42/CONAN3.git#egg=CONAN3
 ```
+Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 
 See recent changes in change_log.rst
 

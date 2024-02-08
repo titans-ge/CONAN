@@ -1375,6 +1375,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #make print out statement in the fashion of conan the barbarian
     print(_text_format.RED + "\nCONAN: I have now crushed your data," +\
-          "\n\tthe planetary information it hides is now laid bare in the results."+\
+          "\n\tthe planetary information it hides is laid bare in the results."+\
           "\n\t\tI am now ready for another quest. \n" + _text_format.END)
     return result

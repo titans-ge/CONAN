@@ -18,9 +18,66 @@ from .utils import rho_to_aR, cosine_atm_variation, reflection_atm_variation, ph
 from types import SimpleNamespace
 
 
-class TTV_Model(Model):
-    #TODO: implement TTV model
-    pass
+def TTV_Model(tarr, rho_star, T0, RpRs, b, per, eos=[0], eoc=[0],q1=0,q2=0, split_conf=None,
+                    args=None,planet_only=False,ss=None ):
+
+    mm = np.ones_like(tarr)          #baseline of lc model
+
+    for i,ind in enumerate(split_conf.indices):      #select indices of each transit in the array and compute transit model for each with its own T0
+        tarr_split = tarr[ind]
+        this_t0    = T0[0][i]
+        TM = Transit_Model(rho_star=rho_star, T0=[this_t0], RpRs=RpRs, b=b, per=per, eos=eos, eoc=eoc, ddf=0, 
+                                    occ=0, A=0, delta=0, q1=q1, q2=q2, npl=1)
+        this_trans,_ = TM.get_value(tarr_split, args=None,planet_only=True,ss=ss)
+        mm[ind]      = this_trans
+
+    if planet_only:
+        return mm, {"pl_1": mm}
+    
+
+    # Arguments (fixed param)
+    i = 0
+    tt, ft             =  args[i], args[i+1] ; i+=2
+    col3_in, col4_in   =  args[i], args[i+1] ; i+=2
+    col6_in, col5_in   =  args[i], args[i+1] ; i+=2
+    col7_in, _         =  args[i], args[i+1] ; i+=2
+    _                  =  args[i] ; i+=1
+    _, _               =  args[i], args[i+1] ; i+=2
+    _                  =  args[i] ; i+=1
+    _                  =  args[i] ; i+=1
+    baseLSQ            =  args[i] ; i+=1
+    bases              =  args[i] ; i+=1   # MONIKA: changed this variable name from "bvar" to "bases" for consistency
+    _                  =  args[i] ; i+=1
+    _                  =  args[i] ; i+=1
+    _                  =  args[i] ; i+=1
+    bvar               =  args[i] ; i+=1
+    useSpline          =  args[i] ; i+=1
+    
+    #==== set up for LC and baseline creation
+    col5 = np.copy(col5_in)
+    col3 = np.copy(col3_in)
+    col4 = np.copy(col4_in)
+    col6 = np.copy(col6_in)
+    col7 = np.copy(col7_in)
+    ts   = tt-np.median(tt)  
+
+    # MONIKA: added least square optimisation for baselines
+    if (baseLSQ == 'y'):
+        #bvar contains the indices of the non-fixed baseline variables        
+        coeffstart  = np.copy(bases[bvar])   
+        icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, col5, col3, col4, col6, col7))
+        coeff = np.copy(bases)
+        coeff[bvar] = np.copy(icoeff)   
+    else:        
+        coeff = np.copy(bases)  # the input coefficients 
+
+    bfunc,spl_comp = basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,ft/mm,useSpline)
+    mod=mm*bfunc
+    
+    lc_result = SimpleNamespace(planet_LC=mm, full_LCmod=mod, LC_bl=bfunc, spline=spl_comp )
+
+    return lc_result
+
 
 class Transit_Model(Model):
     """
@@ -70,7 +127,6 @@ class Transit_Model(Model):
         self.T0       = T0
         self.RpRs     = RpRs
         self.b        = b
-        # self.dur      = dur
         self.per      = per
         self.eos      = eos
         self.eoc      = eoc
@@ -105,7 +161,7 @@ class Transit_Model(Model):
             The components of the model for each planet in a system
         """
 
-# Parameters to add
+        # Parameters to add
         if args is not None:
             # Arguments (fixed param)
             i = 0
@@ -279,7 +335,7 @@ class Transit_Model(Model):
         col4 = np.copy(col4_in)
         col6 = np.copy(col6_in)
         col7 = np.copy(col7_in)
-        ts   = tt-np.median(tt)  #TODO change to median subtraction
+        ts   = tt-np.median(tt)  
 
         # MONIKA: added least square optimisation for baselines
         if (baseLSQ == 'y'):

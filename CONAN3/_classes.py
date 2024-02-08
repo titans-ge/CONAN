@@ -18,7 +18,7 @@ from scipy.interpolate import LSQUnivariateSpline
 __all__ = ["load_lightcurves", "load_rvs", "fit_setup", "load_result", "__default_backend__"]
 
 #helper functions
-__default_backend__ = matplotlib.get_backend()
+__default_backend__ = "Agg" if matplotlib.get_backend()=="TkAgg" else matplotlib.get_backend()
 matplotlib.use(__default_backend__)
 
 def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_order=0, 
@@ -1284,144 +1284,7 @@ class load_lightcurves:
 
         self._clipped_data.flag = True # SimpleNamespace(flag=True, width=width, clip=clip, lc_list=lc_list, config=conf)
 
-    
-    def split_transits(self, filename=None, P=None, t_ref=None, baseline_amount=0.3, input_t0s=None, show_plot=True, save_separate=True, same_filter=True):
-    
-        """
-        Function to split the transits in the data into individual transits and save them in separate files or to remove a certain amount of data points around the transits while keeping them in the original file.
-        Recommended to set show_plot=True to visually ensure that transits are well separated.
 
-        Parameters:
-        -----------
-
-        filename: string;
-                name of the lightcurve file to clip. Default is None
-
-        P : float;
-            Orbital period in same unit as t.
-
-        t_ref : float;
-            reference time of transit - T0 from literature or visual estimate of a mid-transit time in the data 
-            Used to calculate expected time of transits in the data assuming linear ephemerides.
-
-        baseline_amount: float between 0.05 and 0.5 times the period P;
-            amount of baseline data to keep before and after each transit. Default is 0.3*P, has to be between 0.05P and 0.5P.
-            
-        input_t0s: array, list, (optional);
-            split transit using these mid-transit times
-            
-        show_plot: bool;
-            set true to plot the data and show split points.
-            
-        save_separate: bool;
-            set True to separately save each transit and its baseline_amount around it in a new file. Default is True.
-
-        same_filter: bool; 
-            set True to save the split transits in the same filter as the original file. Default is True.
-        """
-
-        if filename==None: 
-            print("No lightcurve filename given.")
-            return None
-        assert filename in self._names, f"split_transits(): filename {filename} not in loaded lightcurves."
-        
-        data = np.loadtxt(self._fpath+filename)
-        # data = self._input_lc[filename]
-        #TODO allow to split data at any given points or with user defined gap size
-        
-        t = data.transpose()[0]
-        flux = data.transpose()[1]
-        
-        if baseline_amount < 0.05 :
-            baseline_amount = 0.05
-            print("Baseline amount defaulted to minimum 0.05")
-        elif baseline_amount > 0.5 :
-            baseline_amount = 0.5
-            print("Baseline amount defaulted to maximum 0.5")
-            
-        
-        if input_t0s is not None:
-            t0s = list(input_t0s)
-
-        else:
-            tref = t_ref
-            if t_ref < t.min() or t.max() < t_ref:        #if reference time t0 is not within this timeseries
-                #find transit time that falls around middle of the data
-                ntrans = int((np.median(t) - tref)/P)   
-                tref = t_ref + ntrans*P
-
-            nt = int( (tref-t.min())/P )                            #how many transits behind tref is the first transit
-            tr_first = tref - nt*P                                    #time of first transit in data
-            tr_last = tr_first + int((t.max() - tr_first)/P)*P        #time of last transit in data
-
-            n_tot_tr = int((tr_last - tr_first)/P)                  #total nmumber of transits in data_range
-            t0s = [tr_first + P*n for n in range(n_tot_tr+1) ]        #expected tmid of transits in data (if no TTV)
-            #remove tmid without sufficient transit data around it
-            t0s = list(filter(lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>0, t0s))
-
-
-        #split data into individual transits. taking points around each tmid    
-        tr_times= []
-        fluxes= []
-        indz = []
-        for i in range(len(t0s)):
-            higher_than = t>(t0s[i]-baseline_amount*P)
-            lower_than = t<(t0s[i]+baseline_amount*P)
-            if i==0: 
-                tr_times.append(t[higher_than & lower_than])
-                indz.append( np.argwhere(higher_than & lower_than).reshape(-1) )
-            elif i == len(t0s)-1: 
-                tr_times.append(t[higher_than & lower_than])
-                indz.append( np.argwhere(higher_than & lower_than).reshape(-1) )
-            else: 
-                tr_times.append(t[higher_than & lower_than])
-                indz.append( np.argwhere(higher_than & lower_than).reshape(-1))
-            fluxes.append(flux[indz[i]])
-            
-        tr_edges = [(tr_t[0], tr_t[-1]) for tr_t in tr_times]    #take last time in each timebin as breakpts
-        
-        tr_times = np.concatenate(tr_times)
-        fluxes = np.concatenate(fluxes)
-            
-        if show_plot:
-            assert fluxes is not None, f"plotting requires input flux"
-            plt.figure(figsize=(15,3))
-            plt.plot(tr_times,fluxes,".")
-            for edg in tr_edges:
-                plt.axvline(edg[0], ls="dashed", c="k", alpha=0.3)
-                plt.axvline(edg[1], ls="dashed", c="k", alpha=0.3)
-            plt.plot(t0s, (0.997*np.min(flux))*np.ones_like(t0s),"k^")
-            plt.xlabel("Time (days)", fontsize=14)
-            plt.title("Using t_ref: dashed vertical lines = transit splitting times;  triangles = identified transits");
-
-        if save_separate:
-            #replace filter names
-            _flt = self._filters[self._names.index(filename)]
-            _lbd = self._lamdas[self._names.index(filename)]
-            self._filters.remove(_flt)
-            self._lamdas.remove(_lbd)
-            self._names.remove(filename)
-
-            for i in range(len(t0s)):
-                
-                tr_data = data[indz[i]]
-                
-                tr_filename = os.path.splitext(filename)
-                tr_filename = tr_filename[0] + "_tr" + str(i) + tr_filename[1]
-            
-                np.savetxt(self._fpath+tr_filename,tr_data,fmt='%.8f')
-                print("Saved " + self._fpath + tr_filename)
-
-                self._names.append(tr_filename)
-                if same_filter: self._filters.append(_flt)
-                else: self._filters.append(_flt+str(i))
-                # self._filnames   = np.array(list(sorted(set(self._filters),key=self._filters.index)))
-
-                self._lamdas.append(_lbd)
-        # self.lc_baseline(re_init=True,verbose=False)
-        self.__init__(self._names, self._fpath, self._filters, self._lamdas, self._nplanet)
-
-            
     def lc_baseline(self, dcol0=None, dcol3=None, dcol4=None,  dcol5=None, dcol6=None, 
                     dcol7=None, dsin=None, grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
         """
@@ -2075,12 +1938,17 @@ class load_lightcurves:
     
     def transit_timing_variation(self, ttvs="n", dt=(-0.125,0,0.125), verbose=True):
         """
-        include transit timing variation between the transit. Note: "T_0" and "P" must be fixed to reference values  in `.planet_parameters()` and not a jump parameter .
+        include transit timing variation between the transit. Note: "T_0" and "P" must be fixed to reference values  in `.planet_parameters()` and not jump parameters.
         transit timing variation is calculated as the deviation of each transit time from the expected T_0 + P*n
         """
-        #TODO: implement this
         assert hasattr(self, "_config_par"), "transit_timing_variation(): planet_parameters() must be called before transit_timing_variation()."
-        raise NotImplementedError("transit_timing_variation() is not implemented yet.")
+        assert isinstance(dt, tuple),f"transit_timing_variation(): dt must be tuple of len 2/3 specifying (mu,std)/(min,start,max)."
+        if ttvs == "y": 
+            assert self._config_par["pl1"]["T_0"].to_fit == "n" or self._config_par["pl1"]["T_0"].step_size ==0,'Fix `T_0` in `.planet_parameters()` to a reference value in order to setup TTVs.'
+            assert self._config_par["pl1"]["Period"].to_fit == "n" or self._config_par["pl1"]["Period"].step_size ==0,'Fix `Period` in `.planet_parameters()` to a reference value in order to setup TTVs.'
+        
+        for lc in self._names:
+            pass
 
     def setup_phasecurve(self, D_occ=0, A_pc=0, ph_off=0, verbose=True ):
         """
@@ -3294,7 +3162,7 @@ class load_result:
 
         chain_file        = folder+"/"+chain_file
         burnin_chain_file = folder+"/"+burnin_chain_file
-        self._folder = folder
+        self._folder      = folder
         assert os.path.exists(chain_file) or os.path.exists(burnin_chain_file) , f"file {chain_file} or {burnin_chain_file}  does not exist in the given directory"
 
         if os.path.exists(chain_file):
@@ -3305,9 +3173,10 @@ class load_result:
         self._obj_type      = "result_obj"
         self._par_names     = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
 
-        #retrieve summary statistics of the fit
+        #retrieve configration of the fit
         self._ind_para      = pickle.load(open(folder+"/.par_config.pkl","rb"))
-        lc_names, rv_names  = self._ind_para[31], self._ind_para[32]
+        self._lcnames       = self._ind_para[31]
+        self._rvnames       = self._ind_para[32]
         self._nplanet       = self._ind_para[58]
         input_lcs           = self._ind_para[65]
         input_rvs           = self._ind_para[66]
@@ -3343,7 +3212,7 @@ class load_result:
         if hasattr(self,"_stat_vals"):     #summary statistics are available only if fit completed
             # evaluate model of each lc at a smooth time grid
             self._lc_smooth_time_mod = {}
-            for lc in lc_names:
+            for lc in self._lcnames:
                 self._lc_smooth_time_mod[lc] = SimpleNamespace()
                 if self._nplanet == 1:
                     this_T0 = get_transit_time(t=input_lcs[lc]["col0"],per=self.params.P[0],t0=self.params.T0[0])
@@ -3362,7 +3231,7 @@ class load_result:
 
             # evaluate model of each rv at a smooth time grid
             self._rv_smooth_time_mod = {}
-            for i,rv in enumerate(rv_names):
+            for i,rv in enumerate(self._rvnames):
                 self._rv_smooth_time_mod[rv] = SimpleNamespace()
                 # if self._nplanet == 1:
                 #     this_T0 = get_transit_time(t=input_rvs[rv]["col0"],per=self.params.P[0],t0=self.params.T0[0])
@@ -3377,7 +3246,7 @@ class load_result:
         
 
             #LC data and functions
-            self.lc = SimpleNamespace(  names    = lc_names,
+            self.lc = SimpleNamespace(  names    = self._lcnames,
                                         filters  = self._ind_para[12],
                                         evaluate = self._evaluate_lc,
                                         outdata  = self._load_result_array(["lc"],verbose=verbose),
@@ -3387,7 +3256,7 @@ class load_result:
             self.lc.plot_bestfit = self._plot_bestfit_lc
             
             #RV data and functions
-            self.rv = SimpleNamespace(  names    = rv_names,
+            self.rv = SimpleNamespace(  names    = self._rvnames,
                                         filters  = self._ind_para[12],
                                         evaluate = self._evaluate_rv,
                                         outdata  = self._load_result_array(["rv"],verbose=verbose),
@@ -3796,22 +3665,28 @@ class load_result:
         out_files_lc = sorted([ f  for f in os.listdir(self._folder) if '_lcout.dat' in f])
         out_files_rv = sorted([ f  for f in os.listdir(self._folder) if '_rvout.dat' in f])
         all_files    = []
-        if "lc" in data: all_files.extend(out_files_lc)
-        if "rv" in data: all_files.extend(out_files_rv)
+        input_fnames = []
+        if "lc" in data: 
+            all_files.extend(out_files_lc)
+            input_fnames.extend(self._lcnames)
+        if "rv" in data: 
+            all_files.extend(out_files_rv)
+            input_fnames.extend(self._rvnames)
         
         results = {}
         for f in all_files:
             df = pd.read_fwf(self._folder+"/"+f, header=0)
             df = df.rename(columns={'# time': 'time'})
-            keyname = f[:-10]+f[-4:]   #remove _rvout or _lcout from filename
-            results[keyname] = df
+            fname = f[:-10]         #remove _rvout.dat or _lcout.dat from filename
+            fname_with_ext = [f for f in input_fnames if fname in f][0]    #take extension of the input_fname
+            results[fname_with_ext] = df
         if verbose: print(f"{data} Output files, {all_files}, loaded into result object")
         return results
 
-    def make_output_file(self, stat="median"):
+    def make_output_file(self, stat="median",out_folder=None):
         """
-        make output model file ("*_??out.dat") from parameters obtained using different summary statistic on the posterior.
-        if a *_??out.dat file already exists, it is overwritten (so be sure!!!).
+        make output model file ("*_??out.dat") from parameters obtained using different summary statistics on the posterior.
+        if a *_??out.dat file already exists in the out_folder, it is overwritten (so be sure!!!).
 
         Parameters
         ----------
@@ -3819,6 +3694,10 @@ class load_result:
             posterior summary statistic to use for model calculation, must be one of ["median","max","bestfit"], by default "median".
             "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
             is the parameter combination that gives the maximum joint posterior probability.
+
+        out_folder : str, optional
+            folder to save the output files. Default is None to save in the current result directory.
+
         """
         
         from CONAN3.logprob_multi import logprob_multi
@@ -3828,7 +3707,8 @@ class load_result:
         if   stat == "median":  stat = "med"
         elif stat == "bestfit": stat = "bf"
 
-        mval2, merr2, T0_post, p_post = logprob_multi(self._stat_vals[stat],*self._ind_para,make_outfile=True, verbose=True)
+        if out_folder is None: out_folder =  self._folder
+        _ = logprob_multi(self._stat_vals[stat],*self._ind_para,make_outfile=True, out_folder=out_folder,verbose=True)
 
         return
         

@@ -2,6 +2,7 @@ import numpy as np
 import astropy.constants as c
 import astropy.units as u
 from types import SimpleNamespace
+import matplotlib.pyplot as plt
 
 def phase_fold(t, per, t0,phase0=-0.5):
     """Phase fold a light curve.
@@ -661,4 +662,88 @@ class gp_params_convert:
         
     
 
+
+def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=None, flux =None,show_plot=True):
+    
+        """
+        Function to split the transits in the data into individual transits and save them in separate files or to remove a certain amount of data points around the transits while keeping them in the original file.
+        Recommended to set show_plot=True to visually ensure that transits are well separated.
+
+        Parameters:
+        -----------
+
+        P : float;
+            Orbital period in same unit as t.
+
+        t_ref : float;
+            reference time of transit - T0 from literature or visual estimate of a mid-transit time in the data 
+            Used to calculate expected time of transits in the data assuming linear ephemerides.
+
+        baseline_amount: float between 0.05 and 0.5 times the period P;
+            amount of baseline data to keep before and after each transit. Default is 0.3*P, has to be between 0.05P and 0.5P.
+            
+        input_t0s: array, list, (optional);
+            split transit using these mid-transit times
+            
+        show_plot: bool;
+            set true to plot the data and show split points.
+
+        """        
+        assert t is not None, "t must be provided"
+
+        if baseline_amount < 0.05 :
+            baseline_amount = 0.05
+            print("Baseline amount defaulted to minimum 0.05")
+        elif baseline_amount > 0.5 :
+            baseline_amount = 0.5
+            print("Baseline amount defaulted to maximum 0.5")  
         
+        t0s = []
+        for i in range(len(P)):
+            if input_t0s[i] is not None: t0s.append( list(input_t0s) )
+        else: t0s.append( get_T0s(t, t_ref[i], P[i]) )
+
+        #split data into individual transits. taking points around each tmid    
+        tr_times, fluxes, indz, pT0s = [], [], [], []
+
+        for i in range(len(t0s)):
+            higher_than = t>=(t0s[i]-baseline_amount*P)
+            lower_than  = t<(t0s[i]+baseline_amount*P)
+
+            tr_times.append(t[higher_than & lower_than])
+            indz.append( np.argwhere(higher_than & lower_than).reshape(-1) )
+            fluxes.append(flux[indz[i]])
+            
+        tr_edges = [(tr_t[0], tr_t[-1]) for tr_t in tr_times]    #store start and end time of each transit
+
+        if show_plot:
+            assert fluxes is not None, f"plotting requires input flux"
+            plt.figure(figsize=(15,3))
+            [plt.plot(t,f,".",c="C0") for t,f in zip(tr_times,fluxes)]
+            [plt.axvspan(edg[0], edg[1], alpha=0.1, color='cyan') for edg in tr_edges]
+            plt.plot(t0s, (0.997*np.min(flux))*np.ones_like(t0s),"k^")
+            plt.xlabel("Time (days)", fontsize=14)
+            plt.title(f"Using t_ref: shaded regions={len(indz)} transit chunks;  triangles=expected linear ephemeris");
+        
+        return SimpleNamespace(t0s=t0s, tr_times=tr_times, fluxes=fluxes, tr_edges=tr_edges, indices=indz)
+
+
+def get_T0s(t, t_ref, P):
+    """
+    get the transit times of a light curve
+    """
+    #if reference time t0 is not within this timeseries, find the transit time that falls around middle of the data
+    if t_ref < t.min() or t.max() < t_ref:        
+        tref = get_transit_time(t, P, t_ref)
+    else: tref = t_ref
+
+    nt       = int( (tref-t.min())/P )                        #how many transits behind tref is the first transit
+    tr_first = tref - nt*P                                    #time of first transit in data
+    tr_last  = tr_first + int((t.max() - tr_first)/P)*P        #time of last transit in data
+
+    n_tot_tr = round((tr_last - tr_first)/P)                  #total nmumber of transits in data_range
+    t0s      = [tr_first + P*n for n in range(n_tot_tr+1) ]        #expected tmid of transits in data (if no TTV)
+    #remove tmid without sufficient transit data around it
+    t0s      = list(filter( lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>0, t0s))  # reserve only expected t0s where there is data around it (0.1P on each side)
+
+    return t0s

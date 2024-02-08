@@ -31,4 +31,7 @@ To avoid requirement conflicts with other packages, it is better to create a new
 
     pip install -e git+https://github.com/mlendl42/CONAN3.git#egg=CONAN3
 
+Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
+
+
 

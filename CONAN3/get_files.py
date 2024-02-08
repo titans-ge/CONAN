@@ -118,7 +118,7 @@ class get_TESS_data(object):
         for s in self.sectors:
             self.lc[s].scatter()
     
-    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data"):
+    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None):
         """
         Save TESS light curves as a CONAN light curve file.
 
@@ -128,6 +128,8 @@ class get_TESS_data(object):
             BJD reference time to use for the light curve file.
         folder : str
             Folder to save the light curve file in.
+        out_filename : str
+            Name of the output file. Default is None in which case the file will be named as "{planet_name}_S{sector}.dat"
         """
 
         assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
@@ -139,7 +141,7 @@ class get_TESS_data(object):
             except AttributeError:
                 t, f, e = self.lc[s]["time"].value, self.lc[s]["flux"].value, self.lc[s]["flux_err"].value
             t = t + 2457000 - bjd_ref
-            file = f"{folder}/{self.planet_name}_S{s}.dat"
+            file = f"{folder}/{self.planet_name}_S{s}.dat" if out_filename is None else f"{folder}/{out_filename}"
             np.savetxt(file, np.stack((t,f,e),axis=1),fmt='%.8f',
                         header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s}')
             print(f"saved file as: {file}")
@@ -238,7 +240,7 @@ class get_CHEOPS_data(object):
             plt.ylabel("Flux")
             plt.show()
 
-    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data"):
+    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None):
         """
         Save CHEOPS light curves as a CONAN light curve file.
 
@@ -248,6 +250,8 @@ class get_CHEOPS_data(object):
             BJD reference time to use for the light curve file.
         folder : str
             Folder to save the light curve file in.
+        out_filename : str
+            Name of the output file. Default is None in which case the file will be named as "{planet_name}_TG{file_key}.dat"
         """
     
         rescale   = lambda x: (x - np.min(x))/np.ptp(x)          # between 0 and 1 
@@ -265,7 +269,7 @@ class get_CHEOPS_data(object):
             
             fkey = d.file_key.split("TG")[-1].split("_V")[0]
             prefix = d.target
-            file = folder+"/"+prefix+"_"+fkey+".dat"
+            file = folder+"/"+prefix+"_"+fkey+".dat" if out_filename is None else f"{folder}/{out_filename}"
             np.savetxt(file, lc_, fmt="%.8f", 
                         header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s} {"x_off":10s} {"y_off":10s} {"roll":10s} {"bg":10s} {"contam":10s} {"deltaT":10s}')
             print(f"saved file as {file}")
@@ -376,7 +380,7 @@ class get_EULER_data(object):
 
 
 
-def get_parameters(planet_name, database="exoplanetarchive", overwrite_cache=False):
+def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars", overwrite_cache=False):
     """
     get stellar and planet parameters from nasa exoplanet archive or exoplanet.eu
 
@@ -402,8 +406,16 @@ def get_parameters(planet_name, database="exoplanetarchive", overwrite_cache=Fal
         from astroquery.ipac.nexsci.nasa_exoplanet_archive import NasaExoplanetArchive
 
         print("Getting system parameters from NASA exoplanet archive ...")
-        df = NasaExoplanetArchive.query_object(planet_name,table="pscomppars")
+        if table=="pscomppars":
+            df = NasaExoplanetArchive.query_object(planet_name,table=table)
+        elif table=="ps":
+            df = NasaExoplanetArchive.query_object(planet_name,table=table) 
+            df = df[df['default_flag']==1]
+        else: 
+            raise ValueError("table must be either 'pscomppars' or 'ps'")
+        
         df = df.to_pandas()
+        
 
         params["star"]["Teff"]     = (df["st_teff"][0],df["st_tefferr1"][0])
         params["star"]["logg"]     = (df["st_logg"][0],df["st_loggerr1"][0])
@@ -412,6 +424,7 @@ def get_parameters(planet_name, database="exoplanetarchive", overwrite_cache=Fal
         params["star"]["mass"]     = (df["st_mass"][0],df["st_masserr1"][0])
         params["star"]["density"]  = (df["st_dens"][0],df["st_denserr1"][0])
 
+        params["planet"]["name"]   = df["pl_name"][0]
         params["planet"]["period"] = (df["pl_orbper"][0],df["pl_orbpererr1"][0])
         params["planet"]["rprs"]   = (df["pl_ratror"][0],df["pl_ratrorerr1"][0])
         params["planet"]["mass"]   = (df["pl_bmassj"][0],df["pl_bmassjerr1"][0])
