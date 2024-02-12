@@ -676,13 +676,13 @@ def _print_output(self, section: str, file=None):
 
     if section == "rv_baseline":
         _print_rv_baseline = """# ============ Input RV curves, baseline function, GP, spline,  gamma ============================================ """+\
-                                f"""\n{spacing}{'name':{max_name_len}s} {"scl_col":7s} |{'col0':4s} {'col3':4s} {'col4':4s} {"col5":4s}| {'sin':3s} {"GP":2s} {"spline_config  ":15s} | {f'gamma_{self._RVunit}':9s}"""
+                                f"""\n{spacing}{'name':{max_name_len}s} {'RVunit':6s} {"scl_col":7s} |{'col0':4s} {'col3':4s} {'col4':4s} {"col5":4s}| {'sin':3s} {"GP":2s} {"spline_config  ":15s} | {f'gamma_{self._RVunit}':14s} """
         if self._names != []:
             DA = self._rvdict
-            txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:7s} |{2:4d} {3:4d} {4:4d} {5:4d}| {6:3d} {7:2s} {8:15s} | {9} "         
+            txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:6s} {2:7s} |{3:4d} {4:4d} {5:4d} {6:4d}| {7:3d} {8:2s} {9:15s} | {10:14s}"         
             for i in range(self._nRV):
                 gam_pri_ = f'N({DA["gammas"][i]},{DA["sig_lo"][i]})' if DA["sig_lo"][i] else f'U({DA["bound_lo"][i]},{DA["gammas"][i]},{DA["bound_hi"][i]})' if DA["bound_hi"][i] else f"F({DA['gammas'][i]})"
-                t = txtfmt.format(self._names[i],self._rescaled_data.config[i], *self._RVbases[i],
+                t = txtfmt.format(self._names[i],self._RVunit,self._rescaled_data.config[i], *self._RVbases[i],
                                     self._useGPrv[i],self._rvspline[i].conf,gam_pri_)
                 _print_rv_baseline += t
         print(_print_rv_baseline, file=file)
@@ -1209,7 +1209,7 @@ class load_lightcurves:
         return self._decorr_result
     
     
-    def clip_outliers(self, lc_list="all", clip=5, width=15, show_plot=True, verbose=True):
+    def clip_outliers(self, lc_list="all", clip=5, width=15, show_plot=False, verbose=True):
 
         """
         Remove outliers using a running median method. Points > clip*M.A.D are removed
@@ -3236,16 +3236,12 @@ class load_result:
             self._rv_smooth_time_mod = {}
             for i,rv in enumerate(self._rvnames):
                 self._rv_smooth_time_mod[rv] = SimpleNamespace()
-                # if self._nplanet == 1:
-                #     this_T0 = get_transit_time(t=input_rvs[rv]["col0"],per=self.params.P[0],t0=self.params.T0[0])
-                #     ph_sm = np.linspace(-0.5,0.5, max(2000, len(input_rvs[rv]["col0"])))
-                #     t_sm  = ph_sm*self.params.P[0] + this_T0
-                # else:
                 tmin, tmax = input_rvs[rv]["col0"].min(), input_rvs[rv]["col0"].max()
                 t_sm  = np.linspace(tmin,tmax,max(2000, len(input_rvs[rv]["col0"])))
                 gam = self.params_dict[f"rv{i+1}_gamma"]
                 self._rv_smooth_time_mod[rv].time    = t_sm
                 self._rv_smooth_time_mod[rv].model   = self._evaluate_rv(file=rv, time=self._rv_smooth_time_mod[rv].time).planet_model+gam
+                self._rv_smooth_time_mod[rv].gamma   = gam
         
 
             #LC data and functions

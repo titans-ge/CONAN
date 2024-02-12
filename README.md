@@ -31,10 +31,19 @@ Note that a folder 'src' is created where the CONAN source files are downloaded 
 See recent changes in change_log.rst
 
 
-### Quick fit 
-To launch fit directly from config file, you can simply run:
+### Fit from config file 
+Fit can be launched from config file within `python` or from the `command line`
+
+- Within `python`
 
 ```
 from CONAN3 import fit_configfile
 result = fit_configfile("input_config.dat", out_folder="output")
+```
+- from `command line`: 
+
+```
+conanfit path/to/config_file output_folder 
+
+conanfit -h   # to see the help
 ```

@@ -1118,7 +1118,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,T0_init,per_init,Dur_init)
+    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
     if debug: print(f'finished mcmc_plots, took {(time.time() - debug_t2)} secs')
 
 
@@ -1323,20 +1323,17 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #median
     mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],*indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,T0_post,p_post,Dur_post)
+    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
 
     #AKIN: save summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
-    # pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
-    stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping],
-                        T0 = T0_post,  P = p_post, dur = Dur_post)
+    stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], T0 = T0_post,  P = p_post, dur = Dur_post)
     pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
 
 
     #max_posterior
-    mval2, merr2, T0_post, p_post, Dur_post = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
-    mcmc_plots(mval2,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit, T0_post,p_post,Dur_post)
-
+    mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
+    mcmc_plots(mval2,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
 
     maxresiduals = f_arr - mval2 if statistic != "median" else f_arr - mval  #Akin allow statistics to be based on median of posterior
     chisq = np.sum(maxresiduals**2/e_arr**2)
