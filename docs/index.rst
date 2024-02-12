@@ -26,6 +26,7 @@ In this documentation, we will show you how to install and use ``CONAN`` to fit 
    tutorial/CONAN_WASP-127_LC_RV_tutorial/CONAN_WASP-127_LC_RV_tutorial
    tutorial/CONAN_WASP127_EULER/CONAN_WASP127_EULER
    tutorial/TOI469_multiplanet_LC_RV/TOI469_multiplanet_LC_RV
+   tutorial/kelt-20_conan_spline/kelt-20_conan_spline
 
 
 Indices and tables

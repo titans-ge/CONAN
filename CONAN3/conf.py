@@ -6,7 +6,7 @@ import numpy as np
 
 
 def fit_configfile(config_file = "input_config.dat", out_folder = "output", 
-                   rerun_result= True, verbose=True):
+                   rerun_result= True, verbose=False):
     """
         Run CONAN fit from configuration file. 
         This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
@@ -102,7 +102,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     print(f"configuration file saved as {filename}")
 
 
-def load_configfile(configfile="input_config.dat", return_fit=False, verbose=True):
+def load_configfile(configfile="input_config.dat", return_fit=False, verbose=False):
     """
         configure conan from specified configfile.
         
@@ -283,22 +283,23 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
     while dump[0] != '#':                   # if it is not starting with # then
         _adump = dump.split()               # split it
         RVnames.append(_adump[0])
-        _RVsclcol.append(_adump[1])
-        strbase=_adump[3:6]                  # string array of the baseline function coeffs
-        strbase.append(_adump[6].split("|")[0])
-        strbase.append(_adump[7])
+        RVunit = _adump[1]
+        _RVsclcol.append(_adump[2])
+        strbase=_adump[4:7]                  # string array of the baseline function coeffs
+        strbase.append(_adump[7].split("|")[0])
+        strbase.append(_adump[8])
         base = [int(i) for i in strbase]
         RVbases.append(base)
-        usegpRV.append(_adump[8])
+        usegpRV.append(_adump[9])
         
         #RV spline
-        if _adump[9] != "None":
+        if _adump[10] != "None":
             _spl_rvlist.append(_adump[0])
-            _spl_knot.append(float(_adump[9].split("k")[-1]))
-            _spl_deg.append(int(_adump[9].split("k")[0].split("d")[-1]))
-            _spl_par.append("col" + _adump[9].split("k")[0].split("d")[0][1])
+            _spl_knot.append(float(_adump[10].split("k")[-1]))
+            _spl_deg.append(int(_adump[10].split("k")[0].split("d")[-1]))
+            _spl_par.append("col" + _adump[10].split("k")[0].split("d")[0][1])
         
-        gammas.append(_prior_value(_adump[11]))
+        gammas.append(_prior_value(_adump[12]))
         #move to next RV
         dump =_file.readline()
     
@@ -330,7 +331,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Tru
         dump =_file.readline()
         
         
-    rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,lc_obj=lc_obj)
+    rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,rv_unit=RVunit,lc_obj=lc_obj)
     rv_obj.rv_baseline(*np.array(RVbases).T, gamma=gammas,gp=usegpRV,verbose=False) 
     rv_obj.rescale_data_columns(method=_RVsclcol,verbose=False)
     rv_obj.add_spline(rv_list=_spl_rvlist ,par=_spl_par, degree=_spl_deg,

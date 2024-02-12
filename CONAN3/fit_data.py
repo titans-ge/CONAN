@@ -1118,7 +1118,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,T0_init,per_init,Dur_init)
+    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
     if debug: print(f'finished mcmc_plots, took {(time.time() - debug_t2)} secs')
 
 
@@ -1129,8 +1129,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     indparams[25] = inmcmc
     print('No of dimensions: ', ndim)
 
-    nplot = round(ndim/15)                #number of chain and corner plots to make
-    nplotpars = int(np.ceil(ndim/nplot))  #number of parameters to plot in each plot
+    nplot     = int(np.ceil(ndim/15))                #number of chain and corner plots to make
+    nplotpars = int(np.ceil(ndim/nplot))             #number of parameters to plot in each plot
 
     if fit_sampler == "emcee":
         if nchains < 3*ndim:
@@ -1176,7 +1176,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     fit_pars = list(burn_result._par_names)[i*nplotpars:(i+1)*nplotpars]
                     fig      = burn_result.plot_burnin_chains(fit_pars)
                     fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
-                print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
+                print(f"saved {nplot} burn-in chain plot(s) as {out_folder}/burnin_chains_*.png")
                 matplotlib.use(__default_backend__)
             sampler.reset()
 
@@ -1274,7 +1274,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
             fig = result.plot_chains(fit_pars)
             fig.savefig(out_folder+f"/chains_{i}.png", bbox_inches="tight") 
-        print(f"\nsaved {nplot} chain plots as {out_folder}/chains_*.png")
+        print(f"\nsaved {nplot} chain plot(s) as {out_folder}/chains_*.png")
     
     
     #corner plot
@@ -1282,7 +1282,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
         fig = result.plot_corner(fit_pars, force_plot=True)
         fig.savefig(out_folder+f"/corner_{i}.png", bbox_inches="tight")
-    print(f"saved {nplot} corner plots as {out_folder}/corner_*.png")
+    print(f"saved {nplot} corner plot(s) as {out_folder}/corner_*.png")
     matplotlib.use(__default_backend__)
 
     dim=posterior.shape
@@ -1323,20 +1323,17 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #median
     mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],*indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,T0_post,p_post,Dur_post)
+    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
 
     #AKIN: save summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
-    # pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
-    stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping],
-                        T0 = T0_post,  P = p_post, dur = Dur_post)
+    stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], T0 = T0_post,  P = p_post, dur = Dur_post)
     pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
 
 
     #max_posterior
-    mval2, merr2, T0_post, p_post, Dur_post = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
-    mcmc_plots(mval2,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit, T0_post,p_post,Dur_post)
-
+    mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
+    mcmc_plots(mval2,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
 
     maxresiduals = f_arr - mval2 if statistic != "median" else f_arr - mval  #Akin allow statistics to be based on median of posterior
     chisq = np.sum(maxresiduals**2/e_arr**2)
@@ -1375,6 +1372,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #make print out statement in the fashion of conan the barbarian
     print(_text_format.RED + "\nCONAN: I have now crushed your data," +\
-          "\n\tthe planetary information it hides is now laid bare in the results."+\
+          "\n\tthe planetary information it hides is laid bare in the results."+\
           "\n\t\tI am now ready for another quest. \n" + _text_format.END)
     return result

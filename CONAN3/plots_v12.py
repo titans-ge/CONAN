@@ -4,68 +4,63 @@ import numpy as np
 import matplotlib, os
 from matplotlib.ticker import FormatStrFormatter    
 import matplotlib.pyplot as plt    
+from CONAN3.logprob_multi import logprob_multi
+import pickle
 
 
-def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,prefix,RVunit,T0,period,Dur):
-    
+def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,prefix,RVunit,params,T0,period,Dur):
+
+    _ind_para   = pickle.load(open(prefix.split("/")[0]+"/.par_config.pkl","rb"))
+    all_models  = logprob_multi(params,*_ind_para,get_model=True)
+
     matplotlib.use('Agg')
 
     if np.iterable(T0): npl = len(T0)
     else: npl = 1; T0 = [T0]
     
-    phase_phasefold = {}    # dictionary containing phase of each planet across several datasets
-    flux_phasefold  = {}
-    model_phasefold = {}
-    for n in range(npl):
-        phase_phasefold[n] = np.empty(0) #array containing phase of each data point
-        flux_phasefold[n]  = np.empty(0) #array containig baseline corrected flux of each data point
-        model_phasefold[n] = np.empty(0) #array containg baseline corrected model of each data point
-
-        
+    #model plot for each LC
     for j in range(nphot):
-        mod  = yval[indlist[j][0]]
-        time = tarr[indlist[j][0]]
-        flux = farr[indlist[j][0]]
-        err  = earr[indlist[j][0]]
-
         infile=prefix.split("/")[0] + "/" + names[j][:-4]+'_lcout.dat'
-        tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
+        tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)  # reading in the lightcurve data
+        
+        #evaluate rv model on smooth time grid
+        t_sm  = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
+        lc_sm = logprob_multi(params,*_ind_para,t=t_sm,get_model=True).lc[names[j]][0]
 
         # bin the lightcurve data
         binsize_min=15.
         binsize    = binsize_min/(24.*60.)
-        nbin = int((np.max(tt)-np.min(tt))/binsize)  # number of bins
-        # bins_edges = np.linspace(np.min(tt),np.max(tt),nbin+1)
+        nbin = int(np.ptp(tt)/binsize)  # number of bins
 
-        tbin, ftbin, etbin = bin_data(tt, ft,et,statistic='mean',bins=nbin)
-        _,    fcobin       = bin_data(tt, fco,  statistic='mean',bins=nbin)
-        _,    resbin       = bin_data(tt, ft-mt,statistic='mean',bins=nbin)
+        t_bin, f_bin, err_bin = bin_data(tt, flux,err,     statistic='mean',bins=nbin)    #original data
+        _,    det_fbin        = bin_data(tt, det_flux,     statistic='mean',bins=nbin)    #detrended data
+        _,    resbin          = bin_data(tt, flux-full_mod,statistic='mean',bins=nbin)    #residuals
 
         ########## Plot and save lightcurve with fit ########
-        titl='Fit for lightcurve '+names[j][:-4]
         outname=prefix+names[j][:-4]+'_fit.png'
 
         fig,ax = plt.subplots(3,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
-        ax[0].set_title(titl)
+        ax[0].set_title('Fit for lightcurve '+names[j][:-4])
         ax[0].set_ylabel("Flux")
-        ax[0].plot(tt, ft,'.',c='skyblue', ms=2, zorder=1, label='Data')
-        ax[0].plot(tt, mt, "-r", lw=2,zorder=5,label='Full Model fit')
+        ax[0].plot(tt, flux,'.',c='skyblue', ms=2, zorder=1, label='Data')
+        ax[0].plot(tt, full_mod, "-r", lw=2,zorder=5,label='Full Model fit')
         ax[0].plot(tt, bfunc, "g--",  zorder=5,label='Baseline')
-        ax[0].errorbar(tbin, ftbin, yerr=etbin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
-        ax[0].set_ylim([min([min(ft),min(mt)])-0.1*np.ptp(min(ft)), 
-                        max([max(ft),max(mt)])+0.1*np.ptp(max(ft))])
+        ax[0].errorbar(t_bin, f_bin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
+        ax[0].set_ylim([min([min(flux),min(full_mod)])-0.1*np.ptp(min(flux)), 
+                        max([max(flux),max(full_mod)])+0.1*np.ptp(max(flux))])
         ax[0].legend()
 
         ax[1].set_ylabel("Flux - baseline")
-        ax[1].plot(tt, fco,'.',c='skyblue',ms=2, zorder=1, label="Detrended data")
-        ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
-        ax[1].errorbar(tbin, fcobin, yerr=etbin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
-        ax[1].set_ylim([min(fco)-0.1*(1-min(fco)), max(fco)+0.1*(max(fco)-1)])
+        ax[1].plot(tt, det_flux,'.',c='skyblue',ms=2, zorder=1, label="Detrended data")
+        # ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
+        ax[1].plot(t_sm, lc_sm,'r-',lw=2,zorder=5, label="Best fit")
+        ax[1].errorbar(t_bin, det_fbin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
+        ax[1].set_ylim([min(det_flux)-0.1*(1-min(det_flux)), max(det_flux)+0.1*(max(det_flux)-1)])
         ax[1].legend()
 
         ax[2].set_ylabel("O – C [ppm]")
-        ax[2].plot(tt, 1e6*(ft-mt),'.',c='skyblue',ms=2, zorder=1)
-        ax[2].plot(tbin, 1e6*resbin,'o', c='midnightblue', ms=3, zorder=3)
+        ax[2].plot(tt, 1e6*(flux-full_mod),'.',c='skyblue',ms=2, zorder=1)
+        ax[2].plot(t_bin, 1e6*resbin,'o', c='midnightblue', ms=3, zorder=3)
         ax[2].axhline(0,ls="--", color="k", alpha=0.3)
 
         ax[2].set_xlabel("Time")
@@ -73,150 +68,153 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         fig.savefig(outname,bbox_inches='tight')
 
 
-
-        for n in range(npl):
-        #phase folded plot
-            ph = np.modf((np.modf((tt-T0[n])/period[n])[0])+1.0)[0] #calculate phase
-
-            #Add data to array to phasefold them later
-            phase_phasefold[n] = np.append(phase_phasefold[n], ph)
-            flux_phasefold[n]  = np.append(flux_phasefold[n],  fco)
-            model_phasefold[n] = np.append(model_phasefold[n], mm)
-
-
-
-
-    ######### PLOT phasecurve ##############
+    #### phase plot for each planet in system across multiple LCs ####
     if nphot > 0:
         for n in range(npl):
+            fig,ax = plt.subplots(2,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,1)})
+            ax[0].set_title(f'Phasefolded LC - planet{n+1}: P={period[n]:.2f} d')
+            ax[0].set_ylabel(f"Flux – baseline")
+            ax[0].axhline(1,ls="--", color="k", alpha=0.3)
+            ax[1].axhline(0,ls="--", color="k", alpha=0.3)
+            ax[1].set_xlabel("Orbital phase")
+            ax[1].set_ylabel(f"O – C [ppm]")
+            
+            flux_all,phase_all,err_all,res_all  = [],[],[],[]
 
-            #Adapt phase for transit to be in the middle of the plot
-            if model_phasefold[n][np.argmin(phase_phasefold[n])] < 1.0:
-                phase_phasefold[n][phase_phasefold[n] > 0.5] = phase_phasefold[n][phase_phasefold[n] >= 0.5] - 1.0
+            for j in range(nphot):
+                infile=prefix.split("/")[0] + "/" + names[j][:-4]+'_lcout.dat'
+                tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)
+                flux_resid = flux - full_mod
 
-            ### Order by phase and calculate residuals
-            phorder = phase_phasefold[n].argsort()
-            phase_phasefold[n] = phase_phasefold[n][phorder[::1]]
-            flux_phasefold[n]  = flux_phasefold[n][phorder[::1]]
-            model_phasefold[n] = model_phasefold[n][phorder[::1]]
+                #calculations for each planet (n) in the system
+                phase    = ((tt-T0[n])/period[n]) - np.round( ((tt-T0[n])/period[n]))
+                lc_comps = all_models.lc[names[j]][1]    #lc components for each planet in the system
 
-            res_phasefold      = flux_phasefold[n] - model_phasefold[n]
+                #evaluate lc model on smooth time grid
+                t_sm       = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
+                ph_sm      = ((t_sm-T0[n])/period[n]) - np.round( ((t_sm-T0[n])/period[n]))
+                lc_sm_comp = logprob_multi(params,*_ind_para,t=t_sm,get_model=True).lc[names[j]][1]
+
+                #remove other planet's LC signal from det_flux
+                for i in range(npl):
+                    if i != n: det_flux -= lc_comps[f"pl_{i+1}"]-1
+
+                ax[0].plot(phase, det_flux, "o", c='skyblue',ms=2, zorder=1)
+                ax[1].plot(phase, 1e6*flux_resid, "o", c='skyblue',ms=2, zorder=1)
+
+                flux_all.append(det_flux)
+                phase_all.append(phase)
+                err_all.append(err)
+                res_all.append(flux_resid)
+
 
             #Bin the data
-            binsize      = 15./(24.*60.) / period[n] #10 minute bins in units of one phase
-            Tdur_phase   = Dur[n]/period[n]
-            nbin         = int((np.max(phase_phasefold[n])-np.min(phase_phasefold[n]))/binsize)
-            phase_bins   = np.linspace(np.min(phase_phasefold[n]),np.max(phase_phasefold[n]),nbin+1)
-            pbin         = phase_bins+0.5*binsize # MONIKA: defining the bin centers for plotting
-            flux_bins    = np.zeros(np.size(phase_bins))
-            res_bins     = np.zeros(np.size(phase_bins))
-            error_bins   = np.zeros(np.size(phase_bins))
-            res_err_bins = np.zeros(np.size(phase_bins))
+            binsize      = 15./(24.*60.) / period[n]  #15 minute bins in phase units
+            # Tdur_phase   = Dur[n]/period[n]
+            nbin         = int(np.ptp(np.concatenate(phase_all))/binsize)
 
-            for i in range(np.size(phase_bins)-1):
-                fluxes_in_bin = flux_phasefold[n][(phase_phasefold[n] >= phase_bins[i]) & (phase_phasefold[n] < phase_bins[i+1])]
-                if fluxes_in_bin.size == 0: #Check whether bin is empty
-                    flux_bins[i]  = np.nan
-                    error_bins[i] = np.nan
-                else:
-                    flux_bins[i]  = np.mean(fluxes_in_bin)
-                    error_bins[i] = np.std(fluxes_in_bin)/np.sqrt(np.size(fluxes_in_bin))
-
-                res_in_bin = res_phasefold[(phase_phasefold[n] >= phase_bins[i]) & (phase_phasefold[n] < phase_bins[i+1])]
-                if res_in_bin.size == 0: #Check whether bin is empty
-                    res_bins[i]     = np.nan
-                    res_err_bins[i] = np.nan
-                else:
-                    res_bins[i]     = np.mean(res_in_bin)
-                    res_err_bins[i] = np.std(res_in_bin)/np.sqrt(np.size(res_in_bin))
-
-            ### Plot Phasecurve
-            fig,ax=plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios':[2,1]},figsize=(12,9))
-            #TODO imporve ylim ranges for better model visualization
-            ax[0].set_title(f'Phasefolded, fitted lightcurve - planet{n+1} - P={period[n]:.2f}d')
-            ax[0].plot(phase_phasefold[n], flux_phasefold[n],'o',c='skyblue',ms=2, zorder=1)
-            ax[0].plot(phase_phasefold[n], model_phasefold[n],'r-',zorder=5)
+            srt = np.argsort(np.concatenate(phase_all)) if nphot>1 else np.argsort(phase_all[0])
+            pbin, flux_bins, error_bins = bin_data(np.concatenate(phase_all)[srt], np.concatenate(flux_all)[srt], 
+                                                    np.concatenate(err_all)[srt], statistic='mean',bins=nbin)
+            _,    res_bins              = bin_data(np.concatenate(phase_all)[srt], np.concatenate(res_all)[srt], 
+                                                    statistic='mean',bins=nbin)
+            srt_sm = np.argsort(ph_sm)
             ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
-            ax[0].set_ylim([np.min(flux_phasefold[n]) - 0.1 *np.abs((1.0 - np.min(flux_phasefold[n]))),np.max(flux_phasefold[n]) + 0.1 * np.abs((np.max(flux_phasefold[n])-1.0))])
-            ax[0].set_ylabel('Flux - Baseline')
-            ax[0].set_xlim([-Tdur_phase,Tdur_phase])
-            ax[0].legend(['Flux - Baseline','Model','Binned data'])
-
-            ax[1].plot(phase_phasefold[n], 1e6*res_phasefold,'o',c='skyblue',ms=2, zorder=1)
-            ax[1].errorbar(pbin, 1e6*res_bins, yerr=res_err_bins*1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
-            ax[1].axhline(0, ls="--",color="k", alpha=0.3)
-            ax[1].set_ylim([np.min(res_phasefold*1e6) + 0.1 * np.min(res_phasefold*1e6),np.max(res_phasefold*1e6) + 0.1 * np.max(res_phasefold)])
-            ax[1].set_xlabel('Phase')
-            ax[1].set_ylabel('Residuals [ppm]')
-            plt.subplots_adjust(hspace=0.02)
-
-            fig.savefig(prefix+f'Phasefolded_LC{n}.png',bbox_inches="tight")
+            ax[0].plot(ph_sm[srt_sm], lc_sm_comp[f"pl_{n+1}"][srt_sm], "-r", zorder=5, lw=3, label='Best-fit')
+            ax[0].legend()
+            ax[1].errorbar(pbin, 1e6*res_bins, yerr=error_bins*1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
+            
+            plt.subplots_adjust(hspace=0.04,wspace=0.04)
+            fig.savefig(prefix+f'Phasefolded_LC_[planet{n+1}].png',bbox_inches="tight")
+        
 
 
     ############ RVs#####################
     for j in range(nRV):
         infile  = prefix.split("/")[0] + "/" + RVnames[j][:-4]+'_rvout.dat'
         outname = prefix+RVnames[j][:-4]+'_fit.png'
-        tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV, _, phase = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6,7,8),unpack = True)  # reading in the rvcurve data
+        tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6),unpack = True)  # reading in the rvcurve data
         rv_resid = y_rv-full_mod
-        srt    = np.argsort(phase)
 
-        fig,ax = plt.subplots(3,1, figsize=(10,15),gridspec_kw={"height_ratios":(3,3,1)})
+        #evaluate rv model on smooth time grid
+        t_sm  = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
+        rv_sm = logprob_multi(params,*_ind_para,t=t_sm,get_model=True).rv[RVnames[j]][0]
+
+        fig,ax = plt.subplots(3,1, figsize=(10,15),sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title('Fit for RV curve '+RVnames[j][:-4])
-        ax[0].set_ylabel("RV [km/s]")
         ax[0].errorbar(tt, y_rv, yerr=e_rv, fmt="o",capsize=2, label=RVnames[j])
         ax[0].plot(tt, full_mod, "-r", label='Full Model fit')
         ax[0].plot(tt, base, "--g", label='Baseline')
-
         ax[0].set_ylabel(f"RV [{RVunit}]")
-        ax[0].set_xlabel("Time")
         ax[0].legend()
 
-        if RVunit == 'km/s':
+        if RVunit == 'km/s':   #conv to m/s
             rv_mod, det_RV, e_rv, rv_resid = rv_mod*1e3, det_RV*1e3, e_rv*1e3, rv_resid*1e3
-        ax[1].axhline(0,ls="--", color="k", alpha=0.3)
-        ax[1].errorbar(phase, det_RV, e_rv, fmt="o",capsize=2) 
-        ax[1].plot(phase[srt], rv_mod[srt], "-r", label='MCMC best fit') 
-        ax[1].set_ylabel(f"RV [m/s]")
+            rv_sm = rv_sm*1e3
 
-        ax[2].errorbar(phase, rv_resid, yerr=e_rv, fmt="o",capsize=2)
+        ax[1].axhline(0,ls="--", color="k", alpha=0.3)
+        ax[1].errorbar(tt, det_RV, e_rv, fmt="o",capsize=2) 
+        
+        ax[1].plot(t_sm, rv_sm, "-r", alpha=0.4,label='best fit planet RV')
+        # ax[1].plot(tt, rv_mod, "-r", label='MCMC best fit') 
+        ax[1].set_ylabel(f"RV [m/s]")
+        ax[1].legend()
+
+        ax[2].errorbar(tt, rv_resid, yerr=e_rv, fmt="o",capsize=2)
         ax[2].axhline(0,ls="--", color="k", alpha=0.3)
-        ax[2].set_xlabel("Orbital phase")
+        ax[2].set_xlabel("Time")
         ax[2].set_ylabel(f"O – C [m/s]")
 
-        plt.subplots_adjust(hspace=0.1)
-        fig.savefig(outname, bbox_inches='tight')              
+        plt.subplots_adjust(hspace=0.02)
+        fig.savefig(outname, bbox_inches='tight')  
+
 
     #joint plot
     if nRV > 0:
-        fig,ax = plt.subplots(2,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,1)})
-        
-        ax[0].set_title('Fit for RV curve')
-        ax[0].set_ylabel(f"RV [m/s]")
-        ax[0].axhline(0,ls="--", color="k", alpha=0.3)
-        ax[1].axhline(0,ls="--", color="k", alpha=0.3)
-        ax[1].set_xlabel("Orbital phase")
-        ax[1].set_ylabel(f"O – C [m/s]")
-        rv_all = []
-        phase_all = []
+        for n in range(npl):
+            fig,ax = plt.subplots(2,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,1)})
+            ax[0].set_title(f'Fit for RV curve - planet{n+1}: P={period[n]:.2f} d')
+            ax[0].set_ylabel(f"RV [m/s]")
+            ax[0].axhline(0,ls="--", color="k", alpha=0.3)
+            ax[1].axhline(0,ls="--", color="k", alpha=0.3)
+            ax[1].set_xlabel("Orbital phase")
+            ax[1].set_ylabel(f"O – C [m/s]")
+            rv_all = []
+            phase_all = []
 
-        for j in range(nRV):
-            infile  = prefix.split("/")[0] + "/" + RVnames[j][:-4]+'_rvout.dat'
-            tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV, _, phase = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6,7,8), unpack = True)  # reading in the rvcurve data
-            rv_resid = y_rv-full_mod
-            if RVunit == 'km/s': #conv to m/s
-                rv_mod, det_RV, e_rv, rv_resid = rv_mod*1e3, det_RV*1e3, e_rv*1e3, rv_resid*1e3
+            for j in range(nRV):
+                infile  = prefix.split("/")[0] + "/" + RVnames[j][:-4]+'_rvout.dat'
+                tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)
+                rv_resid = y_rv-full_mod
 
-            ax[0].errorbar(phase, det_RV, yerr=e_rv, fmt="o",capsize=2, label=RVnames[j])
-            ax[1].errorbar(phase, rv_resid, yerr=e_rv, fmt="o",capsize=2)
-            rv_all.append(rv_mod)
-            phase_all.append(phase)
+                #calculations for each planet (n) in the system
+                phase    = ((tt-T0[n])/period[n]) - np.round( ((tt-T0[n])/period[n]))
+                rv_comps = all_models.rv[RVnames[j]][1]    #rv components for each planet in the system
+                
+                #evaluate rv model on smooth time grid
+                t_sm       = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
+                ph_sm      = ((t_sm-T0[n])/period[n]) - np.round( ((t_sm-T0[n])/period[n]))
+                rv_sm_comp = logprob_multi(params,*_ind_para,t=t_sm,get_model=True).rv[RVnames[j]][1]
+
+                #remove other planet's RV signal from det_RV
+                for i in range(npl):
+                    if i != n: det_RV -= rv_comps[f"pl_{i+1}"]
+
+                if RVunit == 'km/s': #conv to m/s
+                    rv_mod, det_RV, e_rv, rv_resid = rv_mod*1e3, det_RV*1e3, e_rv*1e3, rv_resid*1e3
+                    rv_sm_comp[f"pl_{n+1}"] *=1e3
+
+                ax[0].errorbar(phase, det_RV, yerr=e_rv, fmt="o",capsize=2, label=RVnames[j])
+                ax[1].errorbar(phase, rv_resid, yerr=e_rv, fmt="o",capsize=2)
+                
+                rv_all.append(rv_sm_comp[f"pl_{n+1}"])
+                phase_all.append(ph_sm)
         
-        srt = np.argsort(np.concatenate(phase_all)) if nRV>1 else np.argsort(phase_all[0])
-        ax[0].plot(np.concatenate(phase_all)[srt], np.concatenate(rv_all)[srt], "-r", label='Best-fit')
-        ax[0].legend()
-        plt.subplots_adjust(hspace=0.04,wspace=0.04)
-        fig.savefig(prefix+f'Phasefolded_RV.png',bbox_inches="tight") 
+            srt = np.argsort(np.concatenate(phase_all)) if nRV>1 else np.argsort(phase_all[0])
+            ax[0].plot(np.concatenate(phase_all)[srt], np.concatenate(rv_all)[srt], "-k", lw=3, label='Best-fit')
+            ax[0].legend()
+            plt.subplots_adjust(hspace=0.04,wspace=0.04)
+            fig.savefig(prefix+f'Phasefolded_RV_[planet{n+1}].png',bbox_inches="tight") 
 
     matplotlib.use(__default_backend__)
 
@@ -307,79 +305,4 @@ def plot_traspec(dRpRsres, edRpRsres, ulamdas,out_folder):
     plt.ylabel("Rp/Rs")
     plt.savefig(outname)
 
-    matplotlib.use(__default_backend__)
-
-    
-def plot_phasecurve(params, filename):
-    #TODO: look at phase curve plot
-    matplotlib.use('Agg')
-    import lightkurve as lk
-    
-    phaseCenter = 0.5
-    #OK: tData, yData, dyData = np.loadtxt(os.path.join(outdir, filename)).T
-    tt, ft, et, mt, bfunc, mm, fco = np.loadtxt(filename).T
-    #not needed: yData -= fpMean
-    data = lk.LightCurve(time=tt, flux=ft, flux_err=et).fold(params[4], params[0] - phaseCenter*params[4])#.bin(75)
-
-    lc = lk.LightCurve(time=tt, flux=mt).fold(params[4], params[0] - phaseCenter*params[4])
-
-    #t = np.linspace(data.time.min(), data.time.max(), 1000)
-    #lc = lk.LightCurve(time=t, flux=modelLC(t * batman_params.per - phaseCenter * batman_params.per + batman_params.t0))
-    
-    fig, axes = plt.subplots(nrows=4, ncols=1, sharex=True, gridspec_kw={'height_ratios': [2, 1.5, 1, 1]}, figsize=(12, 10.5))
-    fig.set_tight_layout({'rect': [0, 0, 1, 0.98], 'pad': 1., 'h_pad': 0})
-
-    dataLine = axes[0].plot(data.time, data.flux, '.', label="Data", alpha=0.5, c='lightgrey', zorder=0, rasterized=True)
-    dataBinned = data.bin(80, method="median")
-    modelBinned = lc.bin(80, method="median")
-    binLine = axes[0].errorbar(dataBinned.time, dataBinned.flux, yerr=dataBinned.flux_err, label="Binned data", fmt='.', c='r', ms=3, zorder=1)
-    modelLine = axes[0].plot(lc.time ,lc.flux, label="Model", c='k', zorder=2)
-    axes[0].set_ylabel("Normalized flux")
-    axes[0].legend(loc=0)
-
-    axes[0].get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[0].get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[0].grid(b=True, which='minor', linewidth=.2)
-    axes[0].grid(b=True, which='major', linewidth=1)
-
-    dataLine = axes[1].plot(data.time, data.flux, '.', label="Data", alpha=0.5, c='lightgrey', zorder=0, rasterized=True)
-    axes[1].axhline(1., ls='--', color='grey', lw=2)
-    modelLine = axes[1].plot(lc.time ,lc.flux, label="Model", c='k', zorder=2, lw=2)
-    binLine = axes[1].errorbar(dataBinned.time, dataBinned.flux, yerr=dataBinned.flux_err, label="Binned data", fmt='.', c='r', ms=5, zorder=1)
-
-
-    axes[1].set_ylabel("Normalized flux")
-
-    axes[1].get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[1].get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[1].grid(b=True, which='minor', linewidth=.2)
-    axes[1].grid(b=True, which='major', linewidth=1)
-    axes[1].set_ylim([0.9996,1.0003])
-
-    #lc = lk.LightCurve(time=data.time, flux=data.flux)
-    axes[2].plot(data.time, 1e6 * (data.flux-lc.flux), '.', alpha=0.5, c='lightgrey', zorder=0, rasterized=True)
-
-    #lc = lk.LightCurve(time=dataBinned.time, flux=dataBinned.flux)
-    axes[2].errorbar(dataBinned.time, 1e6 * (dataBinned.flux-modelBinned.flux), yerr=dataBinned.flux_err*1e6, fmt='.', c='r', ms=3, zorder=1)
-
-    axes[2].get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[2].get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[2].grid(b=True, which='major', linewidth=1)
-
-    axes[2].set_ylabel("Residuals [ppm]")
-
-    t = dataBinned.time
-    lc = lk.LightCurve(time=t, flux=dataBinned.flux)
-    axes[3].errorbar(dataBinned.time, 1e6 * (dataBinned.flux-modelBinned.flux), yerr=dataBinned.flux_err*1e6, fmt='.', c='r', ms=3, zorder=1)
-
-    axes[3].get_xaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[3].get_yaxis().set_minor_locator(matplotlib.ticker.AutoMinorLocator())
-    axes[3].grid(b=True, which='minor', linewidth=.2, linestyle=":")
-    axes[3].grid(b=True, which='major', linewidth=1)
-
-    axes[3].set_ylabel("Binned residuals [ppm]")
-    axes[3].set_xlabel("Phase")
-    axes[2].set_xlim([-0.51, 0.51])
-
-    fig.savefig(filename+"_PC.pdf")
     matplotlib.use(__default_backend__)
