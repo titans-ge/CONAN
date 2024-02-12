@@ -1,3 +1,10 @@
+8-Feb-2024: version 3.1.2
+~~~~~~~~~~~~
+* fit configfile from command line: >>> conanfit config_file.dat
+* added notebook for occultation fitting (KELT20b)
+
+
+
 2-Feb-2024: version 3.1.0
 ~~~~~~~~~~~~
 * added function get_decorr() now available for lc and rv objects
