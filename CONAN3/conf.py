@@ -77,15 +77,15 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     f.write(f"\tRV_filepath: {lc_obj._fpath}\n")
     f.write(f"\tn_planet: {lc_obj._nplanet}\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    f.write(f"\t{'LC_auto_decorr:':15s} False       # automatically determine baseline function for the LCs\n")
-    f.write(f"\t{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
-    f.write(f"\t{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
+    f.write(f"\t{'LC_auto_decorr:':15s} False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5\n")
+    f.write(f"\t{'exclude_cols:':15s} []                         # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
+    f.write(f"\t{'enforce_pars:':15s} []                         # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
     _print_output(lc_obj,"lc_baseline",file=f)
     _print_output(lc_obj,"gp",file=f)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
-    f.write(f"\t{'RV_auto_decorr:':15s} False       # automatically determine baseline function for the RVs\n")
-    f.write(f"\t{'exclude_cols:':15s} []            # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
-    f.write(f"\t{'enforce_pars:':15s} []            # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
+    f.write(f"\t{'RV_auto_decorr:':15s} False   | delta_BIC: -5  # automatically determine baseline function for the RVs\n")
+    f.write(f"\t{'exclude_cols:':15s} []                         # list of column numbers (e.g. [3,4]) to exclude from decorrelation.\n")
+    f.write(f"\t{'enforce_pars:':15s} []                         # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation\n")
     _print_output(rv_obj,"rv_baseline",file=f)
     _print_output(rv_obj,"rv_gp",file=f)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
@@ -144,9 +144,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     _skip_lines(_file,1)                                      #remove 3 comment lines
 
     #### auto decorrelation
-    dump = _file.readline().rstrip().split()[1]
-    assert dump in ["True","False"], f"LC_auto_decorr: must be 'True' or 'False' but {dump} given"
-    use_decorr = True if dump == "True" else False
+    dump   = _file.readline().rstrip()
+    _adump = dump.split()
+    assert _adump[1] in ["True","False"], f"LC_auto_decorr: must be 'True' or 'False' but {_adump[1]} given"
+    use_decorr = True if _adump[1] == "True" else False
+    del_BIC = float(_adump[4]) if len(_adump) > 4 else -5
     dump = _file.readline().rstrip().split()[1]
     assert dump[0] == "[" and dump[-1] == "]", f"exclude_cols: must be a list of column numbers (e.g. [3,4]) but {dump} given"
     #convert dump to list of ints
@@ -262,9 +264,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     
     ## RV ==========================================================
     #### auto decorrelation
-    dump = _file.readline().rstrip().split()[1]
-    assert dump in ["True","False"], f"RV_auto_decorr: must be 'True' or 'False' but {dump} given"
-    use_decorrRV = True if dump == "True" else False
+    dump = _file.readline().rstrip()
+    _adump = dump.split()
+    assert _adump[1] in ["True","False"], f"RV_auto_decorr: must be 'True' or 'False' but {_adump[1]} given"
+    use_decorrRV = True if _adump[1] == "True" else False
+    rvdel_BIC = float(_adump[4]) if len(_adump) > 4 else -5
     dump = _file.readline().rstrip().split()[1]
     assert dump[0] == "[" and dump[-1] == "]", f"RV exclude_cols: must be a list of column numbers (e.g. [3,4]) but {dump} given"
     #convert dump to list of ints
@@ -422,7 +426,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
                             D_occ=D_occ[0] if len(D_occ)>0 else 0, 
                             A_pc=A_pc[0] if len(A_pc)>0 else 0, 
                             ph_off=ph_off[0] if len(ph_off)>0 else 0, plot_model=False,
-                            setup_baseline=use_decorr,exclude_cols=exclude_cols,
+                            setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
                             enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
         #TODO: if not use_decorr, compare the auto decorr pars to the user-defined ones and only use start values for those
         rel_cols = [b[:6] for b in lc_obj._bases]
@@ -441,7 +445,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
         rv_obj.get_decorr(T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
                             sesinw=sesinw,secosw=secosw,
                             gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
-                            exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, 
+                            exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, delta_BIC=rvdel_BIC,
                             plot_model=False,verbose=verbose if use_decorrRV else False)
         rel_cols = [b[:6] for b in rv_obj._RVbases]
         _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
@@ -492,14 +496,20 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
 
     
     _adump    = _file.readline().split()
-    baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-    basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
-    lcbaselim = [baselo, basehi]
+    if "auto" in _adump[1]:
+        lcbaselim = "auto"
+    else:
+        baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
+        basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        lcbaselim = [baselo, basehi]
     
     _adump    = _file.readline().split()
-    baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-    basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
-    rvbaselim = [baselo, basehi]
+    if "auto" in _adump[1]:
+        rvbaselim = "auto"
+    else:
+        baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
+        basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        rvbaselim = [baselo, basehi]
 
 
     fit_obj = fit_setup(R_st = st_rad, M_st = st_mass, par_input=par_in,

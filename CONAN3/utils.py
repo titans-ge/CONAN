@@ -747,3 +747,17 @@ def get_T0s(t, t_ref, P):
     t0s      = list(filter( lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>0, t0s))  # reserve only expected t0s where there is data around it (0.1P on each side)
 
     return t0s
+
+
+
+def rms_estimate_LC(f):
+    """
+    Estimate the RMS of a light curve
+    """
+    return np.std(np.diff(f))/np.sqrt(2)
+
+def jitter_estimate(f,e):
+    """
+    Estimate the jitter of a light curve
+    """
+    return np.sqrt(rms_estimate_LC(f)**2 - np.mean(e)**2)
