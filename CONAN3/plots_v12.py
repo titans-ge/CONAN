@@ -8,7 +8,7 @@ from CONAN3.logprob_multi import logprob_multi
 import pickle
 
 
-def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,prefix,RVunit,params,T0,period,Dur):
+def fit_plots(yval,tarr,farr,earr, nttv, nphot, nRV, indlist, filters,names,RVnames,prefix,RVunit,params,T0,period,Dur):
 
     _ind_para   = pickle.load(open(prefix.split("/")[0]+"/.par_config.pkl","rb"))
     all_models  = logprob_multi(params,*_ind_para,get_model=True)
@@ -59,9 +59,10 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
         ax[1].legend()
 
         ax[2].set_ylabel("O – C [ppm]")
-        ax[2].plot(tt, 1e6*(flux-full_mod),'.',c='skyblue',ms=2, zorder=1)
+        ax[2].plot(tt, 1e6*(flux-full_mod),'.',c='skyblue',ms=2, zorder=1,label=f"rms:{np.std(1e6*(flux-full_mod)):.2f} ppm")
         ax[2].plot(t_bin, 1e6*resbin,'o', c='midnightblue', ms=3, zorder=3)
         ax[2].axhline(0,ls="--", color="k", alpha=0.3)
+        ax[2].legend()
 
         ax[2].set_xlabel("Time")
         plt.subplots_adjust(hspace=0.02)
@@ -69,64 +70,69 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
 
 
     #### phase plot for each planet in system across multiple LCs ####
-    if nphot > 0:
-        for n in range(npl):
-            fig,ax = plt.subplots(2,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,1)})
-            ax[0].set_title(f'Phasefolded LC - planet{n+1}: P={period[n]:.2f} d')
-            ax[0].set_ylabel(f"Flux – baseline")
-            ax[0].axhline(1,ls="--", color="k", alpha=0.3)
-            ax[1].axhline(0,ls="--", color="k", alpha=0.3)
-            ax[1].set_xlabel("Orbital phase")
-            ax[1].set_ylabel(f"O – C [ppm]")
-            
-            flux_all,phase_all,err_all,res_all  = [],[],[],[]
-
-            for j in range(nphot):
-                infile=prefix.split("/")[0] + "/" + names[j][:-4]+'_lcout.dat'
-                tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,4,5,6), unpack = True)
-                flux_resid = flux - full_mod
-
-                #calculations for each planet (n) in the system
-                phase    = ((tt-T0[n])/period[n]) - np.round( ((tt-T0[n])/period[n]))
-                lc_comps = all_models.lc[names[j]][1]    #lc components for each planet in the system
-
-                #evaluate lc model on smooth time grid
-                t_sm       = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
-                ph_sm      = ((t_sm-T0[n])/period[n]) - np.round( ((t_sm-T0[n])/period[n]))
-                lc_sm_comp = logprob_multi(params,*_ind_para,t=t_sm,get_model=True).lc[names[j]][1]
-
-                #remove other planet's LC signal from det_flux
-                for i in range(npl):
-                    if i != n: det_flux -= lc_comps[f"pl_{i+1}"]-1
-
-                ax[0].plot(phase, det_flux, "o", c='skyblue',ms=2, zorder=1)
-                ax[1].plot(phase, 1e6*flux_resid, "o", c='skyblue',ms=2, zorder=1)
-
-                flux_all.append(det_flux)
-                phase_all.append(phase)
-                err_all.append(err)
-                res_all.append(flux_resid)
-
-
-            #Bin the data
-            binsize      = 15./(24.*60.) / period[n]  #15 minute bins in phase units
-            # Tdur_phase   = Dur[n]/period[n]
-            nbin         = int(np.ptp(np.concatenate(phase_all))/binsize)
-
-            srt = np.argsort(np.concatenate(phase_all)) if nphot>1 else np.argsort(phase_all[0])
-            pbin, flux_bins, error_bins = bin_data(np.concatenate(phase_all)[srt], np.concatenate(flux_all)[srt], 
-                                                    np.concatenate(err_all)[srt], statistic='mean',bins=nbin)
-            _,    res_bins              = bin_data(np.concatenate(phase_all)[srt], np.concatenate(res_all)[srt], 
-                                                    statistic='mean',bins=nbin)
-            srt_sm = np.argsort(ph_sm)
-            ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
-            ax[0].plot(ph_sm[srt_sm], lc_sm_comp[f"pl_{n+1}"][srt_sm], "-r", zorder=5, lw=3, label='Best-fit')
-            ax[0].legend()
-            ax[1].errorbar(pbin, 1e6*res_bins, yerr=error_bins*1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
-            
-            plt.subplots_adjust(hspace=0.04,wspace=0.04)
-            fig.savefig(prefix+f'Phasefolded_LC_[planet{n+1}].png',bbox_inches="tight")
+    # check that filter list contains same string
         
+    if nphot > 0 and nttv == 0:
+        for n in range(npl):
+            for filt in filters:
+                flux_filter, phase_filter, err_filter, res_filter = [], [], [], []
+                phsm_filter, lcsm_filter = [], []
+
+                for j in range(nphot):
+                    infile = prefix.split("/")[0] + "/" + names[j][:-4] + '_lcout.dat'
+                    tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 4, 5, 6), unpack=True)
+                    flux_resid = flux - full_mod
+
+                    if filters[j] == filt:
+                        # calculations for each planet (n) in the system
+                        phase = phase_fold(tt, period[n], T0[n], -0.25)
+                        lc_comps = all_models.lc[names[j]][1]  # lc components for each planet in the system
+
+                        # evaluate lc model on smooth time grid
+                        t_sm = np.linspace(tt.min(), tt.max(), max(2000, len(tt)))
+                        ph_sm = phase_fold(t_sm, period[n], T0[n], -0.25)
+                        lc_sm_comp = logprob_multi(params, *_ind_para, t=t_sm, get_model=True).lc[names[j]][1]
+
+                        # remove other planet's LC signal from det_flux
+                        for i in range(npl):
+                            if i != n: det_flux -= lc_comps[f"pl_{i+1}"] - 1
+
+                        flux_filter.append(det_flux)
+                        phase_filter.append(phase)
+                        err_filter.append(err)
+                        res_filter.append(flux_resid)
+                        phsm_filter.append(ph_sm)
+                        lcsm_filter.append(lc_sm_comp[f"pl_{n + 1}"])
+
+                # Bin the data
+                binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
+                nbin = int(np.ptp(np.concatenate(phase_filter)) / binsize)
+
+                srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
+                pbin, flux_bins, error_bins = bin_data(np.concatenate(phase_filter)[srt], np.concatenate(flux_filter)[srt],
+                                                        np.concatenate(err_filter)[srt], statistic='mean', bins=nbin)
+                _, res_bins = bin_data(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt],
+                                        statistic='mean', bins=nbin)
+                srt_sm = np.argsort(np.concatenate(phsm_filter))
+
+                fig, ax = plt.subplots(2, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (3, 1)})
+                ax[0].set_title(f'Phasefolded LC {filt} - planet{n + 1}: P={period[n]:.2f} d ({filt})')
+                ax[0].set_ylabel(f"Flux – baseline")
+                ax[0].axhline(1, ls="--", color="k", alpha=0.3)
+                ax[0].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=2, zorder=1, label='Data')
+                ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
+                ax[0].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
+                            label='Best-fit')
+                ax[0].legend()
+
+                ax[1].axhline(0, ls="--", color="k", alpha=0.3)
+                ax[1].plot(np.concatenate(phase_filter), np.concatenate(res_filter)*1e6, '.', c='skyblue', ms=2, zorder=1)
+                ax[1].errorbar(pbin, 1e6 * res_bins, yerr=error_bins * 1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
+                ax[1].set_xlabel("Orbital phase")
+                ax[1].set_ylabel(f"O – C [ppm]")
+
+                plt.subplots_adjust(hspace=0.04, wspace=0.04)
+                fig.savefig(prefix + f'Phasefolded_LC_[planet{n + 1}]_{filt}.png', bbox_inches="tight")
 
 
     ############ RVs#####################
@@ -188,12 +194,13 @@ def mcmc_plots(yval,tarr,farr,earr, nphot, nRV, indlist, filters,names,RVnames,p
                 rv_resid = y_rv-full_mod
 
                 #calculations for each planet (n) in the system
-                phase    = ((tt-T0[n])/period[n]) - np.round( ((tt-T0[n])/period[n]))
+                phase    = phase_fold(tt, period[n], T0[n],-0.5)
                 rv_comps = all_models.rv[RVnames[j]][1]    #rv components for each planet in the system
                 
                 #evaluate rv model on smooth time grid
                 t_sm       = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
-                ph_sm      = ((t_sm-T0[n])/period[n]) - np.round( ((t_sm-T0[n])/period[n]))
+                ph_sm      = phase_fold(t_sm, period[n], T0[n],-0.5)
+                # ph_sm      = np.where(ph_sm<0, ph_sm+1, ph_sm)
                 rv_sm_comp = logprob_multi(params,*_ind_para,t=t_sm,get_model=True).rv[RVnames[j]][1]
 
                 #remove other planet's RV signal from det_RV

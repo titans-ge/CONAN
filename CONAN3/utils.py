@@ -43,7 +43,16 @@ def get_transit_time(t, per, t0):
     tt : array-like
         Transit times.
     """
-    return t0 + per * np.floor((np.median(t) - t0)/per)
+    T01 = t0 + per * np.floor((np.median(t) - t0)/per)
+    T02 = t0 + per * np.round((np.median(t) - t0)/per)
+
+    if t.min() <= T01 <= t.max(): # if T01 is within the data time range
+        return T01
+    elif t.min() <= T02 <= t.max(): # if T02 is within the data time range 
+        return T02
+    else: # if neither T01 nor T02 is within the data time range, select closest to data start
+        T0  = np.array([T01,T02])
+        return T0[np.argmin(abs(T0 - min(t)))]
 
 def bin_data(t,f,err=None,statistic="mean",bins=20):
     """
@@ -244,7 +253,7 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
 
 
 
-def rho_to_aR(rho, P):
+def rho_to_aR(rho, P, qm=0):
     """
     convert stellar density to semi-major axis of planet with a particular period
 
@@ -255,6 +264,9 @@ def rho_to_aR(rho, P):
         
     P: float, ufloat, array-like;
         The period of the planet in days.
+
+    qm: float, ufloat, array-like;
+        The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
         
     Returns:
     --------
@@ -264,11 +276,11 @@ def rho_to_aR(rho, P):
 
     G = (c.G.to(u.cm**3/(u.g*u.second**2))).value
     Ps = P*(u.day.to(u.second))
-    aR = ((rho*G*Ps**2)/(3*np.pi)) **(1/3.)
+    aR = ( rho*G*Ps**2 / (3*np.pi) *(1+qm)) **(1/3.)
 
     return aR
 
-def aR_to_rho(P,aR):
+def aR_to_rho(P,aR,qm=0):
     """
     Compute the transit derived stellar density from the planet period and 
     scaled semi major axis
@@ -281,18 +293,61 @@ def aR_to_rho(P,aR):
     
     aR: float, ufloat, array-like;
         The scaled semi-major axis of the planet orbit
+
+    qm: float, ufloat, array-like;
+        The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
         
     Returns:
     --------
     rho: array-like;
-        The stellar density in cgs units
+        The stellar density in g/cm^3
     """
 
     G = (c.G.to(u.cm**3/(u.g*u.second**2))).value
     Ps = P*(u.day.to(u.second))
     
-    st_rho=3*np.pi*aR**3 / (G*Ps**2) 
+    st_rho=3*np.pi*aR**3 / (G*Ps**2) * (1+qm)
     return st_rho
+
+def k_to_Mp(k, P, Ms, i, e, Mp_unit = "star"):
+    """
+    Compute the mass of a planet from the rv semi amplitude following https://iopscience.iop.org/article/10.1086/529429/pdf
+
+    Parameters:
+    -----------
+    k: float, ufloat, array-like;
+        The RV semi-amplitude in m/s.
+
+    P: float, ufloat, array-like;
+        The period of the planet in days.
+        
+    Ms: float, ufloat, array-like;
+        The mass of the star in solar masses.
+
+    i: float, ufloat, array-like;
+        The inclination of the orbit in degrees.
+
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit.
+
+    Mp_unit: str;
+        The unit of the mass of the planet ["star","jup"]
+        Default is "star" which returns the mass in units of the mass of the star.
+
+    Returns:
+    --------
+    Mp: array-like;
+        The mass of the planet in Jupiter masses.
+    """
+    G = (c.G.to(u.m**3/(u.kg*u.second**2))).value
+    P = P*(u.day.to(u.second))
+    Ms = Ms*c.M_sun.value
+    i = np.deg2rad(i)
+    Mp = k * (1-e**2)**(1/2) * (P/(2*np.pi*G))**(1/3) * (Ms**(2/3)) / np.sin(i)  
+    if Mp_unit == "jup":
+        return Mp/c.M_jup.value
+    if Mp_unit == "star":
+        return Mp/Ms
 
 def aR_to_Tdur(aR, b, Rp, P,e=0,w=90):
     """
@@ -698,22 +753,53 @@ def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=
             baseline_amount = 0.5
             print("Baseline amount defaulted to maximum 0.5")  
         
-        t0s = []
-        for i in range(len(P)):
-            if input_t0s[i] is not None: t0s.append( list(input_t0s) )
-        else: t0s.append( get_T0s(t, t_ref[i], P[i]) )
+        t0s, Ps, plnum, trnum = [], [], [],[]
+        tr_times, fluxes, indz = [], [], []
+        t0_list, P_list, plnum_list = [],[],[]
+        npl = len(P)
+        if input_t0s is None: input_t0s = [None]*npl
 
-        #split data into individual transits. taking points around each tmid    
-        tr_times, fluxes, indz, pT0s = [], [], [], []
+        for j in range(npl):
+            #t0s for each planet
+            if input_t0s[j] is not None: t0s.append(list(input_t0s[j]))
+            else: t0s.append(get_T0s(t, t_ref[j], P[j]))
+            if len(t0s[j]) > 0: 
+                Ps.append([P[j]]*len(t0s[j]))    #period of each t0
+                plnum.append([j]*len(t0s[j]) )         #planet number
+                trnum.append(list(np.arange(1,len(t0s[j])+1)))
+        
+        srt_t0s = np.argsort(np.concatenate(t0s))    #sort t0s
+        t0s     = np.concatenate(t0s)[srt_t0s]
+        Ps      = np.concatenate(Ps)[srt_t0s]
+        plnum  = np.concatenate(plnum)[srt_t0s]
+        trnum  = np.concatenate(trnum)[srt_t0s]
 
-        for i in range(len(t0s)):
-            higher_than = t>=(t0s[i]-baseline_amount*P)
-            lower_than  = t<(t0s[i]+baseline_amount*P)
-
-            tr_times.append(t[higher_than & lower_than])
-            indz.append( np.argwhere(higher_than & lower_than).reshape(-1) )
-            fluxes.append(flux[indz[i]])
-            
+        #split data into individual/planet group transits. taking points around each tmid    
+        i=0
+        while i < len(t0s):
+            lo_cut = t0s[i]-baseline_amount*Ps[i]
+            hi_cut = t0s[i]+baseline_amount*Ps[i]
+            Phere  = [Ps[i]]
+            T0here = [t0s[i]]
+            plnum_here = [plnum[i]]
+            if i != len(t0s)-1:
+                for _ in range(npl):   #check if next npl transit is close to this one
+                    if (i+1<=len(t0s)-1) and (Ps[i+1] not in Phere) and (hi_cut > t0s[i+1]-baseline_amount*Ps[i+1]):
+                        hi_cut = t0s[i+1]+baseline_amount*Ps[i+1]
+                        Phere.append(Ps[i+1])
+                        T0here.append(t0s[i+1])
+                        plnum_here.append(plnum[i+1])
+                        i+=1
+                    else:
+                        break
+            t0_list.append(T0here)
+            P_list.append(Phere)
+            plnum_list.append(plnum_here)
+            tr_times.append(t[(t>=lo_cut) & (t<hi_cut)])
+            indz.append( np.argwhere((t>=lo_cut) & (t<hi_cut)).reshape(-1) )
+            fluxes.append(flux[indz[-1]])
+            i+=1
+                
         tr_edges = [(tr_t[0], tr_t[-1]) for tr_t in tr_times]    #store start and end time of each transit
 
         if show_plot:
@@ -721,11 +807,12 @@ def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=
             plt.figure(figsize=(15,3))
             [plt.plot(t,f,".",c="C0") for t,f in zip(tr_times,fluxes)]
             [plt.axvspan(edg[0], edg[1], alpha=0.1, color='cyan') for edg in tr_edges]
-            plt.plot(t0s, (0.997*np.min(flux))*np.ones_like(t0s),"k^")
+            [plt.plot(t0s[Ps == P[i]], (0.997*np.min(flux))*np.ones_like(t0s[Ps == P[i]]),"^") for i in range(npl)]
             plt.xlabel("Time (days)", fontsize=14)
-            plt.title(f"Using t_ref: shaded regions={len(indz)} transit chunks;  triangles=expected linear ephemeris");
+            plt.title(f"Using t_ref: shaded regions={len(indz)} transit chunk(s);  triangles=expected linear ephemeris");
         
-        return SimpleNamespace(t0s=t0s, tr_times=tr_times, fluxes=fluxes, tr_edges=tr_edges, indices=indz)
+        return SimpleNamespace(t0s=list(t0s), t0_list=t0_list, plnum=list(plnum), trnum=list(trnum),plnum_list=plnum_list,  P_list = P_list,
+                                n_chunks=len(tr_times),tr_times=tr_times, fluxes=fluxes, tr_edges=tr_edges, indices=indz)
 
 
 def get_T0s(t, t_ref, P):
@@ -744,7 +831,8 @@ def get_T0s(t, t_ref, P):
     n_tot_tr = round((tr_last - tr_first)/P)                  #total nmumber of transits in data_range
     t0s      = [tr_first + P*n for n in range(n_tot_tr+1) ]        #expected tmid of transits in data (if no TTV)
     #remove tmid without sufficient transit data around it
-    t0s      = list(filter( lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>0, t0s))  # reserve only expected t0s where there is data around it (0.1P on each side)
+    t0s      = list(filter( lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>5, t0s))  # reserve only expected t0s where there is data around it (0.1P on each side)
+    t0s      = [t0 for t0 in t0s if t.min()<t0<t.max()] # only t0s within the data
 
     return t0s
 

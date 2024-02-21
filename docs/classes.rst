@@ -26,3 +26,5 @@ This class has a number of methods to access the results.
 
 .. autoclass:: CONAN3._classes.load_result
     :members:
+    :undoc-members:
+

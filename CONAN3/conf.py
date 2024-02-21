@@ -1,6 +1,6 @@
 from ._classes import load_lightcurves, load_rvs, fit_setup,_print_output
 from .fit_data import run_fit
-from.utils import ecc_om_par
+from .utils import ecc_om_par
 import numpy as np 
 
 
@@ -74,7 +74,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     f.write("#             ***********************************************************************************************************\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
     f.write(f"\tLC_filepath: {lc_obj._fpath}\n")
-    f.write(f"\tRV_filepath: {lc_obj._fpath}\n")
+    f.write(f"\tRV_filepath: {rv_obj._fpath}\n")
     f.write(f"\tn_planet: {lc_obj._nplanet}\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
     f.write(f"\t{'LC_auto_decorr:':15s} False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5\n")
@@ -92,6 +92,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     _print_output(lc_obj,"planet_parameters",file=f)
     _print_output(lc_obj,"limb_darkening",file=f)
     _print_output(lc_obj,"depth_variation",file=f)
+    _print_output(lc_obj,"timing_variation",file=f)
     _print_output(lc_obj,"phasecurve",file=f)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
     _print_output(lc_obj,"contamination",file=f)
@@ -198,25 +199,30 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
         #scale columns
         _sclcol.append(_adump[5])
 
-        strbase=_adump[7:12]
-        strbase.append(_adump[12].split("|")[0])        # string array of the baseline function coeffs
+        strbase=_adump[7:13]
+        strbase.append(_adump[13].split("|")[0])        # string array of the baseline function coeffs
         grbase = 0
-        strbase.extend([_adump[13],grbase])
+        strbase.extend([_adump[14],grbase])
         _grbases.append(grbase)
         base = [int(i) for i in strbase]
         _bases.append(base)
         
-        group = int(_adump[14])
+        group = int(_adump[15])
         _groups.append(group)
-        _useGPphot.append(_adump[15])
+        _useGPphot.append(_adump[16])
         
         #LC spline
-        if _adump[16] != "None":   #TODO: only works for 1d spline
+        if _adump[17] != "None":   #TODO: only works for 1d spline
             _spl_lclist.append(_adump[0])
-            _spl_knot.append(float(_adump[16].split("k")[-1]))
-            _spl_deg.append(int(_adump[16].split("k")[0].split("d")[-1]))
-            _spl_par.append("col" + _adump[16].split("k")[0].split("d")[0][1])
-
+            if "|" not in _adump[17]:   #1D spline
+                _spl_knot.append(float(_adump[17].split("k")[-1]))
+                _spl_deg.append(int(_adump[17].split("k")[0].split("d")[-1]))
+                _spl_par.append("col" + _adump[17].split("d")[0][1])
+            else: #2D spline
+                sp = _adump[17].split("|")  #split the diff spline configs
+                _spl_knot.append( (float(sp[0].split("k")[-1]),float(sp[1].split("k")[-1])) )
+                _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
+                _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) ) 
         #move to next LC
         dump =_file.readline() 
     
@@ -282,6 +288,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     RVnames, RVbases, gammas = [],[],[]
     _RVsclcol, usegpRV,strbase = [],[],[]
     _spl_rvlist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
+    RVunit = "km/s"
     
     dump =_file.readline()
     while dump[0] != '#':                   # if it is not starting with # then
@@ -299,9 +306,15 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
         #RV spline
         if _adump[10] != "None":
             _spl_rvlist.append(_adump[0])
-            _spl_knot.append(float(_adump[10].split("k")[-1]))
-            _spl_deg.append(int(_adump[10].split("k")[0].split("d")[-1]))
-            _spl_par.append("col" + _adump[10].split("k")[0].split("d")[0][1])
+            if "|" not in _adump[10]:
+                _spl_knot.append(float(_adump[10].split("k")[-1]))
+                _spl_deg.append(int(_adump[10].split("k")[0].split("d")[-1]))
+                _spl_par.append("col" + _adump[10].split("d")[0][1])
+            else:
+                sp = _adump[10].split("|") #split the diff spline configs
+                _spl_knot.append( (float(sp[0].split("k")[-1]),float(sp[1].split("k")[-1])) )
+                _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
+                _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) )
         
         gammas.append(_prior_value(_adump[12]))
         #move to next RV
@@ -331,7 +344,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
             amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9]))
             lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10]))
 
-        #move to next LC
+        #move to next RV
         dump =_file.readline()
         
         
@@ -385,8 +398,15 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
+    #TTVS
+    dump =_file.readline()
+    _adump = dump.split()
+    ttvs, dt, base = _adump[0], _prior_value(_adump[1]), float(_adump[2]) 
+
+    _skip_lines(_file,2)                                      #remove 2 comment lines
+
     #phase curve
-    D_occ,A_pc,ph_off = [],[],[]    
+    D_occ,A_atm,ph_off,A_ev = [],[],[],[]    
     for _ in range(len(lc_obj._filnames)):
         dump   = _file.readline()
         _adump = dump.split()
@@ -395,12 +415,17 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     for _ in range(len(lc_obj._filnames)):
         dump   = _file.readline()
         _adump = dump.split()
-        A_pc.append(_prior_value(_adump[3]))
+        A_atm.append(_prior_value(_adump[3]))
     _skip_lines(_file,1)                                      #remove 2 comment lines
     for _ in range(len(lc_obj._filnames)):
         dump   = _file.readline()
         _adump = dump.split()
         ph_off.append(_prior_value(_adump[3]))
+    _skip_lines(_file,1)                                      #remove 2 comment lines
+    for _ in range(len(lc_obj._filnames)):
+        dump   = _file.readline()
+        _adump = dump.split()
+        A_ev.append(_prior_value(_adump[3]))
     
     _skip_lines(_file,3)                                      #remove 3 comment lines
  
@@ -416,7 +441,8 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     lc_obj.planet_parameters(**pl_pars,verbose=verbose)
     lc_obj.limb_darkening(q1,q2,verbose=verbose)
     lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
-    lc_obj.setup_phasecurve(D_occ, A_pc, ph_off, verbose=verbose)
+    lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,verbose=verbose)
+    lc_obj.setup_phasecurve(D_occ, A_atm, ph_off, A_ev, verbose=verbose)
     lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
 
     if nphot > 0:
@@ -424,8 +450,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
             if verbose: print("\ngetting start values for LC decorrelation parameters ...")
         lc_obj.get_decorr(**pl_pars,q1=q1,q2=q2,
                             D_occ=D_occ[0] if len(D_occ)>0 else 0, 
-                            A_pc=A_pc[0] if len(A_pc)>0 else 0, 
-                            ph_off=ph_off[0] if len(ph_off)>0 else 0, plot_model=False,
+                            A_atm=A_atm[0] if len(A_atm)>0 else 0, 
+                            ph_off=ph_off[0] if len(ph_off)>0 else 0, 
+                            A_ev=A_ev[0] if len(A_ev)>0 else 0, plot_model=False,
                             setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
                             enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
         #TODO: if not use_decorr, compare the auto decorr pars to the user-defined ones and only use start values for those

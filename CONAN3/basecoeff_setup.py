@@ -17,6 +17,7 @@ def basecoeff(ibase,spline,init=None,lims=None):
     #       dcol5 coeff:   A5*dcol5 + B5*dcol5^2
     #       dcol6 coeff:   A6*dcol6 + B6*dcol6^2
     #       dcol7 coeff:   A7*dcol7 + B7*dcol7^2
+    #       dcol8 coeff:   A8*dcol8 + B8*dcol8^2
     #       dsin  coeff:   Amp*sin(2pi(dcol0)/P + phi)
     #       CNM   coeff:   ACNM*?? + BCNM*??^2
 
@@ -24,7 +25,7 @@ def basecoeff(ibase,spline,init=None,lims=None):
     nbc = 0
 
     offset = np.zeros((4,1), dtype=float)
-    if ibase[7] > 0:                          # if we have a CNM
+    if ibase[8] > 0:                          # if we have a CNM
         offset[:,0]=[0.,0.0001,-2.,2.1]       # set the starting value and limits of the 0th-order start at 0
         nbc = nbc+1
     else:
@@ -100,9 +101,19 @@ def basecoeff(ibase,spline,init=None,lims=None):
         dcol7[:,1]=[init["B7"],0.001,*lims["B7"]]
         nbc = nbc+1
 
+    # dcol8 coeff:   A8*dcol8 + B8*dcol8^2
+    dcol8=np.zeros((4,2), dtype=float)
+    if ibase[6] > 0: #A8
+        dcol8[:,0]=[init["A8"],0.001,*lims["A8"]]
+        nbc = nbc+1
+
+    if ibase[6] > 1: #B8
+        dcol8[:,1]=[init["B8"],0.001,*lims["B8"]]
+        nbc = nbc+1
+
     # dsin  coeff:   Amp*sin(2pi(dcol0-phi)/P) -x-> Amp*sin(freq*dcol0+phi)
     dsin=np.zeros((4,3), dtype=float)
-    if ibase[6] > 0: 
+    if ibase[7] > 0: 
         dsin[:,0]=[init["amp"],0.001,0,1]
         dsin[:,1]=[init["freq"],0.001,1,333]
         dsin[:,2]=[init["phi"],0.001,0,1]
@@ -110,15 +121,15 @@ def basecoeff(ibase,spline,init=None,lims=None):
                     
     # H coeff => CNM                
     dCNM=np.zeros((4,2), dtype=float)
-    if ibase[7] > 0: #ACNM
+    if ibase[8] > 0: #ACNM
         dCNM[:,0]=[init["ACNM"],0.001,0,1.e8] 
         nbc = nbc+1
         
-    if ibase[7] > 1: #BCNM
+    if ibase[8] > 1: #BCNM
         dCNM[:,1]=[init["BCNM"],0.0001,-1.e8,1.e8]     
         nbc = nbc+1
                     
-    return offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dsin, dCNM, nbc
+    return offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dcol8, dsin, dCNM, nbc
         
 
 def basecoeffRV(ibaseRV,Pin,init=None,lims=None):

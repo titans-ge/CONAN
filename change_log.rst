@@ -1,3 +1,17 @@
+19-Feb-2024: version 3.1.4
+~~~~~~~~~~~~
+* fixed 2D spline fit for lc and rv data
+* implemented TTV for multiplanetary systems, added test notebook
+* added column 8 for decorrelation of lcs
+* estimate of rms and jitter for lc_obj and rv_obj upon ingestion of lc and rv data
+* "auto" option for the limits of the lc and rv paramteric baseline parameters.
+* modified fit plots to only phasefold lcs of same filter
+* uniform prior on rho_star changed to loguniform following literature convention
+* added ellipsoidal variation amplitude, A_ev, to phase curve model
+* renamed planet atmospheric variation in phasecurve from A_pc to A_atm
+* new configfile version to ingest new inputs [ttv,A_ev,A_atm]
+* added dynesty trace plot to view exploration of parameter space
+
 12-Feb-2024: version 3.1.3
 ~~~~~~~~~~~~
 * added estimate of rms and jitter for lc_obj and rv_obj

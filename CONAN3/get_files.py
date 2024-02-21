@@ -3,6 +3,8 @@ import numpy as np
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+from astropy.io import fits
+
 try:
     import lightkurve as lk
 except:
@@ -243,6 +245,7 @@ class get_CHEOPS_data(object):
     def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None):
         """
         Save CHEOPS light curves as a CONAN light curve file.
+        the output columns are [t, f, e, x_off, y_off, roll, bg, contam, deltaT]
 
         Parameters
         ----------
@@ -287,7 +290,43 @@ class get_CHEOPS_data(object):
         return x 
 
 
-class get_EULER_data(object):
+
+def get_EULER_data(FITS_filepath, out_folder=".", planet_name=None):
+    """
+    create .dat file for CONAN from the EULER fits file
+
+    Parameters
+    ----------
+    FITS_filepath : str
+        Path to the EULER fits file.
+
+    Returns
+    -------
+    file:
+        .dat file for CONAN
+    """
+    lc = fits.open(FITS_filepath)
+    
+    ti        = lc[1].data['time (BJD-TDB)'] -2450000
+    fl        = lc[1].data['flux']
+    fl_err    = lc[1].data['sflux']
+
+    fwhm      = lc[1].data['fwhm']
+    peak_flux = lc[1].data['peak']
+    air_mass  = lc[1].data['airmass']
+    sky       = lc[1].data['bkg']
+    xshift    = lc[1].data['dx']
+    yshift    = lc[1].data['dy']
+    exptime   = lc[1].data['exptime']
+    try:
+        planet_name = lc[0].header["OBJECT"]
+    except:
+        planet_name = planet_name if planet_name is not None else ""
+    
+    np.savetxt(f'{out_folder}/lc_{planet_name}.dat', np.transpose([ti, fl, fl_err, xshift, yshift, air_mass, fwhm, sky, exptime]), fmt= '%3.5f')
+    return
+
+class get_EULER_data_from_server(object):
     """ 
     class to get EULER data from the server at Geneva Observatory. This requires some login access
 

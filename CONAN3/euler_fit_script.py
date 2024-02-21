@@ -59,7 +59,7 @@ else:
 lc_obj = CONAN3.load_lightcurves(file_list        = lc_list, 
                                     data_filepath = path, 
                                     filters       = [filt], 
-                                    lamdas        = [600],
+                                    lamdas        = [0.6],
                                     nplanet=1)
 print(lc_obj)
 
@@ -85,11 +85,10 @@ traocc_pars =dict(  T_0           = (t0-0.1,t0,t0+0.1),
                     Period        = params["planet"]["period"][0],
                     Impact_para   = (0,params["planet"]["b"][0],1),
                     RpRs          = (0.001,params["planet"]["rprs"][0],0.2),
-                    rho_star      = params["star"]["density"],
-                    q1            = q1,
-                    q2            = q2)
+                    rho_star      = params["star"]["density"]
+                    )
 # In[9]:
-decorr_res = lc_obj.get_decorr( **traocc_pars, cheops=False, show_steps=False, 
+decorr_res = lc_obj.get_decorr( **traocc_pars, cheops=False, show_steps=False, q1=q1,q2=q2,
                                 plot_model=False, setup_baseline=False)
 
 # In[12]:

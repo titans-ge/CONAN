@@ -125,7 +125,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     print('CONAN fit launched!!!\n') 
 
-        
+    
     #begin loading data from the 3 objects and calling the methods
     assert statistic in ["median", "max", "bestfit"], 'statistic can only be either median, max or bestfit'
 
@@ -283,14 +283,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     #============phasecurve setup=============
     #from load_lightcurves.setup_phasecurve()
 
-    DA_occ = lc_obj._PC_dict["D_occ"]
-    DA_Apc = lc_obj._PC_dict["A_pc"]
-    DA_off = lc_obj._PC_dict["ph_off"]
+    DA_occ  = lc_obj._PC_dict["D_occ"]
+    DA_Aatm = lc_obj._PC_dict["A_atm"]
+    DA_off  = lc_obj._PC_dict["ph_off"]
+    DA_Aev  = lc_obj._PC_dict["A_ev"]
 
-    nocc     = len(filnames) #len(DA_occ["filters_occ"])
-    occ_in   = np.zeros((nocc,7))
-    Apc_in   = np.zeros((nocc,7))
-    phoff_in = np.zeros((nocc,7))
+    nocc      = len(filnames) #len(DA_occ["filters_occ"])
+    occ_in    = np.zeros((nocc,7))
+    Aatm_in   = np.zeros((nocc,7))
+    phoff_in  = np.zeros((nocc,7))
+    Aev_in    = np.zeros((nocc,7))
 
     for i, f in enumerate(filnames):
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
@@ -300,15 +302,19 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if DA_occ[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
 
 
-        Apc_in[i,:] = [DA_Apc[f].start_value, DA_Apc[f].step_size, DA_Apc[f].bounds_lo, DA_Apc[f].bounds_hi,
-                        DA_Apc[f].prior_mean, DA_Apc[f].prior_width_lo, DA_Apc[f].prior_width_hi ]           
-        if DA_Apc[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+        Aatm_in[i,:] = [DA_Aatm[f].start_value, DA_Aatm[f].step_size, DA_Aatm[f].bounds_lo, DA_Aatm[f].bounds_hi,
+                        DA_Aatm[f].prior_mean, DA_Aatm[f].prior_width_lo, DA_Aatm[f].prior_width_hi ]           
+        if DA_Aatm[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
     
 
         phoff_in[i,:] = [DA_off[f].start_value, DA_off[f].step_size, DA_off[f].bounds_lo, DA_off[f].bounds_hi,
                         DA_off[f].prior_mean, DA_off[f].prior_width_lo, DA_off[f].prior_width_hi ]           
         if DA_off[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
 
+        Aev_in[i,:] = [DA_Aev[f].start_value, DA_Aev[f].step_size, DA_Aev[f].bounds_lo, DA_Aev[f].bounds_hi,
+                        DA_Aev[f].prior_mean, DA_Aev[f].prior_width_lo, DA_Aev[f].prior_width_hi ]           
+        if DA_Aev[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+    
 
 #============limb darkening===============
     #from load_lightcurves.limb_darkening()
@@ -363,32 +369,25 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     RVjitter_lims    = DA_mc['RVjitter_lims']      # RV jitter limits
     LCbase_lims      = DA_mc['LCbasecoeff_lims']   # bounds of the LC baseline coefficients
     RVbase_lims      = DA_mc['RVbasecoeff_lims']   # bounds of the RV baseline coefficients
-    grtest           = True if DA_mc['GR_test'] == 'y' else False  # GRtest done?
-    plots            = True if DA_mc['make_plots'] == 'y' else False  # Make plots done
-    leastsq          = True if DA_mc['leastsq'] == 'y' else False  # Do least-square?
-    savefile         = DA_mc['savefile']   # Filename of save file
-    savemodel        = DA_mc['savemodel']   # Filename of model save file
-    adaptBL          = DA_mc['adapt_base_stepsize']   # Adapt baseline coefficent
     paraCNM          = DA_mc['remove_param_for_CNM']   # remove parametric model for CNM computation
     baseLSQ          = DA_mc['leastsq_for_basepar']   # do a leas-square minimization for the baseline (not jump parameters)
-    lm               = True if DA_mc['lssq_use_Lev_Marq'] =='y' else False  # use Levenberg-Marquardt algorithm for minimizer?
     cf_apply         = DA_mc['apply_CFs']  # which CF to apply
 
     #limits on parametric baseline pars: auto or user-defined
     #LC
     lcbases_lims = [dict(off = [input_lcs[names[i]]["col1"].min(),input_lcs[names[i]]["col1"].max()], #min,max flux
                         amp=[0,1], freq=[1,333], phi=[0,1], ACNM=[0,1e8], BCNM=[0,1e8], C0=[-1,1], D0=[-1,1]) 
-                        for i in range(lc_obj._nphot)]
+                        for i in range(nphot)]
 
-    col_pars = [f"{L}{c}" for c in [0,3,4,5,6,7] for L in ["A","B"]] + ["C0","D0"]    #decorr_params
+    col_pars = [f"{L}{c}" for c in [0,3,4,5,6,7,8] for L in ["A","B"]] + ["C0","D0"]    #decorr_params
     if isinstance(LCbase_lims,list):   # set all lims to user-defined LCbase_lims
-        for i in range(lc_obj._nphot):
+        for i in range(nphot):
             for k in col_pars: lcbases_lims[i][k] = LCbase_lims
                 
     else:                              #auto determine best lims from data. rms/1% span of the decorr_column
-        for i in range(lc_obj._nphot):
+        for i in range(nphot):
             fl_arr = input_lcs[names[i]]["col1"]
-            for c in [0,3,4,5,6,7]:      #col numbers
+            for c in [0,3,4,5,6,7,8]:      #col numbers
                 arr = input_lcs[names[i]][f"col{c}"]
                 arr = arr-np.median(arr) if c==0 else arr    #if time array, sutract median
                 if np.ptp(arr) > 0:      #if variation in this column
@@ -403,13 +402,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     lcbases_lims[i][f"A{c}"] = lcbases_lims[i][f"B{c}"] = [-1,1]
 
     #RV
-    rvbases_lims = [dict(amp=[0,1], freq=[1,100], phi=[0,1], phi2=[0,1]) for i in range(rv_obj._nRV)]
+    rvbases_lims = [dict(amp=[0,1], freq=[1,100], phi=[0,1], phi2=[0,1]) for i in range(nRV)]
     col_pars = [f"{L}{c}" for c in [0,3,4,5] for L in ["A","B"]]    #decorr_params
     if isinstance(RVbase_lims,list):   # set all lims to user-defined RVbase_lims
-        for i in range(rv_obj._nRV):
+        for i in range(nRV):
             for k in col_pars: rvbases_lims[i][k] = RVbase_lims
     else:                              #auto determine best lims from data. rms/1% span of the decorr_column
-        for i in range(rv_obj._nRV):
+        for i in range(nRV):
             rv_arr = input_rvs[RVnames[i]]["col1"]
             for c in [0,3,4,5]:
                 arr = input_rvs[RVnames[i]][f"col{c}"]
@@ -453,6 +452,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     col5_arr   = np.array([])  # initializing array with all col5 values (prev aarr)
     col6_arr   = np.array([])  # initializing array with all col6 values (prev warr)
     col7_arr   = np.array([])  # initializing array with all col7 values (prev sarr)
+    col8_arr   = np.array([])  # initializing array with all col8 values (prev darr)
 
     lind       = np.array([])  # initializing array with the lightcurve indices
     bis_arr    = np.array([])  # initializing array with all bisector values
@@ -504,6 +504,22 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             stepsize[1+7*n : 7+7*n] = 0     #index 1-6
             prior[1+7*n : 7+7*n]    = 0
 
+    ttvYN = lc_obj._ttvs.to_fit
+    if ttvYN == "y":
+        nttv = len(lc_obj._ttvs.fit_t0s)    
+        for i in range(nttv):
+            params    = np.concatenate((params,   [lc_obj._ttvs.prior[i].start_value]))
+            stepsize  = np.concatenate((stepsize, [lc_obj._ttvs.prior[i].step_size]))
+            pmin      = np.concatenate((pmin,     [lc_obj._ttvs.prior[i].bounds_lo]))
+            pmax      = np.concatenate((pmax,     [lc_obj._ttvs.prior[i].bounds_hi]))
+            prior     = np.concatenate((prior,    [lc_obj._ttvs.prior[i].prior_mean]))
+            priorlow  = np.concatenate((priorlow, [lc_obj._ttvs.prior[i].prior_width_lo]))
+            priorup   = np.concatenate((priorup,  [lc_obj._ttvs.prior[i].prior_width_hi]))
+            pnames    = np.concatenate((pnames,   [lc_obj._ttvs.fit_labels[i]]))
+            njumpphot = njumpphot+1
+    else:
+        nttv = 0
+
     if ddfYN == 'y':   # if ddFs are fit: set the Rp/Rs to the specified value, and fix it.
         drprs_in  = np.zeros((nfilt,7))
         njumpphot = njumpphot+1   # each LC has another jump pm
@@ -519,7 +535,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             priorup       = np.concatenate((priorup,  [drprs_in[i,6]]))
             pnames        = np.concatenate((pnames,   [filnames[i]+'_dRpRs']))
             
-
+            
     for i in range(nfilt):  # add the occultation depths
         params     = np.concatenate((params,   [occ_in[i,0]]))
         stepsize   = np.concatenate((stepsize, [occ_in[i,1]]))
@@ -531,14 +547,14 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         pnames     = np.concatenate((pnames,   [filnames[i]+'_DFocc']))
 
     for i in range(nfilt):  # add the pc amplitudes
-        params     = np.concatenate((params,   [Apc_in[i,0]]))
-        stepsize   = np.concatenate((stepsize, [Apc_in[i,1]]))
-        pmin       = np.concatenate((pmin,     [Apc_in[i,2]]))
-        pmax       = np.concatenate((pmax,     [Apc_in[i,3]]))
-        prior      = np.concatenate((prior,    [Apc_in[i,4]]))
-        priorlow   = np.concatenate((priorlow, [Apc_in[i,5]]))
-        priorup    = np.concatenate((priorup,  [Apc_in[i,6]]))
-        pnames     = np.concatenate((pnames,   [filnames[i]+'_Apc']))
+        params     = np.concatenate((params,   [Aatm_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [Aatm_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [Aatm_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [Aatm_in[i,3]]))
+        prior      = np.concatenate((prior,    [Aatm_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [Aatm_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [Aatm_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_Aatm']))
 
     for i in range(nfilt):  # add the phase offsets
         params     = np.concatenate((params,   [phoff_in[i,0]]))
@@ -549,6 +565,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         priorlow   = np.concatenate((priorlow, [phoff_in[i,5]]))
         priorup    = np.concatenate((priorup,  [phoff_in[i,6]]))
         pnames     = np.concatenate((pnames,   [filnames[i]+'_ph_off']))
+
+    for i in range(nfilt):  # add the pc amplitudes
+        params     = np.concatenate((params,   [Aev_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [Aev_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [Aev_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [Aev_in[i,3]]))
+        prior      = np.concatenate((prior,    [Aev_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [Aev_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [Aev_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_Aev']))
 
 
     for i in range(nfilt):  # add the LD coefficients for the filters to the parameters
@@ -672,7 +698,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         col4_arr  = np.concatenate((col4_arr, col4_in), axis=0)
         col5_arr  = np.concatenate((col5_arr, col5_in), axis=0)
         col6_arr  = np.concatenate((col6_arr, col6_in), axis=0)
-        col7_arr  = np.concatenate((col7_arr, col7_in), axis=0)  #TODO: we can have column 8 right?
+        col7_arr  = np.concatenate((col7_arr, col7_in), axis=0) 
+        col8_arr  = np.concatenate((col8_arr, col8_in), axis=0)  
         
         bis_arr   = np.concatenate((bis_arr, np.zeros(len(t), dtype=int)),   axis=0)   # bisector array: filled with 0s
         contr_arr = np.concatenate((contr_arr, np.zeros(len(t), dtype=int)), axis=0)   # contrast array: filled with 0s
@@ -682,45 +709,47 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         
         #baseline parameters
         # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
-        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[i],bases_init[i],lcbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
+        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dcol8, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[i],bases_init[i],lcbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot      = nbc_tot+nbc # add up the number of jumping baseline coeff
         njumpphot[i] = njumpphot[i]+nbc   # each LC has another jump pm
 
         # if the least-square fitting for the baseline is turned on (baseLSQ = 'y'), then set the stepsize of the jump parameter to 0
         if (baseLSQ == "y"):
-            abvar=np.concatenate(([offset[1,:],dcol0[1,:],dcol3[1,:],dcol4[1,:],dcol5[1,:],dcol6[1,:],dcol7[1,:],dsin[1,:],dCNM[1,:]]))
+            abvar=np.concatenate(([offset[1,:],dcol0[1,:],dcol3[1,:],dcol4[1,:],dcol5[1,:],dcol6[1,:],dcol7[1,:],dcol8[1,:],dsin[1,:],dCNM[1,:]]))
             abind=np.where(abvar!=0.)
             bvars.append(abind)
-            offset[1,:]=dcol0[1,:]=dcol3[1,:]=dcol4[1,:]=dcol5[1,:]=dcol6[1,:]=dcol7[1,:]=dsin[1,:]=dCNM[1,:]=0      # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
+            offset[1,:]=dcol0[1,:]=dcol3[1,:]=dcol4[1,:]=dcol5[1,:]=dcol6[1,:]=dcol7[1,:]=dcol8[1,:]=dsin[1,:]=dCNM[1,:]=0      # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
 
         # append these to the respective mcmc input arrays
-        params    = np.concatenate((params,   offset[0,:],dcol0[0,:],dcol3[0,:],dcol4[0,:],dcol5[0,:],dcol6[0,:],dcol7[0,:],dsin[0,:],dCNM[0,:]))
-        stepsize  = np.concatenate((stepsize, offset[1,:],dcol0[1,:],dcol3[1,:],dcol4[1,:],dcol5[1,:],dcol6[1,:],dcol7[1,:],dsin[1,:],dCNM[1,:]))
-        pmin      = np.concatenate((pmin,     offset[2,:],dcol0[2,:],dcol3[2,:],dcol4[2,:],dcol5[2,:],dcol6[2,:],dcol7[2,:],dsin[2,:],dCNM[2,:]))
-        pmax      = np.concatenate((pmax,     offset[3,:],dcol0[3,:],dcol3[3,:],dcol4[3,:],dcol5[3,:],dcol6[3,:],dcol7[3,:],dsin[3,:],dCNM[3,:]))
-        prior     = np.concatenate((prior,    np.zeros(20)))
-        priorlow  = np.concatenate((priorlow, np.zeros(20)))
-        priorup   = np.concatenate((priorup,  np.zeros(20)))
+        params    = np.concatenate((params,   offset[0,:],dcol0[0,:],dcol3[0,:],dcol4[0,:],dcol5[0,:],dcol6[0,:],dcol7[0,:],dcol8[0,:],dsin[0,:],dCNM[0,:]))
+        stepsize  = np.concatenate((stepsize, offset[1,:],dcol0[1,:],dcol3[1,:],dcol4[1,:],dcol5[1,:],dcol6[1,:],dcol7[1,:],dcol8[1,:],dsin[1,:],dCNM[1,:]))
+        pmin      = np.concatenate((pmin,     offset[2,:],dcol0[2,:],dcol3[2,:],dcol4[2,:],dcol5[2,:],dcol6[2,:],dcol7[2,:],dcol8[2,:],dsin[2,:],dCNM[2,:]))
+        pmax      = np.concatenate((pmax,     offset[3,:],dcol0[3,:],dcol3[3,:],dcol4[3,:],dcol5[3,:],dcol6[3,:],dcol7[3,:],dcol8[3,:],dsin[3,:],dCNM[3,:]))
+        prior     = np.concatenate((prior,    np.zeros(22)))
+        priorlow  = np.concatenate((priorlow, np.zeros(22)))
+        priorup   = np.concatenate((priorup,  np.zeros(22)))
         pnames   = np.concatenate((pnames, [f"lc{i+1}_off",f"lc{i+1}_A0",f"lc{i+1}_B0",f"lc{i+1}_C0",f"lc{i+1}_D0",
                                             f"lc{i+1}_A3",f"lc{i+1}_B3",
                                             f"lc{i+1}_A4",f"lc{i+1}_B4",
                                             f"lc{i+1}_A5",f"lc{i+1}_B5",
                                             f"lc{i+1}_A6",f"lc{i+1}_B6",
                                             f"lc{i+1}_A7",f"lc{i+1}_B7",
+                                            f"lc{i+1}_A8",f"lc{i+1}_B8",
                                             f"lc{i+1}_sin_amp",f"lc{i+1}_sin_freq",f"lc{i+1}_sin_phi",
                                             f"lc{i+1}_ACNM",f"lc{i+1}_BCNM"
                                             ]))        
         # note currently we have the following parameters in these arrays:
         #   [rho_star,                                   (1)
         #   [T0,RpRs,b,per,eos, eoc,K,                   (7)*npl
+        #   ttv,...                                      (nttv)
         #   ddf_1, ..., ddf_n,                           (nddf)
-        #   (occ_1,Apc_1,phoff_1),...,occ_n,Apc_n,phoff_n(3*nocc)
+        #   (occ_1,Aatm_1,phoff_1,Aev_1),...,occ_n,Aatm_n,phoff_n,Aev_n(4*nocc)
         #   q1_f1,q2_f1, q1_f2, .... , q2fn,            (2*n_filt)
         #   LC_jit                                       (nphot)
         #   Rv_gamma, RV_jit                              (2*nRVs)         
-        #   baseline                                       20, ...]
-        #    = 1+7*npl+nddf+nocc*3+4*n_filt+nphot+2*nRV + 20
-        #    each lightcurve has 20 possible baseline jump parameters, starting with index  1+7*npl+nddf+nocc*3+4*n_filt+nphot+2*nRV
+        #   baseline                                       22, ...]
+        #    = 1+7*npl+nttv+nddf+nocc*4+4*n_filt+nphot+2*nRV + 22*nphot
+        #    each lightcurve has 22 possible baseline jump parameters, starting with index  1+7*npl+nttv+nddf+nocc*3+4*n_filt+nphot+2*nRV
 
         # pargp_all = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
 
@@ -830,6 +859,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         col5_arr = np.concatenate((col5_arr,np.zeros(len(t),dtype=int)), axis=0)  # airmass array: filled with 0s
         col6_arr = np.concatenate((col6_arr,fwhm), axis=0)
         col7_arr = np.concatenate((col7_arr,np.zeros(len(t),dtype=int)), axis=0)  # sky array: filled with 0s
+        col8_arr = np.concatenate((col8_arr,np.zeros(len(t),dtype=int)), axis=0)  
 
         bis_arr   = np.concatenate((bis_arr,bis), axis=0)  # bisector array
         contr_arr = np.concatenate((contr_arr,contrast), axis=0)  # contrast array
@@ -958,7 +988,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     LCjump = [] # a list where each item contain a list of the indices of params that jump and refer to this specific lc
     #ATTENTION: pass to the lnprob function the individual subscript (of variable p) that are its jump parameters for each LC
     # which indices of p0 are referring to lc n
-
+    if nttv>0: nt0 = 0
     for i in range(nphot):
         
         temp=np.ndarray([0])  # the indices of the parameters that jump for this LC
@@ -969,6 +999,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         
         if (len(lcstep) > 0): 
             temp=np.copy(lcstep)
+
+        #transit timing variation
+        if ttvYN=='y':
+            ttvind = 1+7*npl+ np.arange(nt0,nt0+len(lc_obj._ttvs.conf[i].t0s))   #add indices of the t0s of this lc
+            nt0 += len(lc_obj._ttvs.conf[i].t0s)
+            temp=np.concatenate((np.asarray(temp),ttvind),axis=0)
+
         
         # define the index in the set of filters that this LC has:
         k = np.where(filnames == filters[i])  # k is the index of the LC in the filnames array
@@ -977,41 +1014,46 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         #transit depth variation
         if (ddfYN=='y'):    
             if temp.shape:    
-                temp=np.concatenate((np.asarray(temp),np.asarray([1+7*npl+k])),axis=0)
+                temp=np.concatenate((np.asarray(temp),np.asarray([1+7*npl+nttv+k])),axis=0)
             else:
-                temp=np.asarray([1+7*npl+k])
+                temp=np.asarray([1+7*npl+nttv+k])
         
         #occultation
-        occind=1+7*npl+nddf+k                   # the index of the occultation parameter for this LC
+        occind=1+7*npl+nttv+nddf+k                   # the index of the occultation parameter for this LC
         if (stepsize[occind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[occind]),axis=0)
 
-        #pc
-        Apc_ind=1+7*npl+nddf+nocc+k                   # the index of the first pc amplitude for this LC
-        if (stepsize[Apc_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
-            temp=np.concatenate((np.asarray(temp),[Apc_ind]),axis=0)
+        #pc atm
+        Aatm_ind=1+7*npl+nttv+nddf+nocc+k                   # the index of the first atm amplitude for this LC
+        if (stepsize[Aatm_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
+            temp=np.concatenate((np.asarray(temp),[Aatm_ind]),axis=0)
         
         #phpff
-        phoff_ind=1+7*npl+nddf+nocc*2+k                   # the index of the first pc amplitude for this LC
+        phoff_ind=1+7*npl+nttv+nddf+nocc*2+k                   # the index of the first atm amplitude for this LC
         if (stepsize[phoff_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[phoff_ind]),axis=0)
 
+        #ev
+        Aev_ind=1+7*npl+nttv+nddf+nocc*3+k                   # the index of the first atm amplitude for this LC
+        if (stepsize[Aev_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
+            temp=np.concatenate((np.asarray(temp),[Aev_ind]),axis=0)
+
         #limb darkening
-        q1ind=1+7*npl+nddf+nocc*3+k*2
+        q1ind=1+7*npl+nttv+nddf+nocc*4+k*2
         if (stepsize[q1ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[q1ind]),axis=0)
         
-        q2ind=1+7*npl+nddf+nocc*3+k*2+1
+        q2ind=1+7*npl+nttv+nddf+nocc*4+k*2+1
         if (stepsize[q2ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[q2ind]),axis=0)
 
-        LCjitterind = 1+7*npl + nddf+nocc*3 + nfilt*2 + i 
+        LCjitterind = 1+7*npl +nttv+ nddf+nocc*4 + nfilt*2 + i 
         if (stepsize[LCjitterind]!=0.):           
             temp=np.concatenate((temp,[LCjitterind]),axis=0)
     
         #baseline
-        bfstart= 1+7*npl+nddf+nocc*3+nfilt*2 + nphot + nRV*2  # the first index in the param array that refers to a baseline function    
-        blind = np.asarray(list(range(bfstart+i*20,bfstart+i*20+20)))  # the indices for the coefficients for the base function   
+        bfstart= 1+7*npl+nttv+nddf+nocc*4+nfilt*2 + nphot + nRV*2  # the first index in the param array that refers to a baseline function    
+        blind = np.asarray(list(range(bfstart+i*22,bfstart+i*22+22)))  # the indices for the coefficients for the base function   
 
         lcstep1 = np.where(stepsize[blind]!=0.)
         
@@ -1043,8 +1085,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             temp=np.copy(rvstep)
 
         # identify the gamma index of this RV (note: each gamma comes with a jitter, so 2 indices needed per rvdata)
-        gammaind  = 1+7*npl + nddf+nocc*3 + nfilt*2 + nphot + i*2
-        jitterind = 1+7*npl + nddf+nocc*3 + nfilt*2 + nphot + i*2 + 1
+        gammaind  = 1+7*npl +nttv+ nddf+nocc*4 + nfilt*2 + nphot + i*2
+        jitterind = 1+7*npl +nttv+ nddf+nocc*4 + nfilt*2 + nphot + i*2 + 1
 
         if (stepsize[gammaind]!=0.):           
             temp=np.concatenate((temp,[gammaind]),axis=0)
@@ -1052,7 +1094,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (stepsize[jitterind]!=0.):           
             temp=np.concatenate((temp,[jitterind]),axis=0)
             
-        bfstart= 1+7*npl+nddf+nocc*3+nfilt*2 + nphot + nRV*2 + nphot*20  # the first index in the param array that refers to an RV baseline function    
+        bfstart= 1+7*npl+nttv+nddf+nocc*4+nfilt*2 + nphot + nRV*2 + nphot*22  # the first index in the param array that refers to an RV baseline function    
         blind = np.asarray(list(range(bfstart+i*12,bfstart+i*12+12)))  # the indices for the coefficients for the base function    
 
         rvstep1 = np.where(stepsize[blind]!=0.)
@@ -1104,7 +1146,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         both.sort()
         indices_A = [fullist.index(x) for x in both]
         pindices.append(indices_A)
-
+    #pnames[jumping][pindices[0]]  #jumping params in lc1
     ewarr=np.nan#grweights(earr,indlist,grnames,groups,ngroup,nphot)
 
 
@@ -1135,8 +1177,11 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             if (norm_sigma[jj]>0.):  #normal prior
                 lpri = t_norm(uni_low[jj],uni_up[jj],norm_mu[jj],norm_sigma[jj])
                 prior_distr.append(lpri)
-            else:                    #uniform prior
-                llim = uni(uni_low[jj],uni_up[jj])
+            else:                    #uniform prior/loguni for rho_star
+                if jnames[jj] == "rho_star":
+                    llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 0.01, uni_up[jj])
+                else:
+                    llim = uni(uni_low[jj],uni_up[jj])
                 prior_distr.append(llim)
 
     ## plot the prior distributions
@@ -1150,12 +1195,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     for jj in range(ndim):
         ax[jj].hist(prior_distr[jj].rvs(1000), label=jnames[jj], density=True)
         stp = start_pars[jj]*ppm if (jnames[jj].startswith('GPlc') and 'Amp' in jnames[jj]) else start_pars[jj]
-        ax[jj].axvline(stp,color="red",label=stp)
+        ax[jj].axvline(stp,color="red",label=f"{start_pars[jj]:.4e}" if start_pars[jj] < 1e-3 else f"{start_pars[jj]:.4f}")
         ax[jj].set_yticks([])
         ax[jj].legend()
         if (jnames[jj].startswith('GPlc') and 'Amp' in jnames[jj]):
             ax[jj].set_xticklabels(ax[jj].get_xticks()*1e6)
     for jj in range(ndim,nrows*6): ax[jj].axis("off")   #remove unused subplots
+    plt.subplots_adjust(hspace=0.2)
     fig.savefig(f"{out_folder}/priors.png", bbox_inches="tight")
     matplotlib.use(__default_backend__)
 
@@ -1166,7 +1212,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     inmcmc = 'n'
     indparams = [t_arr,f_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
-                nocc,0,0,grprs,egrprs,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, 
+                nocc,nttv,col8_arr,grprs,lc_obj._ttvs.conf,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, 
                 cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
                 pindices,jumping,pnames_all[jumping],prior_distr,priors[jumping],priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
                 jumping_noGP,gpkerns,jit_apply,jumping_GP,GPstepsizes,sameLCgp,npl,useSpline_lc,useSpline_rv,s_samp,
@@ -1178,8 +1224,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
-    if debug: print(f'finished mcmc_plots, took {(time.time() - debug_t2)} secs')
+    fit_plots(mval,t_arr,f_arr,e_arr,nttv, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
+    if debug: print(f'finished fit_plots, took {(time.time() - debug_t2)} secs')
 
 
     ########################### MCMC run ###########################################
@@ -1291,9 +1337,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             print('fitting parameters: ', pnames_all[jumping])
 
             sampler = dynesty.NestedSampler(logprob_multi, prior_transform, ndim, nlive=nlive,sample="rwalk",
-                                    logl_args=(indparams),ptform_args=(prior_distr,jnames),pool=Pool(nproc), queue_size=nproc-2)
+                                    logl_args=(indparams),ptform_args=(prior_distr,jnames),pool=Pool(nproc), queue_size=max(nproc-2,1))
             sampler.run_nested(dlogz=dlogz, **kwargs)
             dyn_res = sampler.results
+            #dynesty trace plot
+            import dynesty.plotting as dyplot
+            for i in range(nplot):
+                fig, ax = dyplot.traceplot(dyn_res,dims=np.arange(i*nplotpars,(i+1)*nplotpars), 
+                                            labels=jnames[i*nplotpars:(i+1)*nplotpars], quantiles=[0.16,0.5,0.84])
+                fig.savefig(out_folder+"/dynesty_trace_{i}.png", bbox_inches="tight")
+
             dyn_summary(dyn_res,out_folder)   #write summary to file evidence.dat
 
             weights   = np.exp(dyn_res['logwt'] - dyn_res['logz'][-1])
@@ -1385,7 +1438,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #median
     mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],*indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
-    mcmc_plots(mval,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
+    fit_plots(mval,t_arr,f_arr,e_arr, nttv,nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
 
     #AKIN: save summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
@@ -1395,7 +1448,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #max_posterior
     mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
-    mcmc_plots(mval2,t_arr,f_arr,e_arr, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
+    fit_plots(mval2,t_arr,f_arr,e_arr,nttv, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
 
     maxresiduals = f_arr - mval2 if statistic != "median" else f_arr - mval  #Akin allow statistics to be based on median of posterior
     chisq = np.sum(maxresiduals**2/e_arr**2)
@@ -1435,5 +1488,5 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     #make print out statement in the fashion of conan the barbarian
     print(_text_format.RED + "\nCONAN: I have now crushed your data," +\
           "\n\tthe planetary information it hides is laid bare in the results."+\
-          "\n\t\tI am now ready for another quest. \n" + _text_format.END)
+          "\n\t\tI am super ready for another quest. \n" + _text_format.END)
     return result

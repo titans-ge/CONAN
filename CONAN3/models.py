@@ -18,16 +18,78 @@ from .utils import rho_to_aR, cosine_atm_variation, reflection_atm_variation, ph
 from types import SimpleNamespace
 
 
-def TTV_Model(tarr, rho_star, T0, RpRs, b, per, eos=[0], eoc=[0],q1=0,q2=0, split_conf=None,
+def TTV_Model(tarr, rho_star, T0_list, RpRs, b, per, eos=[0], eoc=[0],q1=0,q2=0, split_conf=None,
                     args=None,planet_only=False,ss=None ):
+    """ 
+    computes the TTV model for a given set of parameters along with the baseline
+
+    Parameters
+    ----------
+    tarr : array-like
+        The timestamps of the lightcurve
+    rho_star : float
+        Stellar density [g/cm^3]
+    T0_list : list
+        transit times in each chunk of the data
+    RpRs : list
+        Planet-to-star radius ratio
+    b : list
+        Impact parameter
+    per : list
+        Orbital period [days]
+    eos : list
+        sqrt(ecc)*sin(omega)
+    eoc : list
+        sqrt(ecc)*cos(omega)
+    q1 : float
+        LD coefficient 1
+    q2 : float
+        LD coefficient 2
+    split_conf : SimpleNamespace
+        The configuration for the split data
+    args : array-like
+        The arguments of the model
+    planet_only : bool
+        If True, only return the planet model (no baseline)
+    ss : SimpleNamespace
+        The configuration for the supersampling
+
+    Returns
+    -------
+    mm : array-like
+        The lightcurve model for the given parameters
+    model_components : dict
+        The components of the model for each planet in a system    
+
+    Examples
+    --------
+    >>> from CONAN3.models import TTV_Model
+    >>> from CONAN3.utils import split_transits
+    >>> import numpy as np
+    >>> spt = split_transits(t, P=[0.9414526], t_ref=[1375.1698], flux=f)
+    >>> trans_mod,_ = TTV_Model(t, rho_star = rho_star, T0=spt.t0_list, RpRs=[RpRs], b =[b], 
+    >>>                 per=[per], eos=eos, eoc=eoc, q1=q1, q2=q2, split_conf=spt, planet_only=True)
+
+    """
 
     mm = np.ones_like(tarr)          #baseline of lc model
 
-    for i,ind in enumerate(split_conf.indices):      #select indices of each transit in the array and compute transit model for each with its own T0
+    #for each chunk of the data, compute transit model with different T0s for the transit of each planet
+    for i in range(split_conf.n_chunks):     
+        this_t0    = T0_list[i]      #transit times in this chunk of data
+        cuts       = split_conf.tr_edges[i]
+        ind        = (tarr>=cuts[0]) & (tarr<=cuts[1])
         tarr_split = tarr[ind]
-        this_t0    = T0[0][i]
-        TM = Transit_Model(rho_star=rho_star, T0=[this_t0], RpRs=RpRs, b=b, per=per, eos=eos, eoc=eoc, ddf=0, 
-                                    occ=0, A=0, delta=0, q1=q1, q2=q2, npl=1)
+
+        plnum      = split_conf.plnum_list[i]   #planet number in this chunk of data
+        P          = list(np.array(per)[plnum])
+        rprs       = list(np.array(RpRs)[plnum])
+        sesinw     = list(np.array(eos)[plnum])
+        secosw     = list(np.array(eoc)[plnum])
+        imp_par    = list(np.array(b)[plnum])
+
+        TM = Transit_Model(rho_star=rho_star, T0=this_t0, RpRs=rprs, b=imp_par, per=P, eos=sesinw, eoc=secosw, 
+                            ddf=0, occ=0, A_atm=0, delta=0, q1=q1, q2=q2, npl=len(this_t0))
         this_trans,_ = TM.get_value(tarr_split, args=None,planet_only=True,ss=ss)
         mm[ind]      = this_trans
 
@@ -40,7 +102,7 @@ def TTV_Model(tarr, rho_star, T0, RpRs, b, per, eos=[0], eoc=[0],q1=0,q2=0, spli
     tt, ft             =  args[i], args[i+1] ; i+=2
     col3_in, col4_in   =  args[i], args[i+1] ; i+=2
     col6_in, col5_in   =  args[i], args[i+1] ; i+=2
-    col7_in, _         =  args[i], args[i+1] ; i+=2
+    col7_in, col8_in   =  args[i], args[i+1] ; i+=2
     _                  =  args[i] ; i+=1
     _, _               =  args[i], args[i+1] ; i+=2
     _                  =  args[i] ; i+=1
@@ -59,19 +121,20 @@ def TTV_Model(tarr, rho_star, T0, RpRs, b, per, eos=[0], eoc=[0],q1=0,q2=0, spli
     col4 = np.copy(col4_in)
     col6 = np.copy(col6_in)
     col7 = np.copy(col7_in)
+    col8 = np.copy(col8_in)
     ts   = tt-np.median(tt)  
 
     # MONIKA: added least square optimisation for baselines
     if (baseLSQ == 'y'):
         #bvar contains the indices of the non-fixed baseline variables        
         coeffstart  = np.copy(bases[bvar])   
-        icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, col5, col3, col4, col6, col7))
+        icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, col5, col3, col4, col6, col7,col8))
         coeff = np.copy(bases)
         coeff[bvar] = np.copy(icoeff)   
     else:        
         coeff = np.copy(bases)  # the input coefficients 
 
-    bfunc,spl_comp = basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,ft/mm,useSpline)
+    bfunc,spl_comp = basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,col8,ft/mm,useSpline)
     mod=mm*bfunc
     
     lc_result = SimpleNamespace(planet_LC=mm, full_LCmod=mod, LC_bl=bfunc, spline=spl_comp )
@@ -122,7 +185,7 @@ class Transit_Model(Model):
 
     """
 
-    def __init__(self, rho_star, T0, RpRs, b, per, eos, eoc, ddf, q1, q2, occ=0, A=None, delta=None, npl=1):
+    def __init__(self, rho_star, T0, RpRs, b, per, eos, eoc, ddf, q1, q2, occ=0, A_atm=None, delta=None, A_ev=None, npl=1):
         self.rho_star = rho_star
         self.T0       = T0
         self.RpRs     = RpRs
@@ -135,10 +198,11 @@ class Transit_Model(Model):
         self.q1       = q1
         self.q2       = q2
         self.npl      = npl
-        self.A        = A
+        self.A_atm     = A_atm
         self.delta    = delta
+        self.A_ev     = A_ev
 
-        self.parameter_names = ['rho_star','T0', 'RpRs', 'b', 'per', 'eos', 'eoc', 'ddf', 'q1', 'q2', 'occ', 'A','delta']
+        self.parameter_names = ['rho_star','T0', 'RpRs', 'b', 'per', 'eos', 'eoc', 'ddf', 'q1', 'q2', 'occ', 'A_atm','delta', 'A_ev']
 
     def get_value(self, tarr, args=None,planet_only=False,ss=None):
         """ 
@@ -152,6 +216,8 @@ class Transit_Model(Model):
             The arguments of the model
         planet_only : bool
             If True, only return the planet model (no baseline)
+        ss : SimpleNamespace
+            The configuration for the supersampling
 
         Returns
         -------
@@ -168,7 +234,7 @@ class Transit_Model(Model):
             tt, ft             =  args[i], args[i+1] ; i+=2
             col3_in, col4_in   =  args[i], args[i+1] ; i+=2
             col6_in, col5_in   =  args[i], args[i+1] ; i+=2
-            col7_in, bis_in    =  args[i], args[i+1] ; i+=2
+            col7_in, col8_in   =  args[i], args[i+1] ; i+=2
             contra_in          =  args[i] ; i+=1
             isddf, rprs0       =  args[i], args[i+1] ; i+=2
             grprs_here         =  args[i] ; i+=1
@@ -303,15 +369,16 @@ class Transit_Model(Model):
 
             if self.occ < 0: mm0[ph_occultation] = 1-mm0[ph_occultation]+1  #allow negative depths
             
-            if self.A not in [None,0]:    
+            if self.A_atm not in [None,0]:    
                 #sepate the transit and occultation models and add the atmospheric variation
                 f_trans[ph_transit]   = mm0[ph_transit]
                 f_occ[ph_occultation] = mm0[ph_occultation]
                 f_occ                 = rescale(f_occ)  #rescale the occultation model to be between 0 and 1
                 
                 phase  = phase_fold(tt_ss,self.per[n],self.T0[n])
-                atm    = cosine_atm_variation(phase, Fp, self.A, self.delta)
-                lc_mod = f_trans + f_occ*atm.pc
+                atm    = cosine_atm_variation(phase, Fp, self.A_atm, self.delta)
+                ellps  = self.A_ev * (1 - (np.cos(2*(2*np.pi*phase))) )
+                lc_mod = f_trans*(1+ellps) + f_occ*atm.pc
             else:
                 lc_mod = mm0.copy()
 
@@ -335,19 +402,20 @@ class Transit_Model(Model):
         col4 = np.copy(col4_in)
         col6 = np.copy(col6_in)
         col7 = np.copy(col7_in)
+        col8 = np.copy(col8_in)
         ts   = tt-np.median(tt)  
 
         # MONIKA: added least square optimisation for baselines
         if (baseLSQ == 'y'):
             #bvar contains the indices of the non-fixed baseline variables        
             coeffstart  = np.copy(bases[bvar])   
-            icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, col5, col3, col4, col6, col7))
+            icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, col5, col3, col4, col6, col7,col8))
             coeff = np.copy(bases)
             coeff[bvar] = np.copy(icoeff)   
         else:        
             coeff = np.copy(bases)  # the input coefficients 
 
-        bfunc,spl_comp = basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,ft/mm,useSpline)
+        bfunc,spl_comp = basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,col8,ft/mm,useSpline)
         mod=mm*bfunc
         
         lc_result = SimpleNamespace(planet_LC=mm, full_LCmod=mod, LC_bl=bfunc, spline=spl_comp )
@@ -355,7 +423,7 @@ class Transit_Model(Model):
         return lc_result
 
 
-def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
+def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,col8,res,useSpline):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
     DA = locals().copy()
     DA["col0"] = ts
@@ -367,7 +435,8 @@ def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
     bfunc += coeff[9]*col5  + coeff[10]*np.power(col5,2)       #airmass col5
     bfunc += coeff[11]*col6 + coeff[12]*np.power(col6,2)  #fwhm/conta col6
     bfunc += coeff[13]*col7 + coeff[14]*np.power(col7,2)    #sky/bg col7
-    bfunc += coeff[15]*np.sin(ts*coeff[16]+coeff[17])   #sinusoidal col8
+    bfunc += coeff[15]*col8 + coeff[16]*np.power(col8,2)    #sky/bg col8
+    bfunc += coeff[17]*np.sin(ts*coeff[18]+coeff[19])   #sinusoidal 
 
     if isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to ones
         spl= x = np.ones_like(ts)
@@ -385,9 +454,8 @@ def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
         if dim == 2:
             x1      = np.copy(DA[s_par[0]])
             x2      = np.copy(DA[s_par[1]])
-            x       = x1 #np.vstack([x1,x2]).T
-            knots1  = np.arange(min(x1)+kn, max(x1), kn )
-            knots2  = np.arange(min(x2)+kn, max(x2), kn )
+            knots1  = np.arange(min(x1)+kn[0], max(x1), kn[0] )
+            knots2  = np.arange(min(x2)+kn[1], max(x2), kn[1] )
             ys      = (res/bfunc)
 
             splfunc = LSQBivariateSpline(x1, x2, ys, knots1, knots2, kx=useSpline.deg[0], ky=useSpline.deg[1])
@@ -395,10 +463,10 @@ def basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,res,useSpline):
 
     return bfunc*spl, spl
 
-def para_minfunc(icoeff, ivars, mm, ft, ts, col5, col3, col4, col6, col7):
-    icoeff_full = np.zeros(20)
+def para_minfunc(icoeff, ivars, mm, ft, ts, col5, col3, col4, col6, col7,col8):
+    icoeff_full = np.zeros(22)
     icoeff_full[ivars] = np.copy(icoeff)
-    bfunc,_,_ = basefunc_noCNM(icoeff_full, ts, col5, col3, col4, col6, col7,0,False)   # fit baseline without spline here
+    bfunc,_,_ = basefunc_noCNM(icoeff_full, ts, col5, col3, col4, col6, col7,col8,0,False)   # fit baseline without spline here
     fullmod = np.multiply(bfunc, mm)
 
     return (ft - fullmod)
@@ -408,7 +476,7 @@ def para_minfunc(icoeff, ivars, mm, ft, ts, col5, col3, col4, col6, col7):
 ####### radial velocity model
 def RadialVelocity_Model(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None,RVmes=None,RVerr=None,bis=None,fwhm=None,contra=None,
                 nfilt=None,baseLSQ=None,inmcmc=None,nddf=None,nocc=None,nRV=None,nphot=None,j=None,RVnames=None,bvarsRV=None,gammaind=None,
-                useSpline=None,npl=None,planet_only=False):
+                nttv=None,useSpline=None,npl=None,planet_only=False):
     """ 
     Model the radial velocity curve of planet(s). 
     T0, per, K_in, sesinw, secosw are given as lists of the same length (npl), each element corresponding to a planet.
@@ -542,7 +610,7 @@ def RadialVelocity_Model(tt,T0,per,K_in,sesinw=0,secosw=0,Gamma_in=0,params=None
     if planet_only:
         return mod_RV-Gamma_in, model_components
 
-    bfstartRV= 1+7*npl + nddf + nocc + nfilt*2 + nphot+ 2*nRV + nphot*20 +j*12  #the first index in the param array that refers to a baseline function
+    bfstartRV= 1+7*npl + nttv + nddf + nocc + nfilt*2 + nphot+ 2*nRV + nphot*22 +j*12  #the first index in the param array that refers to a baseline function
     incoeff = list(range(bfstartRV,bfstartRV+12))  # the indices for the coefficients for the base function        
 
     ts = tt-np.median(tt)

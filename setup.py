@@ -18,7 +18,7 @@ setup(name='CONAN3',
       author_email='monika.lendl@unige.ch',
       license='MIT',
       packages=['CONAN3'],
-      install_requires=['numpy', 'scipy','pandas','lmfit','dynesty',
+      install_requires=['numpy', 'scipy','pandas','lmfit','dynesty', 'astropy',
                         'batman-package','celerite','corner','lightkurve',
                         'matplotlib','emcee','george','ldtk','tqdm'],
       ext_modules=[extOccultnl,extOccultquad]
