@@ -1,3 +1,8 @@
+12-Feb-2024: version 3.1.3
+~~~~~~~~~~~~
+* added estimate of rms and jitter for lc_obj and rv_obj
+* "auto" option for the limits of the lc and rv paramteric baseline parameters. 
+
 8-Feb-2024: version 3.1.2
 ~~~~~~~~~~~~
 * fit configfile from command line: >>> conanfit config_file.dat

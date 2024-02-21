@@ -139,6 +139,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     bases_init = lc_obj._bases_init
     groups     = lc_obj._groups
     useGPphot  = lc_obj._useGPphot
+    jitt_start = np.log(lc_obj._jitt_estimate)
 
     nphot      = len(names)                                                 # the number of photometry input files
     njumpphot  = np.zeros(nphot)                                            # the number of jumping parameters for each photometry input file
@@ -163,6 +164,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     nRV      = len(RVnames)             # the number of RV input files
     njumpRV  = np.zeros(nRV)        # the number of jumping parameters for each RV input file
     useGPrv  = ["n"]*nRV if rv_obj is None else rv_obj._useGPrv 
+    rvjitt_start = rv_obj._jitt_estimate if rv_obj is not None else 0
 
     useSpline_rv  = [] if rv_obj is None else rv_obj._rvspline   
     input_rvs     = {} if rv_obj is None else rv_obj._input_rv  
@@ -372,6 +374,56 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     lm               = True if DA_mc['lssq_use_Lev_Marq'] =='y' else False  # use Levenberg-Marquardt algorithm for minimizer?
     cf_apply         = DA_mc['apply_CFs']  # which CF to apply
 
+    #limits on parametric baseline pars: auto or user-defined
+    #LC
+    lcbases_lims = [dict(off = [input_lcs[names[i]]["col1"].min(),input_lcs[names[i]]["col1"].max()], #min,max flux
+                        amp=[0,1], freq=[1,333], phi=[0,1], ACNM=[0,1e8], BCNM=[0,1e8], C0=[-1,1], D0=[-1,1]) 
+                        for i in range(lc_obj._nphot)]
+
+    col_pars = [f"{L}{c}" for c in [0,3,4,5,6,7] for L in ["A","B"]] + ["C0","D0"]    #decorr_params
+    if isinstance(LCbase_lims,list):   # set all lims to user-defined LCbase_lims
+        for i in range(lc_obj._nphot):
+            for k in col_pars: lcbases_lims[i][k] = LCbase_lims
+                
+    else:                              #auto determine best lims from data. rms/1% span of the decorr_column
+        for i in range(lc_obj._nphot):
+            fl_arr = input_lcs[names[i]]["col1"]
+            for c in [0,3,4,5,6,7]:      #col numbers
+                arr = input_lcs[names[i]][f"col{c}"]
+                arr = arr-np.median(arr) if c==0 else arr    #if time array, sutract median
+                if np.ptp(arr) > 0:      #if variation in this column
+                    alim = np.ptp(fl_arr)/np.ptp(arr**1)    #max flux change occuring in across the range of the decorr_column
+                    alim = max(alim,1)
+                    lcbases_lims[i][f"A{c}"] = [-alim,alim]
+
+                    blim = np.ptp(fl_arr)/np.ptp(arr**2)
+                    blim = max(blim,1)
+                    lcbases_lims[i][f"B{c}"] = [-blim,blim]
+                else:     #set to [-1,1]
+                    lcbases_lims[i][f"A{c}"] = lcbases_lims[i][f"B{c}"] = [-1,1]
+
+    #RV
+    rvbases_lims = [dict(amp=[0,1], freq=[1,100], phi=[0,1], phi2=[0,1]) for i in range(rv_obj._nRV)]
+    col_pars = [f"{L}{c}" for c in [0,3,4,5] for L in ["A","B"]]    #decorr_params
+    if isinstance(RVbase_lims,list):   # set all lims to user-defined RVbase_lims
+        for i in range(rv_obj._nRV):
+            for k in col_pars: rvbases_lims[i][k] = RVbase_lims
+    else:                              #auto determine best lims from data. rms/1% span of the decorr_column
+        for i in range(rv_obj._nRV):
+            rv_arr = input_rvs[RVnames[i]]["col1"]
+            for c in [0,3,4,5]:
+                arr = input_rvs[RVnames[i]][f"col{c}"]
+                arr = arr-np.median(arr) if c==0 else arr
+                if np.ptp(arr) > 0:
+                    alim = np.ptp(rv_arr)/np.ptp(arr**1)
+                    alim = max(alim,5)
+                    rvbases_lims[i][f"A{c}"] = [-alim,alim]
+
+                    blim = np.ptp(rv_arr)/np.ptp(arr**2)
+                    blim = max(blim,5)
+                    rvbases_lims[i][f"B{c}"] = [-blim,blim]
+                else:
+                    rvbases_lims[i][f"A{c}"] = rvbases_lims[i][f"B{c}"] = [-1,1]
 
 
 #========= stellar properties==========================
@@ -512,10 +564,14 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     for i in range(nphot):    #add jitter
         if (jit_LCapply=='y'):
             #in ppm
-            params      = np.concatenate((params,  [np.median(DA_mc['LCjitter_loglims'])]), axis=0)    #20ppm
+            params      = np.concatenate((params,  [jitt_start[i]]), axis=0)    
             stepsize    = np.concatenate((stepsize,[0.1]), axis=0)
-            pmin        = np.concatenate((pmin,    [DA_mc['LCjitter_loglims'][0]]), axis=0)
-            pmax        = np.concatenate((pmax,    [DA_mc['LCjitter_loglims'][1]]), axis=0)
+            #ensure jitt start values are within the limits else set new limits around the start value
+            if LCjitter_loglims[0] >= jitt_start[i]: LCjitter_loglims[0] = jitt_start[i] - 5
+            if LCjitter_loglims[1] <= jitt_start[i]: LCjitter_loglims[1] = jitt_start[i] + 5
+
+            pmin        = np.concatenate((pmin,    [LCjitter_loglims[0]]), axis=0)
+            pmax        = np.concatenate((pmax,    [LCjitter_loglims[1]]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
@@ -543,10 +599,14 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         
         if (jit_apply=='y'):
-            params      = np.concatenate((params,  [0.001]), axis=0)
+            params      = np.concatenate((params,  [rvjitt_start[i]]), axis=0)
             stepsize    = np.concatenate((stepsize,[0.0001]), axis=0)
-            pmin        = np.concatenate((pmin,    [DA_mc["RVjitter_lims"][0]]), axis=0)
-            pmax        = np.concatenate((pmax,    [DA_mc["RVjitter_lims"][1]]), axis=0)
+            #ensure jitt start values are within the limits else set new limits around the start value
+            if RVjitter_lims[0] >= rvjitt_start[i]: RVjitter_lims[0] = 0
+            if RVjitter_lims[1] <= rvjitt_start[i]: RVjitter_lims[1] = rvjitt_start[i] + 2
+
+            pmin        = np.concatenate((pmin,    [RVjitter_lims[0]]), axis=0)
+            pmax        = np.concatenate((pmax,    [RVjitter_lims[1]]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
@@ -622,7 +682,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         
         #baseline parameters
         # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
-        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[i],bases_init[i],LCbase_lims)  # the baseline coefficients for this lightcurve; each is a 2D array
+        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[i],bases_init[i],lcbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot      = nbc_tot+nbc # add up the number of jumping baseline coeff
         njumpphot[i] = njumpphot[i]+nbc   # each LC has another jump pm
 
@@ -779,7 +839,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         Pin       = sinPs[i]
 
         #rv baseline 
-        dcol0RV, dcol3RV, dcol4RV, dcol5RV,dsinRV,nbcRV = basecoeffRV(RVbases[i],Pin,RVbases_init[i],RVbase_lims)  # the baseline coefficients for this lightcurve; each is a 2D array
+        dcol0RV, dcol3RV, dcol4RV, dcol5RV,dsinRV,nbcRV = basecoeffRV(RVbases[i],Pin,RVbases_init[i],rvbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot = nbc_tot+nbcRV # add up the number of jumping baseline coeff
         abvar=np.concatenate(([dcol0RV[1,:],dcol3RV[1,:],dcol4RV[1,:],dcol5RV[1,:],dsinRV[1,:]]))
         abind=np.where(abvar!=0.)
@@ -1090,7 +1150,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     for jj in range(ndim):
         ax[jj].hist(prior_distr[jj].rvs(1000), label=jnames[jj], density=True)
         stp = start_pars[jj]*ppm if (jnames[jj].startswith('GPlc') and 'Amp' in jnames[jj]) else start_pars[jj]
-        ax[jj].axvline(stp,color="red")
+        ax[jj].axvline(stp,color="red",label=stp)
         ax[jj].set_yticks([])
         ax[jj].legend()
         if (jnames[jj].startswith('GPlc') and 'Amp' in jnames[jj]):
@@ -1131,6 +1191,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     nplot     = int(np.ceil(ndim/15))                #number of chain and corner plots to make
     nplotpars = int(np.ceil(ndim/nplot))             #number of parameters to plot in each plot
+
+    #TODO: allow resuming sampling with emcee and dynesty
 
     if fit_sampler == "emcee":
         if nchains < 3*ndim:

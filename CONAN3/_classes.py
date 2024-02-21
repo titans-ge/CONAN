@@ -115,7 +115,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
                 offset=None, A0=None, B0=None, A3=None, B3=None,
                 A4=None, B4=None, A5=None, B5=None,
                 A6=None, B6=None, A7=None, B7=None,
-                npl=1,return_models=False):
+                npl=1,jitter=0,return_models=False):
     """
     linear decorrelation with different columns of data file. It performs a linear model fit to the columns of the file.
     It uses columns 0,3,4,5,6,7 to construct the linear trend model. A spline can also be included to decorrelate against any column.
@@ -146,6 +146,9 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
 
     npl : int; 
         number of planets in the system. default is 1.
+
+    jitter : float;
+        jitter value to quadratically add to the errorbars of the data.
         
     return_models : Bool;
         True to return trend model and transit/eclipse model.
@@ -319,7 +322,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
         else:
             spl = 0
 
-        res = (resid-spl)/df["col2"]
+        res = (resid-spl)/(df["col2"]**2 + jitter**2)**0.5
         for p in fit_params:
             u = fit_params[p].user_data  #obtain tuple specifying the normal prior if defined
             if u:  #modify residual to account for how far the value is from mean of prior
@@ -344,7 +347,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
     
     out.time       = np.array(df["col0"])
     out.flux       = np.array(df["col1"])
-    out.flux_err   = np.array(df["col2"])
+    out.flux_err   = (np.array(df["col2"])**2 + jitter**2)**0.5
     out.data       = df
 
     out.rms        = np.std(out.flux - out.bestfit)
@@ -360,7 +363,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None,  Impact_para=0, RpRs=None,
 
 
 def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None, decorr_bound=(-1000,1000),
-                A0=None, B0=None, A3=None, B3=None, A4=None, B4=None, A5=None, B5=None, npl=1,return_models=False):
+                A0=None, B0=None, A3=None, B3=None, A4=None, B4=None, A5=None, B5=None, npl=1,jitter=0,return_models=False):
     """
     linear decorrelation with different columns of data file. It performs a linear model fit to the 3rd column of the file.
     It uses columns 0,3,4,5 to construct the linear trend model.
@@ -380,6 +383,9 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
     
     npl : int; 
         number of planets in the system. default is 1.
+
+    jitter : float;
+        jitter value to quadratically add to the errorbars of the data.
         
     return_models : Bool;
         True to return trend model and transit/eclipse model.
@@ -472,7 +478,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
     #perform fitting 
     def chisqr(fit_params):
         rvmod = trend_model(fit_params)+rv_model(fit_params,npl=npl)
-        res = (df["col1"] - rvmod)/df["col2"]
+        res = (df["col1"] - rvmod)/(df["col2"]**2 + jitter**2)**0.5
         for p in fit_params:
             u = fit_params[p].user_data  #obtain tuple specifying the normal prior if defined
             if u:  #modify residual to account for how far the value is from mean of prior
@@ -488,7 +494,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
     out.rvmodel = rv_model(out.params,npl=npl)
     out.time    = np.array(df["col0"])
     out.rv      = np.array(df["col1"])
-    out.rv_err  = np.array(df["col2"])
+    out.rv_err  = (np.array(df["col2"])**2 + jitter**2)**0.5
     out.data    = df
     out.rms     = np.std(out.rv - out.bestfit)
     out.ndata   = len(out.time)
@@ -870,6 +876,7 @@ class load_lightcurves:
 
         #modify input files to have 9 columns as CONAN expects then save as attribute of self
         self._input_lc = {}     #dictionary to hold input lightcurves
+        self._rms_estimate, self._jitt_estimate = [], []
         for f in self._names:
             fdata = np.loadtxt(self._fpath+f)
             nrow,ncol = fdata.shape
@@ -881,7 +888,11 @@ class load_lightcurves:
             #store input files in lc object
             self._input_lc[f] = {}
             for i in range(9): self._input_lc[f][f"col{i}"] = fdata[:,i]
-        
+            #compute rms and multiplicative jitter
+            self._rms_estimate.append( np.std(np.diff(fdata[:,1]))/np.sqrt(2) )      #std(diff(flux))/√2 is a good estimate of the rms noise
+            self._jitt_estimate.append( np.sqrt(self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)) ) # √(rms^2 - mean(err^2)) is a good estimate of the required jitter to add quadratically
+            if np.isnan(self._jitt_estimate[-1]): self._jitt_estimate[-1] = 1e-20
+
         #list to hold initial baseline model coefficients for each lc
         self._bases_init =  [dict(off=1, A0=0, B0= 0, C0=0, D0=0,A3=0, B3=0, A4=0, B4=0,
                                     A5=0, B5=0, A6=0, B6=0,A7=0, B7=0, amp=0,freq=0,phi=0,ACNM=1,BCNM=0) 
@@ -934,8 +945,8 @@ class load_lightcurves:
 
     def get_decorr(self, T_0=None, Period=None, rho_star=None, D_occ=0, Impact_para=0, RpRs=1e-5,
                     Eccentricity=0, omega=90, A_pc=0, ph_off=0, K=0, q1=0, q2=0, 
-                    mask=False, spline=None,ss_exp =None,delta_BIC=-5, decorr_bound =(-1,1),
-                    exclude_cols=[], enforce_pars=[],show_steps=False, plot_model=True, 
+                    mask=False, spline=None,ss_exp =None,delta_BIC=-5, decorr_bound =(-10,10),
+                    exclude_cols=[], enforce_pars=[],show_steps=False, plot_model=True, use_jitter_est=False,
                     setup_baseline=True, setup_planet=False,verbose=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
@@ -985,6 +996,9 @@ class load_lightcurves:
             
             plot_model : Bool, optional;
                 Whether to overplot suggested trend model on the data. Defaults to True.
+
+            use_jitter_est : Bool, optional;
+                Whether to use the estimated jitter from the data in the decorrelation model. Defaults to False.
 
             setup_baseline : Bool, optional;
                 whether to use result to setup the baseline model and transit/eclipse models. Default is True.
@@ -1083,11 +1097,12 @@ class load_lightcurves:
 
         for j,file in enumerate(self._names):
             df = self._input_lc[file]
-            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for lc: {file} (spline={spline[j] is not None},s_samp={ss_exp[j] is not None})" + _text_format.END)
+            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for lc: {file} (spline={spline[j] is not None}, s_samp={ss_exp[j] is not None}, jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.2f}ppm)" + _text_format.END)
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
 
             out = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]], mask=mask,
-                            offset=0, decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], npl=self._nplanet)    #no trend, only offset
+                            offset=0, decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], 
+                            jitter=self._jitt_estimate[j] if use_jitter_est else 0, npl=self._nplanet)    #no trend, only offset
             best_bic  = out.bic
             best_pars = {"offset":0} if spline[j] is None else {}          #parameter always included
             for cp in enforce_pars: best_pars[cp]=0                             #add enforced parameters
@@ -1103,7 +1118,8 @@ class load_lightcurves:
                     dtmp = best_pars.copy()   #always include offset
                     dtmp[p] = 0
                     out = _decorr(self._input_lc[file], **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
-                                    decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], npl=self._nplanet)
+                                    decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], 
+                                    jitter=self._jitt_estimate[j] if use_jitter_est else 0, npl=self._nplanet)
                     if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                     pars_bic[p] = out.bic
 
@@ -1120,7 +1136,8 @@ class load_lightcurves:
                     all_par.remove(par_in)            
 
             result = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
-                                **best_pars, decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], npl=self._nplanet)
+                                **best_pars, decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], 
+                                jitter=self._jitt_estimate[j] if use_jitter_est else 0, npl=self._nplanet)
 
             self._decorr_result.append(result)
             if verbose: print(f"BEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
@@ -1282,6 +1299,11 @@ class load_lightcurves:
             #replace all columns of input file with the clipped data
             self._input_lc[file] = {k:v[ok] for k,v in thisLCdata.items()}
 
+            #recompute rms estimate and multiplicative jitter
+            self._rms_estimate[self._names.index(file)]  = np.std(np.diff(thisLCdata["col1"][ok]))/np.sqrt(2)
+            self._jitt_estimate[self._names.index(file)] = np.sqrt(self._rms_estimate[self._names.index(file)]**2 - np.mean(thisLCdata["col2"][ok]**2))
+            if np.isnan(self._jitt_estimate[self._names.index(file)]): self._jitt_estimate[self._names.index(file)] = 1e-20
+        
         self._clipped_data.flag = True # SimpleNamespace(flag=True, width=width, clip=clip, lc_list=lc_list, config=conf)
 
 
@@ -1681,7 +1703,7 @@ class load_lightcurves:
         if verbose: _print_output(self,"gp")
     
     
-    def planet_parameters(self, RpRs=0., Impact_para=0, rho_star=1, T_0=0, Period=0, 
+    def planet_parameters(self, RpRs=0., Impact_para=0, rho_star=0, T_0=0, Period=0, 
                             Eccentricity=0, omega=90, K=0, verbose=True):
         """
             Define parameters an priors of model parameters.
@@ -1776,7 +1798,7 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n`setup_phasecurve` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
 
 
-    def update_planet_parameters(self, RpRs=0., Impact_para=0, rho_star=1, T_0=0, Period=0, 
+    def update_planet_parameters(self, RpRs=0., Impact_para=0, rho_star=0, T_0=0, Period=0, 
                  Eccentricity=0, omega=90, K=0, verbose=True):
         """
             update parameters and priors of model parameters.
@@ -2308,6 +2330,7 @@ class load_rvs:
             if show_guide: print("Next: use method `rv_baseline` to define baseline model for for the each rv")
             
             #modify input files to have 6 columns as CONAN expects
+            self._rms_estimate, self._jitt_estimate = [], []
             for f in self._names:
                 fdata = np.loadtxt(self._fpath+f)
                 nrow,ncol = fdata.shape
@@ -2319,6 +2342,9 @@ class load_rvs:
                 #store input files in rv object
                 self._input_rv[f] = {}
                 for i in range(6): self._input_rv[f][f"col{i}"] = fdata[:,i]
+                self._rms_estimate.append(np.std(fdata[:,1]))   #std of rv
+                self._jitt_estimate.append( np.sqrt(self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)) )
+                if np.isnan(self._jitt_estimate[-1]): self._jitt_estimate[-1] = 0 
 
             #list to hold initial baseline model coefficients for each rv
             self._RVbases_init = [dict( A0=0, B0=0, A3=0, B3=0, A4=0, B4=0, A5=0, B5=0, 
@@ -2392,7 +2418,7 @@ class load_rvs:
 
     def get_decorr(self, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=0,
                     delta_BIC=-5, decorr_bound =(-1000,1000), exclude_cols=[],enforce_pars=[],
-                    show_steps=False, plot_model=True, setup_baseline=True,verbose=True ):
+                    show_steps=False, plot_model=True, use_jitter_est=False, setup_baseline=True,verbose=True ):
         """
             Function to obtain best decorrelation parameters for each rv file using the forward selection method.
             It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
@@ -2424,6 +2450,9 @@ class load_rvs:
             
             plot_model : Bool, optional;
                 Whether to plot data and suggested trend model. Defaults to True.
+
+            use_jitter_est : Bool, optional;
+                Whether to use the jitter estimate to setup the baseline model. Default is False.
 
             setup_baseline : Bool, optional;
                 whether to use result to setup the baseline model. Default is True.
@@ -2462,10 +2491,11 @@ class load_rvs:
 
         for j,file in enumerate(self._names):
             df = self._input_rv[file]
-            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for rv: {file}" + _text_format.END)
+            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for rv: {file} (jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.2f}{self._RVunit})" + _text_format.END)
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
 
-            out = _decorr_RV(df, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet)    #no trend, only offset
+            out = _decorr_RV(df, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet,
+                            jitter=self._jitt_estimate[j] if use_jitter_est else 0)    #no trend, only offset
             best_bic = out.bic
             best_pars = {}                      #parameter salways included
             for cp in enforce_pars: best_pars[cp]=0            #add enforced parameters
@@ -2479,7 +2509,8 @@ class load_rvs:
                 for p in all_par:
                     dtmp = best_pars.copy()  #temporary dict to hold parameters to test
                     dtmp[p] = 0
-                    out = _decorr_RV(df, **self._rv_pars,**dtmp, decorr_bound=decorr_bound, npl=self._nplanet)
+                    out = _decorr_RV(df, **self._rv_pars,**dtmp, decorr_bound=decorr_bound, npl=self._nplanet,
+                                    jitter=self._jitt_estimate[j] if use_jitter_est else 0)
                     if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                     pars_bic[p] = out.bic
 
@@ -2495,7 +2526,8 @@ class load_rvs:
                     best_bic = par_in_bic
                     all_par.remove(par_in)            
 
-            result = _decorr_RV(df, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet)
+            result = _decorr_RV(df, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet,
+                                jitter=self._jitt_estimate[j] if use_jitter_est else 0)
             self._rvdecorr_result.append(result)
             if verbose: print(f"\nBEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
             
@@ -2999,11 +3031,13 @@ class fit_setup:
         apply_LCjitter: "y" or "n";
         whether to apply a jitter term for the fit of LC data. Default is "y".
 
-        LCbasecoeff_lims: list of length 2;
-            limits of uniform prior for the LC baseline coefficients. Default is [-1,1].
+        LCbasecoeff_lims: "auto" or list of length 2: [lo_lim,hi_lim];
+            limits of uniform prior for the LC baseline coefficients default.
+            Dafault is "auto" which automatically determines the limits from data properties.
 
-        RVbasecoeff_lims: list of length 2;
-            limits of uniform prior for the RV baseline coefficients. Default is [-2,2].
+        RVbasecoeff_lims: "auto" or list of length 2: [lo_lim,hi_lim];
+            limits of uniform prior for the RV baseline coefficients. 
+            Dafault is "auto" which automatically determines the limits from data properties.
     
         Other keyword arguments to the emcee or dynesty sampler functions (`run_mcmc()` or `run_nested()`) can be given in the call to `CONAN3.fit_data`.
         
@@ -3020,12 +3054,16 @@ class fit_setup:
     def __init__(self, R_st=None, M_st=None, par_input = "Rrho",
                     apply_LCjitter="y", apply_RVjitter="y", 
                     LCjitter_loglims=[-15,-4], RVjitter_lims=[0,5],
-                    LCbasecoeff_lims = [-1,1], RVbasecoeff_lims = [-5,5], 
+                    LCbasecoeff_lims = "auto", RVbasecoeff_lims = "auto", 
                     leastsq_for_basepar="n", verbose=True):
         
         self._obj_type = "fit_obj"
         self._stellar_parameters(R_st=R_st, M_st=M_st, par_input = par_input, verbose=verbose)
-        
+        assert isinstance(LCbasecoeff_lims, (str,list)), f"fit_setup(): LCbasecoeff_lims must be a list or 'auto' but {LCbasecoeff_lims} given."
+        if isinstance(LCbasecoeff_lims, str): assert LCbasecoeff_lims=="auto", f"fit_setup(): LCbasecoeff_lims must be a list of length 2 or 'auto' but {LCbasecoeff_lims} given."
+        assert isinstance(RVbasecoeff_lims, (str,list)), f"fit_setup(): RVbasecoeff_lims must be a list or 'auto' but {RVbasecoeff_lims} given."
+        if isinstance(RVbasecoeff_lims, str): assert RVbasecoeff_lims=="auto", f"fit_setup(): RVbasecoeff_lims must be a list of length 2 or 'auto' but {RVbasecoeff_lims} given."
+
         DA = locals().copy()
         _ = DA.pop("self")            #remove self from dictionary
         _ = DA.pop("verbose")
