@@ -10,17 +10,17 @@ extOccultquad = Extension('occultquad',sources=['occultquad.f'])
 
 setup(name='CONAN3',
       version=__version__,
-      description='COde for exoplaNet ANalysis with Gaussian Process',
+      description='COde for exoplaNet ANalysis',
       long_description=open("README.md").read(),
       long_description_content_type='text/markdown',
       url='https://github.com/mlendl42/CONAN3',
-      author='Monika Lendl',
+      author='Monika Lendl, Babatunde Akinsanmi',
       author_email='monika.lendl@unige.ch',
       license='MIT',
       packages=['CONAN3'],
       install_requires=['numpy', 'scipy','pandas','lmfit','dynesty', 'astropy',
                         'batman-package','celerite','corner','lightkurve',
-                        'matplotlib','emcee','george','ldtk','tqdm'],
+                        'matplotlib','emcee','george','ldtk==1.7.0','tqdm'],
       ext_modules=[extOccultnl,extOccultquad]
       )
 

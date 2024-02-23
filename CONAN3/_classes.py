@@ -3815,11 +3815,11 @@ class load_result:
 
             >>> df1 = results['lc8det_lcout.dat']
             >>> df1.keys()
-            ['time', 'flux', 'error', 'full_mod', 'gp*base', 'transit', 'det_flux']
+            ['time', 'flux', 'error', 'full_mod', 'gp+base', 'transit', 'det_flux']
 
             >>> #plot arrays
             >>> plt.plot(df["time"], df["flux"],"b.")
-            >>> plt.plot(df["time"], df["gp*base"],"r")
+            >>> plt.plot(df["time"], df["gp+base"],"r")
             >>> plt.plot(df["time"], df["transit"],"g")
             
         """

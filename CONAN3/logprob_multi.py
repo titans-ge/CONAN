@@ -412,25 +412,25 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
 
             if inmcmc == 'y':
-                lnprob_thislc = gp.log_likelihood(f_in/trans_base, quiet=True)
+                lnprob_thislc = gp.log_likelihood(f_in-trans_base, quiet=True)
                 lnprob = lnprob + lnprob_thislc
             
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
                 which_GP = "George" if useGPphot[j]=='y' else "Celerite"
 
-                bfunc_gp= gp.predict(f_in/trans_base, t=pargp, return_cov=False, return_var=False) #gp_fit to residual
-                pred = bfunc_gp*trans_base    #gp * transit*baseline(w/wo spl)
+                bfunc_gp = gp.predict(f_in-trans_base, t=pargp, return_cov=False, return_var=False) #gp_fit to residual
+                pred     = bfunc_gp+trans_base    #gp + transit*baseline(w/wo spl)
                 
-                mod = np.concatenate((mod,pred))        #append the model to the output array
+                mod  = np.concatenate((mod,pred))        #append the model to the output array
                 emod = np.concatenate((emod,np.zeros(len(pred)))) #append the model error to the output array
 
-                bfunc_full = bfunc * bfunc_gp
-                det_LC   = f_in/bfunc_full    #detrended_data
+                bfunc_full = bfunc + bfunc_gp
+                det_LC     = f_in/bfunc - bfunc_gp    #detrended_data
                 
                 # write the lightcurve and the model to file or return output if we're not inside the MCMC
                 out_data     = np.stack((t_in,f_in,err_in,pred,bfunc_full,mt0,det_LC,lc_result.spline),axis=1)
-                header       = ["time","flux","error","full_mod","gp*base","transit","det_flux","spl_fit"]
+                header       = ["time","flux","error","full_mod","gp+base","transit","det_flux","spl_fit"]
                 header_fmt   = "{:14s}\t"*len(header)
                 phases       = np.zeros((len(t_in),npl))
 

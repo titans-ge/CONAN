@@ -1,3 +1,11 @@
+23-Feb-2024: version 3.1.5
+~~~~~~~~~~~~~
+* specified version of ldtk to install (1.7.0)
+* added information about flux arrays names available in tess data
+* fixed bug in making dynesty traceplot
+* changed mean of gp from 1 to 0 to reduce correlation with the offset parameter. full baseline thus changes from gp*base to gp+base 
+* modified GP parameters labels (*Amp{n}* and *len{n}*) to count from 1 instead of 0 where n is the kernel number
+
 19-Feb-2024: version 3.1.4
 ~~~~~~~~~~~~
 * fixed 2D spline fit for lc and rv data

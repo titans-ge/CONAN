@@ -90,7 +90,7 @@ class get_TESS_data(object):
             try:
                 self.lc[s] = self.lc[s].select_flux(select_flux)
             except:
-                print(f"{select_flux} is not available. Using sap_flux instead.")
+                print(f"{select_flux} is not available. Using 'sap_flux' instead. other options include ['kspsap_flux','det_flux'] ")
                 self.lc[s] = self.lc[s].select_flux("sap_flux")
 
             self.lc[s]= self.lc[s].remove_nans().normalize()

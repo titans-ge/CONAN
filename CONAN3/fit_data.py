@@ -32,7 +32,7 @@ import matplotlib
 matplotlib.use(__default_backend__)
 
 import multiprocessing as mp 
-mp.set_start_method('fork')
+# mp.set_start_method('fork')
 __all__ = ["run_fit"]
 
 def prior_transform(u,prior_dst,prior_names):
@@ -760,9 +760,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         elif useGPphot[i] in ['y','ce']:     #George or Celerite GP
             gp_conv  = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
-            thisLCgp = GPdict[names[i]]
-            gpcols   = [thisLCgp[f"amplitude{n}"].user_data[1] for n in range(thisLCgp["ngp"])]
-            gpkerns.append([thisLCgp[f"amplitude{n}"].user_data[0] for n in range(thisLCgp["ngp"])])
+            thisLCgp = GPdict[names[i]]        #the GP dictionary for this LC
+            gpcols   = [thisLCgp[f"amplitude{n}"].user_data[1] for n in range(thisLCgp["ngp"])]     #data column names to use for the GP
+            gpkerns.append([thisLCgp[f"amplitude{n}"].user_data[0] for n in range(thisLCgp["ngp"])]) #GP kernels of this lc
 
             for n in range(thisLCgp["ngp"]):                      #loop through the number of GPs for this LC
                 gpkern = thisLCgp[f"amplitude{n}"].user_data[0]   #kernel to use for this GP
@@ -776,9 +776,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 GPlimup     = np.concatenate((GPlimup,     [thisLCgp[f"amplitude{n}"].bounds_hi, thisLCgp[f"lengthscale{n}"].bounds_hi]), axis=0)
                 GPlimlo     = np.concatenate((GPlimlo,     [thisLCgp[f"amplitude{n}"].bounds_lo, thisLCgp[f"lengthscale{n}"].bounds_lo]), axis=0)
                 if not sameLCgp.flag:
-                    GPnames = np.concatenate((GPnames,     [f"GPlc{i+1}_Amp{n}_{gpcol}",f"GPlc{i+1}_len{n}_{gpcol}"]), axis=0)
+                    GPnames = np.concatenate((GPnames,     [f"GPlc{i+1}_Amp{n+1}_{gpcol}",f"GPlc{i+1}_len{n+1}_{gpcol}"]), axis=0)
                 else:
-                    GPnames = np.concatenate((GPnames,     [f"GPlcSame_Amp{n}_{gpcol}",f"GPlcSame_len{n}_{gpcol}"]), axis=0)
+                    GPnames = np.concatenate((GPnames,     [f"GPlcSame_Amp{n+1}_{gpcol}",f"GPlcSame_len{n+1}_{gpcol}"]), axis=0)
 
                 if useGPphot[i]=="y":  #George GP
                     ndim_gp  = len(set(gpcols))       #number of different columns used for the GP
@@ -802,7 +802,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         
                         if ndim_gp >1: gp_x = np.vstack((gp_x, thisLCdata[gpcol])).T  #2D array with the x values for the GP
                     
-                    gp = GP(kern, mean=1)
+                    gp = GP(kern, mean=0)
                     gp.compute(x=gp_x, yerr=thisLCdata["col2"])
             
                 if useGPphot[i]=="ce":   #Celerite GP
@@ -831,7 +831,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         if thisLCgp["op"]=="*": kern *= kern2
                     
                     gp_x = thisLCdata[gpcol] # the x values for the GP, for celerite it is always col0 for now
-                    gp   = cGP(kern, mean=1)
+                    gp   = cGP(kern, mean=0, fit_mean = False)
                     gp.compute(t=gp_x, yerr=thisLCdata["col2"])
 
             GPobjects.append(gp)
@@ -944,7 +944,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         
                         if ndim_gp >1: gp_x = np.vstack((gp_x, thisRVdata[gpcol])).T  #2D array with the x values for the GP
                     
-                        gp = GP(kern, mean=1)
+                        gp = GP(kern, mean=0)
                         gp.compute(x=gp_x, yerr=thisRVdata["col2"])
             
                 if useGPrv[i]=="ce":   #Celerite GP
@@ -973,7 +973,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         if thisRVgp["op"]=="*": kern *= kern2
                     
                         gp_x = thisRVdata[gpcol] # the x values for the GP, for celerite it is always col0 for now
-                        gp   = cGP(kern, mean=1)
+                        gp   = cGP(kern, mean=0, fit_mean=False)
                         gp.compute(t=gp_x, yerr=thisRVdata["col2"])
 
             rvGPobjects.append(gp)
@@ -1343,9 +1343,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             #dynesty trace plot
             import dynesty.plotting as dyplot
             for i in range(nplot):
-                fig, ax = dyplot.traceplot(dyn_res,dims=np.arange(i*nplotpars,(i+1)*nplotpars), 
+                fig, ax = dyplot.traceplot(dyn_res,dims=np.arange(ndim)[i*nplotpars:(i+1)*nplotpars], 
                                             labels=jnames[i*nplotpars:(i+1)*nplotpars], quantiles=[0.16,0.5,0.84])
-                fig.savefig(out_folder+"/dynesty_trace_{i}.png", bbox_inches="tight")
+                fig.savefig(out_folder+f"/dynesty_trace_{i}.png", bbox_inches="tight")
 
             dyn_summary(dyn_res,out_folder)   #write summary to file evidence.dat
 
