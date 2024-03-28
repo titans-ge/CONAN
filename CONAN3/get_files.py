@@ -60,7 +60,7 @@ class get_TESS_data(object):
         self.exptime = exptime
 
         print(lk.search_lightcurve(self.planet_name,author=self.author,sector=self.sectors,
-                                   exptime=self.exptime, mission="TESS"))
+                                    exptime=self.exptime, mission="TESS"))
         
     def download(self,sectors=None,author=None,exptime=None, select_flux="pdcsap_flux",quality_bitmask="hard"):
         """  
@@ -96,21 +96,56 @@ class get_TESS_data(object):
             self.lc[s]= self.lc[s].remove_nans().normalize()
             print(f"downloaded lightcurve for sector {s}")
 
-    def discard_ramp(self,length=0.25):
+        if hasattr(self,"_ok_mask"): del self._ok_mask
+
+    def discard_ramp(self,length=0.25, gap_size=1, start=True, end=True):
         """
-        Discard data at the begining of the orbits that typically feature ramps
+        Discard data at the start/end of the orbits (or large gaps) that typically feature ramps
 
         Parameters
         ----------
-        length : float
-            length of data (in days) to discard at beginning of each orbit.
-        """
+        length : float,list
+            length of data (in days) to discard at beginning of each orbit. give list of length for each sector or single value for all sectors.
 
+        gap_size : float
+            minimum size of gap (in days) to detect for separating the orbits.
+
+        start : bool
+            discard data of length days at the start of the orbit. Default is True.
+
+        end : bool
+            discard data of length days at the end of the orbit. Default is True.    
+        """
+        if hasattr(self,"_ok_mask"): 
+            print("points have already been discarded. Run `.download()` again to restart.")
+            return
         assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
-        for s in self.sectors:
-            gap = np.diff(self.lc[s]) > 0.5
-        #TODO: implement this
-        raise NotImplemented
+        if isinstance(length,(int,float)): length = [length]*len(self.sectors)
+        assert len(length)==len(self.sectors), "length must be a single value or list of the same length as sectors"
+
+        for i,s in enumerate(self.sectors):
+            tt = self.lc[s].time.value
+            gap = np.diff(tt) 
+            gap = np.insert(gap,0,0)   #insert diff of 0 at the beginning
+            
+            gap_bool = gap > gap_size
+            print(f"sector {s}: {sum(gap_bool)} gap(s)>{gap_size}d detected",end="; ")
+            chunk_start_ind = np.append(0, np.where(gap_bool)[0])
+            chunk_end_ind   = np.append(np.where(gap_bool)[0]-1, len(tt)-1)
+
+            #mask points that are length days from chunk_start_ind
+            start_mask, end_mask = [], []
+            for st_ind,end_ind in zip(chunk_start_ind, chunk_end_ind):
+                if start: start_mask.append((tt >= tt[st_ind]) & (tt < tt[st_ind]+length[i]))
+                if end: end_mask.append((tt <= tt[end_ind]) & (tt > tt[end_ind]-length[i]))
+
+            start_mask = np.logical_or(*start_mask) if start else np.array([False]*len(tt))
+            end_mask   = np.logical_or(*end_mask) if end else np.array([False]*len(tt))
+            self._nok_mask = np.logical_or(start_mask, end_mask)
+            self._ok_mask  = ~np.logical_or(start_mask, end_mask)
+            self.lc[s] = self.lc[s][self._ok_mask]
+            print(f"discarded {sum(self._nok_mask)} points")
+
 
     def scatter(self):
         """

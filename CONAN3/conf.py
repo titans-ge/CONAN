@@ -6,7 +6,7 @@ import numpy as np
 
 
 def fit_configfile(config_file = "input_config.dat", out_folder = "output", 
-                   rerun_result= True, verbose=False):
+                   init_decorr=False, rerun_result=True, verbose=False):
     """
         Run CONAN fit from configuration file. 
         This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
@@ -18,9 +18,19 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
 
         out_folder: filepath;
             path to folder where output files will be saved.
+
+        init_decorr: bool;
+            whether to run least-squares fit to determine start values of the decorrelation parameters. 
+            Default is False
+
+        rerun_result: bool;
+            whether to rerun using with already exisiting result inorder to remake plots/files. Default is True
+
+        verbose: bool;
+            show print statements
     """
 
-    lc_obj, rv_obj, fit_obj = load_configfile(config_file, verbose=verbose)
+    lc_obj, rv_obj, fit_obj = load_configfile(config_file, init_decorr=init_decorr, verbose=verbose)
     result = run_fit(lc_obj, rv_obj, fit_obj,out_folder=out_folder,
                         rerun_result=rerun_result,verbose=verbose)
     return result
@@ -103,7 +113,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     print(f"configuration file saved as {filename}")
 
 
-def load_configfile(configfile="input_config.dat", return_fit=False, verbose=False):
+def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr=False, verbose=False):
     """
         configure conan from specified configfile.
         
@@ -115,6 +125,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
         return_fit: bool;
             whether to immediately perform the fit from this function call.
             if True, the result object from the fit is also returned
+
+        init_decorr: bool;
+            whether to run least-squares fit to determine start values of the decorrelation parameters. 
+            Default is False
 
         verbose: bool;
             show print statements
@@ -364,7 +378,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     dump    = _file.readline()
     _adump  = dump.split()
     pl_pars = {}
-    pl_pars["rho_star"] = _prior_value(_adump[2])
+    rho_dur = _adump[0]
+    #select string in rho_dur with []
+    rho_dur = rho_dur[rho_dur.find("[")+1:rho_dur.find("]")]
+    pl_pars[rho_dur] = _prior_value(_adump[2])
     par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
     for p in par_names: pl_pars[p] = []
     sesinw, secosw = [],[]
@@ -406,27 +423,15 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     _skip_lines(_file,2)                                      #remove 2 comment lines
 
     #phase curve
-    D_occ,A_atm,ph_off,A_ev = [],[],[],[]    
+    D_occ,A_atm,ph_off,A_ev,A_db = [],[],[],[],[]    
     for _ in range(len(lc_obj._filnames)):
         dump   = _file.readline()
         _adump = dump.split()
-        D_occ.append(_prior_value(_adump[3]))
-    _skip_lines(_file,1)                                      #remove 2 comment lines
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
-        A_atm.append(_prior_value(_adump[3]))
-    _skip_lines(_file,1)                                      #remove 2 comment lines
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
+        D_occ.append(_prior_value(_adump[1]))
+        A_atm.append(_prior_value(_adump[2]))
         ph_off.append(_prior_value(_adump[3]))
-    _skip_lines(_file,1)                                      #remove 2 comment lines
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
-        _adump = dump.split()
-        A_ev.append(_prior_value(_adump[3]))
-    
+        A_ev.append(_prior_value(_adump[4]))
+        A_db.append(_prior_value(_adump[5]))
     _skip_lines(_file,3)                                      #remove 3 comment lines
  
     #contamination factors
@@ -442,48 +447,48 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
     lc_obj.limb_darkening(q1,q2,verbose=verbose)
     lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
     lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,verbose=verbose)
-    lc_obj.setup_phasecurve(D_occ, A_atm, ph_off, A_ev, verbose=verbose)
+    lc_obj.setup_phasecurve(D_occ, A_atm, ph_off, A_ev, A_db, verbose=verbose)
     lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
 
     if nphot > 0:
-        if not use_decorr:
-            if verbose: print("\ngetting start values for LC decorrelation parameters ...")
-        lc_obj.get_decorr(**pl_pars,q1=q1,q2=q2,
-                            D_occ=D_occ[0] if len(D_occ)>0 else 0, 
-                            A_atm=A_atm[0] if len(A_atm)>0 else 0, 
-                            ph_off=ph_off[0] if len(ph_off)>0 else 0, 
-                            A_ev=A_ev[0] if len(A_ev)>0 else 0, plot_model=False,
-                            setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
-                            enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
-        #TODO: if not use_decorr, compare the auto decorr pars to the user-defined ones and only use start values for those
-        rel_cols = [b[:6] for b in lc_obj._bases]
-        _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
-        for j in range(lc_obj._nphot):
-            for i,v in enumerate(rel_cols[j]):
-                if i in [1,2]: continue
-                if v == 0: lc_obj._bases_init[j][f"A{i}"] = lc_obj._bases_init[j][f"B{i}"] = 0
-                if v >= 1: lc_obj._bases_init[j][f"A{i}"] = lc_obj._bases_init[j][f"A{i}"]
-                if v == 2: lc_obj._bases_init[j][f"B{i}"] = lc_obj._bases_init[j][f"B{i}"]
-
+        if use_decorr or init_decorr:
+            lc_obj.get_decorr(**pl_pars,q1=q1,q2=q2,
+                                D_occ=D_occ[0] if len(D_occ)>0 else 0, 
+                                A_atm=A_atm[0] if len(A_atm)>0 else 0, 
+                                ph_off=ph_off[0] if len(ph_off)>0 else 0, 
+                                A_ev=A_ev[0] if len(A_ev)>0 else 0, 
+                                A_db=A_db[0] if len(A_db)>0 else 0, plot_model=False,
+                                setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
+                                enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
+            if init_decorr:  #if not use_decorr, compare the  get_decorr pars to the user-defined ones and only use start values for user-defined ones
+                if verbose: print("\ngetting start values for LC decorrelation parameters ...")
+                rel_cols = [b[:6] for b in lc_obj._bases]
+                _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
+                for j in range(lc_obj._nphot):
+                    for i,v in enumerate(rel_cols[j]):
+                        if i in [1,2]: continue
+                        if v == 0: lc_obj._bases_init[j][f"A{i}"] = lc_obj._bases_init[j][f"B{i}"] = 0
+                        if v >= 1: lc_obj._bases_init[j][f"A{i}"] = lc_obj._bases_init[j][f"A{i}"]
+                        if v == 2: lc_obj._bases_init[j][f"B{i}"] = lc_obj._bases_init[j][f"B{i}"]
 
     if nRV > 0:
-        if not use_decorrRV:
-            if verbose: print("getting start values for RV decorrelation parameters ...\n")
-        rv_obj.get_decorr(T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
-                            sesinw=sesinw,secosw=secosw,
-                            gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
-                            exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, delta_BIC=rvdel_BIC,
-                            plot_model=False,verbose=verbose if use_decorrRV else False)
-        rel_cols = [b[:6] for b in rv_obj._RVbases]
-        _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
-        for j in range(rv_obj._nRV):
-            for i,v in enumerate(rel_cols[j]):
-                if i in [1,2]: continue
-                if v == 0: rv_obj._RVbases_init[j][f"A{i}"] = rv_obj._RVbases_init[j][f"B{i}"] = 0
-                if v >= 1: rv_obj._RVbases_init[j][f"A{i}"] = rv_obj._RVbases_init[j][f"A{i}"]
-                if v == 2: rv_obj._RVbases_init[j][f"B{i}"] = rv_obj._RVbases_init[j][f"B{i}"]
-        
-    
+        if use_decorrRV or init_decorr:
+            rv_obj.get_decorr(T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
+                                sesinw=sesinw,secosw=secosw,
+                                gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
+                                exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, delta_BIC=rvdel_BIC,
+                                plot_model=False,verbose=verbose if use_decorrRV else False)
+            if init_decorr:  #if not use_decorr, compare the  get_decorr pars to the user-defined ones and only use start values for user-defined ones
+                if verbose: print("getting start values for RV decorrelation parameters ...\n")
+                rel_cols = [b[:6] for b in rv_obj._RVbases]
+                _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
+                for j in range(rv_obj._nRV):
+                    for i,v in enumerate(rel_cols[j]):
+                        if i in [1,2]: continue
+                        if v == 0: rv_obj._RVbases_init[j][f"A{i}"] = rv_obj._RVbases_init[j][f"B{i}"] = 0
+                        if v >= 1: rv_obj._RVbases_init[j][f"A{i}"] = rv_obj._RVbases_init[j][f"A{i}"]
+                        if v == 2: rv_obj._RVbases_init[j][f"B{i}"] = rv_obj._RVbases_init[j][f"B{i}"]
+                
     # stellar params
     dump    = _file.readline()
     _adump  = dump.split()
@@ -555,7 +560,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, verbose=Fal
 
     if return_fit:
         from .fit_data import run_fit
-        result =   run_fit(lc_obj, rv_obj, fit_obj) 
+        result = run_fit(lc_obj, rv_obj, fit_obj) 
         return lc_obj,rv_obj,fit_obj,result
 
     return lc_obj,rv_obj,fit_obj

@@ -45,6 +45,8 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
     P0 : float
         period
 
+    
+
     """
     
     # distribute out all the input arguments
@@ -93,9 +95,9 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
     GPindex     = args[42]
     pindices    = args[43]  # pindices - list of list -->list of indices of the p array jumping in each LC and then each RV
     jumping     = args[44]  # the indices of the params array that are jumping
-    pnames      = args[45]
+    pnames      = args[45]  # the names of the params array that are jumping
     prior_distr = args[46]  # the indices of the params array that are jumping for each LC
-    prior       = args[47]  # the priors, as many as jumping elements (len(p) 
+    pnames_all  = args[47]  # the names of all the parameters
     priorwid    = args[48]  # the priors, as many as jumping elements (len(p) 
     lim_low     = args[49]  # the lower limits, as many as jumping elements (len(p) 
     lim_up      = args[50]  # the upper limits, as many as jumping elements (len(p) 
@@ -124,13 +126,11 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
     lnprob     = 0.
     lnprior    = 0.
-    ppm        = 1e-6
 
     #compute log prior if using emcee else skip
     if fit_sampler == "emcee":
         for jj in range(len(p)):
-            this_p = p[jj]*ppm if (pnames[jj].startswith('GPlc') and 'Amp' in pnames[jj]) else p[jj]
-            lnprior += prior_distr[jj].logpdf(this_p)  # add the log prior for each jumping parameter
+            lnprior += prior_distr[jj].logpdf(p[jj])  # add the log prior for each jumping parameter
         
     #if in mcmc check that lnprior is finite
     if inmcmc == 'y':
@@ -187,26 +187,35 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
         Aatm_ind  = 1+7*npl+nttv+nddf+nocc+k           # index in params of the atm value
         phoff_ind = 1+7*npl+nttv+nddf+nocc*2+k           # index in params of the phoff value
         Aev_ind   = 1+7*npl+nttv+nddf+nocc*3+k           # index in params of the Aev value
+        Adb_ind   = 1+7*npl+nttv+nddf+nocc*4+k           # index in params of the Adb value
 
-        q1ind  = 1+7*npl+nttv+nddf+nocc*4+2*k    # index in params of the first LD coeff of this filter
-        q2ind  = 1+7*npl+nttv+nddf+nocc*4+2*k+1  # index in params of the second LD coeff of this filter
+        q1ind  = 1+7*npl+nttv+nddf+nocc*5+2*k    # index in params of the first LD coeff of this filter
+        q2ind  = 1+7*npl+nttv+nddf+nocc*5+2*k+1  # index in params of the second LD coeff of this filter
         gg     = int(groups[j]-1)
 
         # lc jitter 
-        LCjitterind = 1+7*npl + nttv+nddf+nocc*4 + nfilt*2 + j
+        LCjitterind = 1+7*npl + nttv+nddf+nocc*5 + nfilt*2 + j
 
         # get the index of pp that is 
         # adapt the RpRs value used in the LC creation to any ddfs
 
         ppcount = 0   # the index of the jumping parameter in the pp array
         T0in, RpRsin, bbin, perin, eosin, eocin, Kin = [], [], [], [], [], [], []
-
+        rhoin, durin = None, None
         #if parameter is jumping, get value from pp array, otherwise use the value from the params array
-        if 0 in jumping[0]:
-            rhoin = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            rhoin = params[0]
+        
+        if "rho_star" in pnames_all:    #using rho_star for transit model
+            if 0 in jumping[0]:
+                rhoin = pp[ppcount]
+                ppcount = ppcount+1
+            else:
+                rhoin = params[0]
+        else:  #using duration for transit model
+            if 0 in jumping[0]:
+                durin = pp[ppcount]
+                ppcount = ppcount+1
+            else:
+                durin = params[0]
 
         for n in range(npl):
             if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
@@ -245,10 +254,6 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
             else:
                 eocin.append(params[6+7*n])
         
-        #calculate transit duration for each planet
-        durin = list( rho_to_tdur(rhoin, np.array(bbin), np.array(RpRsin), np.array(perin),
-                        e=np.array(eosin)**2+np.array(eocin)**2, w=np.degrees(np.arctan2(eosin,eocin)) ))
-
         #ttv
         if nttv>0:
             for i,t_0 in enumerate(ttv_conf[j].t0_list):
@@ -288,14 +293,19 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
             ppcount = ppcount+1
         else:
             Aev_in = params[Aev_ind]
-            
+
+        if (Adb_ind in jumping[0]):   
+            Adb_in = pp[ppcount]
+            ppcount = ppcount+1
+        else:
+            Adb_in = params[Adb_ind]
 
         ##########
         # if occin < 0.0:   occin = 0.0
         # if Aatm_in < 0.0: Aatm_in = 0.0 
         # if Aev_in < 0.0:  Aev_in = 0.0 
-
-
+        # if Adb_in < 0.0:  Adb_in = 0.0 
+            
         #########
         #now check the correct LD coeffs
         if (q1ind in jumping[0]):    # index of specific LC LD in jumping array -> check in jumping array
@@ -315,18 +325,18 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
         if get_model:
             if nttv>0:
-                LCmod,compo = TTV_Model(tarr=t_in, rho_star=rhoin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin,
+                LCmod,compo = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin,
                                         q1=q1in, q2=q2in,split_conf=ttv_conf[j],planet_only=True,ss=s_samp[j])
             else:
-                TM = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, 
-                                    occ=occin, A_atm=Aatm_in, delta=phoff_in, A_ev=Aev_in, q1=q1in, q2=q2in,npl=npl)
+                TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, 
+                                    occ=occin, A_atm=Aatm_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in, q1=q1in, q2=q2in,npl=npl)
                 LCmod,compo = TM.get_value(t_in, planet_only=True,ss=s_samp[j])
 
             model_outputs.lc[name] = LCmod, compo
             continue
             
 
-        bfstart = 1 +7*npl + nttv + nddf +nocc*4 +2*nfilt + nphot + nRV*2+ j*22  # index in params of the first baseline param of this light curve
+        bfstart = 1 +7*npl + nttv + nddf +nocc*5 +2*nfilt + nphot + nRV*2+ j*22  # index in params of the first baseline param of this light curve
         blind = np.asarray(list(range(bfstart,bfstart+22))) # the indices of the baseline params of this light curve
         basesin = np.zeros(22)
         
@@ -343,11 +353,11 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
         argu = [t_in,f_in,col3_in,col4_in,col6_in,col5_in,col7_in,col8_in,contra_in,isddf,0,grprs_here,inmcmc,baseLSQ,basesin,vcont,name,e_in,bvar,useSpline_lc[j]]     
 
         if nttv>0:
-            lc_result = TTV_Model(tarr=t_in, rho_star=rhoin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin,
+            lc_result = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin,
                                     q1=q1in, q2=q2in,split_conf=ttv_conf[j],args=argu,ss=s_samp[j])
         else:
-            TM = Transit_Model(rho_star=rhoin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, 
-                                        occ=occin, A_atm=Aatm_in, delta=phoff_in, A_ev=Aev_in,q1=q1in, q2=q2in,npl=npl)
+            TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, eos=eosin, eoc=eocin, ddf=ddf0, 
+                                        occ=occin, A_atm=Aatm_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in,q1=q1in, q2=q2in,npl=npl)
             lc_result=TM.get_value(t_in, argu,ss=s_samp[j])   
         
         trans_base  = lc_result.full_LCmod   #transit*baseline
@@ -372,25 +382,27 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 # write the lightcurve and the model to file or return output if we're not inside the MCMC
                 out_data   = np.stack((t_in,f_in,err_in,trans_base,bfunc,mt0,det_LC,lc_result.spline),axis=1)
                 header     = ["time","flux","error","full_mod","base","transit","det_flux","spl_fit"]
-                header_fmt = "{:14s}\t"*len(header)
+                header_fmt = "{:<16s}\t"*len(header)
                 phases     = np.zeros((len(t_in),npl))
 
                 for n in range(npl):
                     phases[:,n] = np.modf(np.modf( (t_in-T0in[n])/perin[n])[0]+1)[0]
                     if mt0[np.argmin(phases[:,n])] < 1:
                         phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
-                    header_fmt += "{:14s}\t"
+                    header_fmt += "{:<16s}\t"
                     header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
 
                 out_data = np.hstack((out_data,phases))
                 if make_outfile:
                     outfile=out_folder+"/"+name[:-4]+'_lcout.dat' 
                     if verbose: print(f"Writing LC output to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
         
         elif useGPphot[j] in ['y','ce']: 
-            gppars = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
-            pargp = pargps[j]
+            gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+            pargp    = pargps[j]
+            srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
+            unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
 
             #indices of the gp params for this rv file
             if not sameLCgp.flag:
@@ -408,18 +420,18 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
             thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars)
             gp.set_parameter_vector(thislc_gppars)
             #recompute gp with jitter included 
-            gp.compute(pargp, yerr = err_in)
+            gp.compute(pargp[srt_gp], yerr = err_in[srt_gp])
 
 
             if inmcmc == 'y':
-                lnprob_thislc = gp.log_likelihood(f_in-trans_base, quiet=True)
+                lnprob_thislc = gp.log_likelihood((f_in-trans_base)[srt_gp], quiet=True)
                 lnprob = lnprob + lnprob_thislc
             
             # if not in MCMC, get a prediction and append it to the output array
             if inmcmc == 'n':
                 which_GP = "George" if useGPphot[j]=='y' else "Celerite"
 
-                bfunc_gp = gp.predict(f_in-trans_base, t=pargp, return_cov=False, return_var=False) #gp_fit to residual
+                bfunc_gp = gp.predict((f_in-trans_base)[srt_gp], t=pargp[srt_gp], return_cov=False, return_var=False)[unsrt_gp] #gp_fit to residual
                 pred     = bfunc_gp+trans_base    #gp + transit*baseline(w/wo spl)
                 
                 mod  = np.concatenate((mod,pred))        #append the model to the output array
@@ -431,20 +443,20 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
                 # write the lightcurve and the model to file or return output if we're not inside the MCMC
                 out_data     = np.stack((t_in,f_in,err_in,pred,bfunc_full,mt0,det_LC,lc_result.spline),axis=1)
                 header       = ["time","flux","error","full_mod","gp+base","transit","det_flux","spl_fit"]
-                header_fmt   = "{:14s}\t"*len(header)
+                header_fmt   = "{:<16s}\t"*len(header)
                 phases       = np.zeros((len(t_in),npl))
 
                 for n in range(npl):
                     phases[:,n] = np.modf(np.modf( (t_in-T0in[n])/perin[n])[0]+1)[0]
                     if mt0[np.argmin(phases[:,n])] < 1: phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
-                    header_fmt += "{:14s}\t"
+                    header_fmt += "{:<16s}\t"
                     header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
 
                 out_data = np.hstack((out_data,phases))
                 if make_outfile:
                     outfile=out_folder+"/"+name[:-4]+'_lcout.dat'
                     if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
 
 
     # now do the RVs and add their probabilities to the model
@@ -468,11 +480,20 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
         ppcount = 0 
         T0in, RpRsin, bbin, perin, eosin, eocin, Kin = [], [], [], [], [], [],[]
-        if 0 in jumping[0]:
-            rhoin = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            rhoin = params[0]
+        rhoin, durin = None, None
+
+        if "rho_star" in pnames_all:    #using rho_star  for transit model
+            if 0 in jumping[0]:
+                rhoin = pp[ppcount]
+                ppcount = ppcount+1
+            else:
+                rhoin = params[0]
+        else:  #using duration for transit model
+            if 0 in jumping[0]:
+                durin = pp[ppcount]
+                ppcount = ppcount+1
+            else:
+                durin = params[0]
 
         for n in range(npl):
             if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
@@ -521,7 +542,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
         
         # nGPjump = len(p) - len(jupind)
         # paraminRV[jumping] = p #p[0:-nGPjump] if nGPjump > 0 else p
-        gammaind = 1+7*npl + nttv+nddf + nocc*4 + nfilt*2 + nphot + j*2   #pass the right gamma index for each file (Akin)
+        gammaind = 1+7*npl + nttv+nddf + nocc*5 + nfilt*2 + nphot + j*2   #pass the right gamma index for each file (Akin)
         Gamma_in = params_all[gammaind]
         RVargs   = [params_all,f_in,e_in,bis_in,col6_in,contra_in,nfilt,baseLSQ,inmcmc,
                     nddf,nocc,nRV,nphot,j,RVnames,bvarsRV,gammaind,nttv]
@@ -542,7 +563,7 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
         
         # rv jitter 
         if (jit_apply == 'y'):
-            jitterind = 1+7*npl + nttv+ nddf+nocc*4 + nfilt*2 + nphot + j*2 + 1
+            jitterind = 1+7*npl + nttv+ nddf+nocc*5 + nfilt*2 + nphot + j*2 + 1
             jit = params_all[jitterind]
         else:
             jit = 0.
@@ -562,18 +583,19 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
                 out_data   = np.stack((t_in,f_in,err_in,mod_RVbl,bfuncRV,mod_RV,det_RV,rv_result.spline),axis=1)
                 header     = ["time","RV","error","full_mod","base","Rvmodel","det_RV","spl_fit"]
-                header_fmt = "{:14s}\t"*len(header)
+                header_fmt = "{:<16s}\t"*len(header)
                 phases     = np.zeros((len(t_in),npl))
 
                 for n in range(npl):
                     phases[:,n] = ((t_in-T0in[n])/perin[n]) - np.round( ((t_in-T0in[n])/perin[n]))
-                    header_fmt += "{:14s}\t"
+                    header_fmt += "{:<16s}\t"
                     header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
                 if make_outfile:   
                     outfile  = out_folder+"/"+RVnames[j][:-4]+'_rvout.dat'
                     out_data = np.hstack((out_data,phases))
                     if verbose: print(f"Writing RV output to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
+                    # pd.DataFrame(out_data,columns=header).to_csv(outfile,sep="\t",index=False, float_format='%-16.6f')
 
 
         elif useGPrv[j] in ['y','ce']:
@@ -617,19 +639,19 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
 
                 out_data   = np.stack((t_in,f_in,err_in,pred,bfunc_full,mod_RV,det_RV,rv_result.spline),axis=1)
                 header     = ["time","RV","error","full_mod","gp+base","Rvmodel","det_RV","spl_fit"]
-                header_fmt = "{:14s}\t"*len(header)
+                header_fmt = "{:<16s}\t"*len(header)
                 phases     = np.zeros((len(t_in),npl))
 
                 for n in range(npl):
                     phases[:,n] = ((t_in-T0in[n])/perin[n]) - np.round( ((t_in-T0in[n])/perin[n]))
-                    header_fmt += "{:14s}\t"
+                    header_fmt += "{:<16s}\t"
                     header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
                 
                 if make_outfile:   
                     out_data = np.hstack((out_data,phases))
                     outfile  = out_folder+"/"+RVnames[j][:-4]+'_rvout.dat'
                     if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%14.8f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
 
 
     if get_model:
@@ -640,6 +662,12 @@ def logprob_multi(p, *args,t=None,make_outfile=False,verbose=False,debug=False,g
         if np.isnan(lnprob) == True:
             lnprob = -np.inf
         return lnprob
-    else:      
+    else:   
+        #calculate transit duration for each planet
+        if "rho_star" in pnames_all:
+            durin = list( rho_to_tdur(rhoin, np.array(bbin), np.array(RpRsin), np.array(perin),
+                            e=np.array(eosin)**2+np.array(eocin)**2, w=np.degrees(np.arctan2(eosin,eocin)) ))
+
+        if isinstance(durin,(int,float)): durin = [durin]    
         return (mod, emod, T0in, perin, durin if nphot>0 else 0)
 

@@ -1,6 +1,6 @@
 import numpy as np
-from .plots_v12 import *
-from .utils import rho_to_tdur, rho_to_aR, convert_LD,aR_to_Tdur
+from .plotting import *
+from .utils import rho_to_tdur, rho_to_aR, convert_LD,aR_to_Tdur, tdur_to_rho
 from .funcs import credregionML
 
 
@@ -14,23 +14,39 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
     # first, allocate the necessary jump parameters into PDF variables
 
     derived_pnames, derived_PDFs, derived_bp = [],[],[]
+    if "rho_star" in jnames or "rho_star" in njnames:
+        ind = np.where(np.char.find(jnames, 'rho_star')==0)[0]
+        indn = np.where(np.char.find(njnames, 'rho_star')==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(np.char.find(extinpars, 'rho_star')==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            rho_PDF = posterior[:,ind[0]]
+            rho_bp = bp[ijnames[0][ind]]
+        else:
+            rho_PDF = np.zeros(npoint)
+            rho_PDF[:] = bp[nijnames[0][indn]]
+            rho_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            rho_PDF = np.squeeze(extind_PDF[:,inde])   
 
-    ind = np.where(np.char.find(jnames, 'rho_star')==0)[0]
-    indn = np.where(np.char.find(njnames, 'rho_star')==0)[0]
-    if len(extinpars) > 0:
-        inde = np.where(np.char.find(extinpars, 'rho_star')==0)[0]
-    else :
-        inde = []
-    if (len(ind) > 0):
-        rho_PDF = posterior[:,ind[0]]
-        rho_bp = bp[ijnames[0][ind]]
     else:
-        rho_PDF = np.zeros(npoint)
-        rho_PDF[:] = bp[nijnames[0][indn]]
-        rho_bp = bp[nijnames[0][indn]]
-    if (len(inde) > 0):
-        rho_PDF = np.squeeze(extind_PDF[:,inde])   
-
+        ind = np.where(np.char.find(jnames, 'Duration')==0)[0]
+        indn = np.where(np.char.find(njnames, 'Duration')==0)[0]
+        if len(extinpars) > 0:
+            inde = np.where(np.char.find(extinpars, 'Duration')==0)[0]
+        else :
+            inde = []
+        if (len(ind) > 0):
+            dur_PDF = posterior[:,ind[0]]
+            dur_bp = bp[ijnames[0][ind]]
+        else:
+            dur_PDF = np.zeros(npoint)
+            dur_PDF[:] = bp[nijnames[0][indn]]
+            dur_bp = bp[nijnames[0][indn]]
+        if (len(inde) > 0):
+            dur_PDF = np.squeeze(extind_PDF[:,inde])   
 
     for n in range(npl):
         nm = f"_{n+1}" if npl>1 else ""
@@ -139,11 +155,17 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
             K_PDF = K_PDF/1000.
             K_bp  = K_bp/1000.
 
-        dur_PDF = rho_to_tdur(rho_PDF, b_PDF, RpRs_PDF, Period_PDF,
-                                e=esinw_PDF**2+ecosw_PDF**2, w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
-        dur_bp  = rho_to_tdur(rho_bp, b_bp, RpRs_bp, Period_bp,
-                                e=esinw_bp**2+ecosw_bp**2, w=np.degrees(np.arctan2(esinw_bp,ecosw_bp)))
-            
+        if "rho_star" in jnames or "rho_star" in njnames:
+            dur_PDF = rho_to_tdur(rho_PDF, b_PDF, RpRs_PDF, Period_PDF,
+                                    e=esinw_PDF**2+ecosw_PDF**2, w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
+            dur_bp  = rho_to_tdur(rho_bp, b_bp, RpRs_bp, Period_bp,
+                                    e=esinw_bp**2+ecosw_bp**2, w=np.degrees(np.arctan2(esinw_bp,ecosw_bp)))
+        else:
+            rho_PDF = tdur_to_rho(dur_PDF, b_PDF, RpRs_PDF, Period_PDF,e=esinw_PDF**2+ecosw_PDF**2, 
+                                    w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
+            rho_bp  = tdur_to_rho(dur_bp, b_bp, RpRs_bp, Period_bp,e=esinw_bp**2+ecosw_bp**2,
+                                    w=np.degrees(np.arctan2(esinw_bp,ecosw_bp)))
+
         q1_PDF = np.zeros((npoint,nfilt))
         q2_PDF = np.zeros((npoint,nfilt))
         q1_bp  = np.zeros(nfilt)
@@ -241,45 +263,47 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
     of.write('====================================================================================================\n')
     of.write('Stellar input parameters: \n')
     of.write('====================================================================================================\n')
-    vals=Rs_PDF
-    # calculate median
-    medval = np.median(vals)
-    dval=vals-medval # the difference between vals and the median
-    sval=np.sort(dval)
-    sig1s = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
-    sig3s = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
-    of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
-    vals=Ms_PDF
-    # calculate median
-    medval = np.median(vals)
-    dval=vals-medval # the difference between vals and the median
-    sval=np.sort(dval)
-    sig1s = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
-    sig3s = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
-    of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
+    if howstellar == 'Rrho':
+        vals=Rs_PDF
+        # calculate median
+        medval = np.median(vals)
+        dval   = vals-medval # the difference between vals and the median
+        sval   = np.sort(dval)
+        sig1s  = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
+        sig3s  = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
+        of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
+    if howstellar == 'Mrho':
+        vals   = Ms_PDF
+        # calculate median
+        medval = np.median(vals)
+        dval   = vals-medval # the difference between vals and the median
+        sval   = np.sort(dval)
+        sig1s  = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
+        sig3s  = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
+        of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
 
     for i in range(len(extinpars)):
-        vals = extind_PDF[:,i]
+        vals   = extind_PDF[:,i]
         medval = np.median(vals)
-        dval=vals-medval # the difference between vals and the median
-        sval=np.sort(dval)
-        sig1s = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
-        sig3s = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
+        dval   = vals-medval # the difference between vals and the median
+        sval   = np.sort(dval)
+        sig1s  = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
+        sig3s  = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
         of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (extinpars[i], medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
 
 
     of.write('====================================================================================================\n')
-    of.write('Derived parameters: \n')
+    of.write('Derived parameters: ('+starstring+') \n')
     of.write('====================================================================================================\n')
         
     for i in range(nderived):
         vals=derived_PDFs[i]
         # calculate median
         medvalsd[i] = np.median(vals)
-        dval=vals-medvalsd[i] # the difference between vals and the median
-        sval=np.sort(dval)
-        sig1d[i] = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
-        sig3d[i] = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
+        dval        = vals-medvalsd[i] # the difference between vals and the median
+        sval        = np.sort(dval)
+        sig1d[i]    = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
+        sig3d[i]    = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
         of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (derived_pnames[i], medvalsd[i],sig1d[i,0],sig1d[i,1], sig3d[i,0], sig3d[i,1])) 
 
     of.write('====================================================================================================\n')     
@@ -313,26 +337,28 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
     of2.write('====================================================================================================\n')
     of2.write('Stellar input parameters: \n')
     of2.write('====================================================================================================\n')
-    vals=Rs_PDF
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals)
-    maxval = xpdf[iHDP]
-    sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
-    sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-    of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-    param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
-    vals=Ms_PDF
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals)
-    maxval = xpdf[iHDP]
-    sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
-    sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-    of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-    param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
+    if howstellar == 'Rrho':
+        vals=Rs_PDF
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals)
+        maxval = xpdf[iHDP]
+        sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
+        sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
+        of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
+    if howstellar == 'Mrho':
+        vals=Ms_PDF
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals)
+        maxval = xpdf[iHDP]
+        sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
+        sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
+        of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
 
     for i in range(len(extinpars)):
         vals = extind_PDF[:,i]
@@ -413,26 +439,28 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
     of3.write('====================================================================================================\n')
     of3.write('Stellar input parameters: \n')
     of3.write('====================================================================================================\n')
-    vals=Rs_PDF
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals)
-    maxval = xpdf[iHDP]
-    sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
-    sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-    of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-    param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
-    vals=Ms_PDF
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals)
-    maxval = xpdf[iHDP]
-    sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
-    pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
-    sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
-    sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-    of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
-    param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
+    if howstellar == 'Rrho':
+        vals=Rs_PDF
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals)
+        maxval = xpdf[iHDP]
+        sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
+        sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
+        of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
+    if howstellar == 'Mrho':
+        vals=Ms_PDF
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals)
+        maxval = xpdf[iHDP]
+        sig1ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig1ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval
+        pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
+        sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
+        sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
+        of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
     for i in range(len(extinpars)):
         vals = extind_PDF[:,i]
         pdf, xpdf, HPDmin, iHDP = credregionML(vals)
@@ -540,11 +568,9 @@ def dyn_summary(res,out_folder):
 
 
 def get_PDF_Gauss(cen,sig1,sig2,dim):
-    
     sig = (sig1 + sig2)/2.
     npoints = int(dim[0])  # number of samples needed
     val_PDF = np.random.normal(cen, sig, int(npoints))
-   
     return val_PDF
 
 def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, rhoS_PDF, ecosw_PDF, esinw_PDF, K_PDF, q1_PDF, q2_PDF, howstellar):
@@ -624,7 +650,7 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     rhoP_PDF = Mp_PDF / Rp_PDF**3 
     gP_PDF =  cn.G * (Mp_PDF*Mjup) / (Rp_PDF*Rjup)**2 
     
-    durocc_PDF = aR_to_Tdur(aRs_PDF,b_PDF,RpRs_PDF,Period_PDF,ecc_PDF,ome_PDF)
+    durocc_PDF = aR_to_Tdur(aRs_PDF,b_PDF,RpRs_PDF,Period_PDF,ecc_PDF,ome_PDF,tra_occ="occ")
     durocc_PDF[np.isfinite(durocc_PDF)==False] = 0.
     
     if len(q1_PDF.shape)<2:

@@ -93,6 +93,39 @@ def bin_data(t,f,err=None,statistic="mean",bins=20):
     return t_bin[~nans], y_bin[~nans]
 
 
+def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=1.):
+    """
+    # split t into chunks with gaps larger than gap_threshold*bin_size
+    # then bin each chunk separately
+    """
+    try:
+        gap = np.diff(t)
+        gap = np.insert(gap,0,0)
+
+        #split t into chunks by the gaps
+        t_chunks = np.split(t, np.where(gap>gap_threshold*binsize)[0]) 
+        f_chunks = np.split(f, np.where(gap>gap_threshold*binsize)[0])
+        e_chunks = np.split(e, np.where(gap>gap_threshold*binsize)[0]) if e is not None else f_chunks
+        
+        for tc,fc,ec in zip(t_chunks,f_chunks,e_chunks):
+            if np.ptp(tc) < binsize: continue
+            nbin = int(np.ptp(tc)/binsize)
+            if e is not None: t_bin, f_bin, e_bin = bin_data(tc,fc,ec,statistic="mean",bins=nbin)
+            else: t_bin, f_bin = bin_data(tc,fc,statistic="mean",bins=nbin)
+
+            try:
+                t_binned = np.concatenate((t_binned, t_bin))
+                f_binned = np.concatenate((f_binned, f_bin))
+                if e is not None: e_binned = np.concatenate((e_binned, e_bin))
+            except:
+                if e is not None: t_binned, f_binned, e_binned = t_bin, f_bin, e_bin
+                else: t_binned, f_binned = t_bin, f_bin
+
+        return (t_binned, f_binned, e_binned) if e is not None else (t_binned, f_binned)
+
+    except:
+        return bin_data(t,f,e,statistic="mean",bins=int(np.ptp(t)/binsize))
+
 def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_clipped_indices = False):
 
     """
@@ -349,7 +382,7 @@ def k_to_Mp(k, P, Ms, i, e, Mp_unit = "star"):
     if Mp_unit == "star":
         return Mp/Ms
 
-def aR_to_Tdur(aR, b, Rp, P,e=0,w=90):
+def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
     """
     convert scaled semi-major axis to transit duration in days 
     eq 1 of https://doi.org/10.1093/mnras/stu318, eq 14,16 of https://arxiv.org/pdf/1001.2010.pdf
@@ -380,10 +413,45 @@ def aR_to_Tdur(aR, b, Rp, P,e=0,w=90):
         The transit duration in days.
     """
     factr =  ((1+Rp)**2 - b**2)/(aR**2-b**2)
-    ecc_fac = np.sqrt(1-e**2)/(1+e*np.sin(np.deg2rad(w)))
+    ecc_fac = np.sqrt(1-e**2)/(1+e*np.sin(np.deg2rad(w)))  if tra_occ=="tra" else np.sqrt(1-e**2)/(1-e*np.sin(np.deg2rad(w)))
     Tdur = (P/np.pi)*np.arcsin( np.sqrt(factr) ) * ecc_fac
     return Tdur
 
+
+def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
+    """
+    convert transit duration to scaled semi-major axis
+    eq 1 of https://doi.org/10.1093/mnras/stu318, eq 14,16 of https://arxiv.org/pdf/1001.2010.pdf
+
+    Parameters:
+    -----------
+    Tdur: float, ufloat, array-like;
+        The transit duration in days.
+        
+    b: float, ufloat, array-like;
+        The impact parameter.
+        
+    Rp: float, ufloat, array-like;
+        planet-to-star radius ratio.
+
+    P: float, ufloat, array-like;
+        The period of the planet in days.
+
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit.
+
+    w: float, ufloat, array-like;
+        The argument of periastron in degrees.
+        
+    Returns:
+    --------
+    aR: array-like;
+        The scaled semi-major axis of the planet.
+    """
+    ecc_fac = np.sqrt(1-e**2)/(1+e*np.sin(np.deg2rad(w))) if tra_occ=="tra" else np.sqrt(1-e**2)/(1-e*np.sin(np.deg2rad(w)))
+    factr = (np.sin(np.pi*Tdur/(P*ecc_fac)))**2
+    aR =  np.sqrt(((1+Rp)**2 - b**2)/factr + b**2)
+    return aR
 
 def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
     """
@@ -418,6 +486,66 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
     Tdur = aR_to_Tdur(aR, b, Rp, P,e,w)
     return Tdur
 
+def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90):
+    """
+    convert transit duration to stellar density in g/cm^3 https://doi.org/10.1093/mnras/stu318
+
+    Parameters:
+    -----------
+    Tdur: float, ufloat, array-like;
+        The transit duration in days.
+
+    b: float, ufloat, array-like;
+        The impact parameter.
+    
+    Rp: float, ufloat, array-like;
+        planet-to-star radius ratio.
+
+    P: float, ufloat, array-like;
+        The period of the planet in days.
+
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit.
+
+    w: float, ufloat, array-like;
+        The argument of periastron in degrees.
+
+    Returns:
+    --------
+    rho: array-like;
+        The stellar density in g/cm^3.
+    """
+    aR = Tdur_to_aR(Tdur, b, Rp, P,e,w)
+    rho = aR_to_rho(P,aR)
+    return rho
+
+def convert_rho(rho, ecc, w, conv="true2obs"):
+    """
+    convert true stellar density to transit derived density or vice-versa 
+
+    Parameters
+    ----------  
+    rho : float 
+        stellar density, true or observed
+    ecc : float
+        eccentricity
+    w : float
+        argumenent of periastron
+    conv : str, optional
+        whether to convert from true2obs or obs2true, by default "true2obs"
+
+    Returns
+    -------
+    rho_star: float
+        stellar density
+    """
+
+    assert conv in ["true2obs", "obs2true"],f'conv must be one of ["true2obs", "obs2true"]'
+    
+    omega = w * np.pi/180
+    phi = (1 + ecc*np.sin(omega))**3 / (1-ecc**2)**(3/2)
+
+    return rho*phi if conv=="true2obs" else rho/phi
 
 def cosine_atm_variation(phase, Fd=0, A=0, delta_deg=0):
     """

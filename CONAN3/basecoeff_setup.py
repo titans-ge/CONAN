@@ -29,7 +29,7 @@ def basecoeff(ibase,spline,init=None,lims=None):
         offset[:,0]=[0.,0.0001,-2.,2.1]       # set the starting value and limits of the 0th-order start at 0
         nbc = nbc+1
     else:
-        offset[:,0]=[init["off"],0.001,*lims["off"]]        # no CNM: set the starting value and limits of the offset    
+        offset[:,0]=[init["off"],0.1*np.diff(lims["off"])[0],*lims["off"]]        # no CNM: set the starting value and limits of the offset    
         if spline.use: offset[:,0]=[init["off"],0,0,0]   # if we use a spline, set offset to 1 and fix it
         else: nbc = nbc+1
     

@@ -1,3 +1,21 @@
+
+28-Feb-2024: version 3.1.6
+~~~~~~~~~~~~~
+* added detrend argument to .plot() function to plot the detrended data and model. also adjusted space betweem data and residuals
+* fixed bug in mutiprocessing which was not closing the pool after fitting
+* added run_kwargs and dyn_kwargs arguments to the .run_fit() function to pass optional arguments to the emcee/dynesty sampler
+* remove nan rows when loading data.
+* corrected box-shaped occultation model by properly scaling transit model for occultations.
+* modified binning function to account for large data gaps and also modified other plotting outlooks.
+* fixed bug in obtaining upper sigma of the best-fit model.
+* spline fitting can now take 'r' for knot_spacing argument in order to fit a single spline to the range of the data array.
+* celerite gp fit of non-sorted array (e.g roll-angle). Now the array is sorted before fitting and the result is sorted back to the original order
+* Added doppler beaming signal with amplitude A_db to phase curve model.
+* D_occ, A_atm, A_ev and A_db now given in ppm.
+* modified phase curve section of config file to print priors for D_occ, A_atm, ph_off, and A_ev side-by-side instead of in separate lines.
+* choose between duration or rho_star for transit model.
+* corrected formating issues in *out.dat files when significant digits are too many.
+
 23-Feb-2024: version 3.1.5
 ~~~~~~~~~~~~~
 * specified version of ldtk to install (1.7.0)

@@ -1,4 +1,4 @@
-from .utils import bin_data, phase_fold
+from .utils import bin_data_with_gaps, phase_fold
 from ._classes import __default_backend__
 import numpy as np
 import matplotlib, os
@@ -32,9 +32,9 @@ def fit_plots(yval,tarr,farr,earr, nttv, nphot, nRV, indlist, filters,names,RVna
         binsize    = binsize_min/(24.*60.)
         nbin = int(np.ptp(tt)/binsize)  # number of bins
 
-        t_bin, f_bin, err_bin = bin_data(tt, flux,err,     statistic='mean',bins=nbin)    #original data
-        _,    det_fbin        = bin_data(tt, det_flux,     statistic='mean',bins=nbin)    #detrended data
-        _,    resbin          = bin_data(tt, flux-full_mod,statistic='mean',bins=nbin)    #residuals
+        t_bin, f_bin, err_bin = bin_data_with_gaps(tt, flux, err, binsize=binsize)    #original data
+        _,    det_fbin        = bin_data_with_gaps(tt, det_flux, binsize=binsize)    #detrended data
+        _,    resbin          = bin_data_with_gaps(tt, flux-full_mod,binsize=binsize)    #residuals
 
         ########## Plot and save lightcurve with fit ########
         outname=prefix+names[j][:-4]+'_fit.png'
@@ -42,7 +42,7 @@ def fit_plots(yval,tarr,farr,earr, nttv, nphot, nRV, indlist, filters,names,RVna
         fig,ax = plt.subplots(3,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title('Fit for lightcurve '+names[j][:-4])
         ax[0].set_ylabel("Flux")
-        ax[0].plot(tt, flux,'.',c='skyblue', ms=2, zorder=1, label='Data')
+        ax[0].plot(tt, flux,'.',c='skyblue', ms=3, zorder=1, label='Data')
         ax[0].plot(tt, full_mod, "-r", lw=2,zorder=5,label='Full Model fit')
         ax[0].plot(tt, bfunc, "g--",  zorder=5,label='Baseline')
         ax[0].errorbar(t_bin, f_bin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
@@ -51,7 +51,7 @@ def fit_plots(yval,tarr,farr,earr, nttv, nphot, nRV, indlist, filters,names,RVna
         ax[0].legend()
 
         ax[1].set_ylabel("Flux - baseline")
-        ax[1].plot(tt, det_flux,'.',c='skyblue',ms=2, zorder=1, label="Detrended data")
+        ax[1].plot(tt, det_flux,'.',c='skyblue',ms=3, zorder=1, label="Detrended data")
         # ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
         ax[1].plot(t_sm, lc_sm,'r-',lw=2,zorder=5, label="Best fit")
         ax[1].errorbar(t_bin, det_fbin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
@@ -109,17 +109,16 @@ def fit_plots(yval,tarr,farr,earr, nttv, nphot, nRV, indlist, filters,names,RVna
                 nbin = int(np.ptp(np.concatenate(phase_filter)) / binsize)
 
                 srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
-                pbin, flux_bins, error_bins = bin_data(np.concatenate(phase_filter)[srt], np.concatenate(flux_filter)[srt],
-                                                        np.concatenate(err_filter)[srt], statistic='mean', bins=nbin)
-                _, res_bins = bin_data(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt],
-                                        statistic='mean', bins=nbin)
+                pbin, flux_bins, error_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(flux_filter)[srt],
+                                                        np.concatenate(err_filter)[srt], binsize=binsize)
+                _, res_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt], binsize=binsize)
                 srt_sm = np.argsort(np.concatenate(phsm_filter))
 
                 fig, ax = plt.subplots(2, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (3, 1)})
                 ax[0].set_title(f'Phasefolded LC {filt} - planet{n + 1}: P={period[n]:.2f} d ({filt})')
                 ax[0].set_ylabel(f"Flux – baseline")
                 ax[0].axhline(1, ls="--", color="k", alpha=0.3)
-                ax[0].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=2, zorder=1, label='Data')
+                ax[0].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=3, zorder=1, label='Data')
                 ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
                 ax[0].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
                             label='Best-fit')
