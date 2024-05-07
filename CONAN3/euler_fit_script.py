@@ -59,7 +59,7 @@ else:
 lc_obj = CONAN3.load_lightcurves(file_list        = lc_list, 
                                     data_filepath = path, 
                                     filters       = [filt], 
-                                    lamdas        = [0.6],
+                                    wl        = [0.6],
                                     nplanet=1)
 print(lc_obj)
 

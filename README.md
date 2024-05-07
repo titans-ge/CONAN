@@ -2,11 +2,21 @@
 COde for exoplaNet ANalysis
 
 ### Installation
-To avoid requirement conflicts with other packages, it is better to create a new environment to install CONAN
+To avoid requirement conflicts with other packages, it is better to create a new environment (or clone a current environment) to install CONAN
 
+
+To create a new environment:
 ```bash
 conda create -n conan_env numpy python=3.10
+```
 
+or to clone an existing environment with python>=3.10:
+```
+conda create -n conan_env --clone my_old_env
+```
+
+then
+```
 conda activate conan_env
 ```
 

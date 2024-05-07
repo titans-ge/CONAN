@@ -1,5 +1,5 @@
 
-28-Feb-2024: version 3.1.6
+7-May-2024: version 3.2.0
 ~~~~~~~~~~~~~
 * added detrend argument to .plot() function to plot the detrended data and model. also adjusted space betweem data and residuals
 * fixed bug in mutiprocessing which was not closing the pool after fitting
@@ -15,6 +15,15 @@
 * modified phase curve section of config file to print priors for D_occ, A_atm, ph_off, and A_ev side-by-side instead of in separate lines.
 * choose between duration or rho_star for transit model.
 * corrected formating issues in *out.dat files when significant digits are too many.
+* automatically determine limits on jitter terms and baseline parameters from the data
+* added dynamic nested sampling with dynesty 
+* sampling can be resumed by passing resume_sampling=True to the .run_fit() function
+* changed lamdas argument in load_lightcurves to wl. lamdas is still accepted but will be deprecated in future versions.
+* support for nested output folder path.
+* allowed float clip values in clip_outliers() function
+* out.dat files now contain arrays of the different baseline components [base_para, base_spl, base_gp, base_total]  and the residuals.
+* check that user actually set planet parameters before attempting fit.
+
 
 23-Feb-2024: version 3.1.5
 ~~~~~~~~~~~~~

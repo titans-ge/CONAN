@@ -4,6 +4,8 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from astropy.io import fits
+from astroquery.mast import Observations
+
 
 try:
     import lightkurve as lk
@@ -17,6 +19,7 @@ try:
     from dace_query.cheops import Cheops
 except:
     print("Warning: dace_query not installed, won't be able to download CHEOPS data. run `pip install dace_query`")
+
 
 class get_TESS_data(object):
     """
@@ -224,7 +227,7 @@ class get_CHEOPS_data(object):
         print(pd.DataFrame(data, columns=["obj_id_catname","file_key", "pi_name", "date_mjd_start",
                                             "obs_total_exptime", "data_arch_rev",'status_published']))
 
-    def download(self, file_keys="all", aperture="DEFAULT", decontaminate=True, reject_highpoints=True, verbose=True):
+    def download(self, file_keys="all", aperture="DEFAULT", decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,verbose=True):
         """   
         Download CHEOPS light curves from the cheops database using the dace_query package
 
@@ -241,6 +244,9 @@ class get_CHEOPS_data(object):
 
         reject_highpoints : bool
             Reject high points in the light curve. Default is True. 
+        
+        bg_MAD_reject : float
+            Number of median absolute deviations to reject high background points. Default is 3.
         """
         
         
@@ -259,7 +265,7 @@ class get_CHEOPS_data(object):
             if verbose: print(f"downloaded lightcurve with file key: {file_key}, aperture: {aperture[i]}")
             
             #remove points with high background
-            mask  = d.lc["bg"] > 3*np.nanmedian(d.lc["bg"])
+            mask  = d.lc["bg"] > bg_MAD_reject*np.nanmedian(d.lc["bg"])
             _,_,_ = d.mask_data(mask, verbose=False)
 
             self.lc.append(d)
@@ -310,6 +316,7 @@ class get_CHEOPS_data(object):
             file = folder+"/"+prefix+"_"+fkey+".dat" if out_filename is None else f"{folder}/{out_filename}"
             np.savetxt(file, lc_, fmt="%.8f", 
                         header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s} {"x_off":10s} {"y_off":10s} {"roll":10s} {"bg":10s} {"contam":10s} {"deltaT":10s}')
+            print("columns are ordered as [0:time, 1:flux, 2:flux_err, 3:x_off, 4:y_off, 5:roll, 6:bg, 7:contam, 8:deltaT]")
             print(f"saved file as {file}")
 
     def _resort_roll(self,x):
@@ -323,6 +330,96 @@ class get_CHEOPS_data(object):
         # x = (360 + x - brk_pt)%360
         x[x > brk_pt] -= 360
         return x 
+
+
+class get_JWST_data(object):
+    """
+    Class to download and save JWST light curves from the MAST archive (using `astroquery`).
+
+    Parameters
+    ----------
+    planet_name : str
+        Name of the planet.
+
+    Examples
+    --------
+    >>> from CONAN3.get_files import get_JWST_data
+    >>> df = get_JWST_data("WASP-39")
+    >>> df.search(instrument="NIRSPEC/SLIT", filters="G395H", proposal_id="1366")
+    >>> df.download()   #download white light curves
+    >>> df.scatter()
+    >>> df.save_CONAN_lcfile(bjd_ref = 2450000, folder="data")
+    """
+    def __init__(self, planet_name):
+        self.planet_name = planet_name
+        self.lc          = []
+
+    def search(self, instrument=[], filters=[], proposal_id=[],search_kws={}):
+        """
+        Search for JWST light curves on MAST using the astroquery package.
+
+        Parameters
+        ----------
+        instrument : str
+            Name of the JWST instrument e.g 'NIRSPEC/SLIT','MIRI/SLITLESS','NIRCAM/GRISM','NIRCAM/IMAGE','NIRISS/SOSS'.
+        filters : str
+            Name of the filter e.g 'G395H','F210M;WLP8','CLEAR;PRISM','GR700XD','F444W'.
+        proposal_id : str
+            Proposal ID of the observation. 
+        search_kws : dict
+            Additional search keywords to use for the query. e.g. {"proposal_pi":"Batalha, Natalie", }       
+
+        """
+        print("Searching for JWST data ...")
+        for key in ["instrument_name","filters","proposal_id","project"]:
+            if key in search_kws: search_kws.pop(key)
+
+        self.instrument  = instrument
+        self.filters     = filters
+        self.proposal_id = proposal_id   
+        self.kwargs      = search_kws
+
+        self.obs = Observations.query_criteria(target_name=self.planet_name, instrument_name=self.instrument, 
+                                            filters=self.filters, proposal_id=self.proposal_id, project='JWST',
+                                            **search_kws)
+        
+        print(pd.DataFrame(self.obs.to_pandas(), columns=['target_name','dataproduct_type','calib_level','intentType','provenance_name','instrument_name',
+                                                        'filters','dataRights','proposal_type','proposal_pi','proposal_id','t_min','t_exptime','objID']))
+
+
+    def download(self, selection_kws={},overwrite=False):
+        """
+        Download JWST white light curves from MAST using the astroquery package.
+
+        Parameters
+        ----------
+        selection_kws : dict
+            Additional selection keywords to select specific observation e.g {"t_exptime":1200, "calib_level":3}
+            Default is {} to take result from search assuming it has been fine-tuned to give one result.
+        overwrite : bool
+            Overwrite the downloaded light curves. Default is False.
+        """
+        self.kwargs.update(selection_kws)
+        self.obs = Observations.query_criteria(target_name=self.planet_name, instrument_name=self.instrument, 
+                                            filters=self.filters, proposal_id=self.proposal_id, project='JWST',
+                                            **self.kwargs)
+        
+        data_products = Observations.get_product_list(self.obs)
+        whtlt = Observations.filter_products(data_products, productType = 'SCIENCE', productSubGroupDescription = 'WHTLT')
+        lc    = Observations.download_products(whtlt, cache=not overwrite)
+        self.lc = np.loadtxt(lc["Local Path"][0],skiprows=16)
+
+    def scatter(self):
+        """
+        Plot the scatter of the light curves.
+        """
+        assert self.lc != [], "No light curves downloaded yet. Run `download()` first."
+        plt.figure(figsize=(10,4))
+        plt.scatter(self.lc[:,0],self.lc[:,1],s=1)
+        plt.xlabel("Time")
+        plt.ylabel("Flux")
+        plt.show()
+
 
 
 
@@ -467,9 +564,9 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
     overwrite_cache : bool
         Overwrite the cached parameters. Default is True.
     """
-    if os.path.exists(f"{planet_name}_sysparams.pkl") and overwrite_cache is False:
+    if os.path.exists(f"{planet_name.replace(' ','')}_sysparams.pkl") and overwrite_cache is False:
         print("Loading parameters from cache ...")
-        params = pd.read_pickle(f"{planet_name}_sysparams.pkl")
+        params = pd.read_pickle(f"{planet_name.replace(' ','')}_sysparams.pkl")
         return params
     
     params = {"star":{}, "planet":{}}
@@ -506,12 +603,12 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         params["planet"]["w"]      = (df["pl_orblper"][0],df["pl_orblpererr1"][0])
         params["planet"]["T0"]     = (df["pl_tranmid"][0],df["pl_tranmiderr1"][0])
         params["planet"]["b"]      = (df["pl_imppar"][0],df["pl_impparerr1"][0])
-        params["planet"]["T14"]    = (df["pl_trandur"][0],df["pl_trandurerr1"][0])
+        params["planet"]["T14"]    = (df["pl_trandur"][0]/24,df["pl_trandurerr1"][0]/24)
         params["planet"]["aR"]     = (df["pl_ratdor"][0],df["pl_ratdorerr1"][0])
         params["planet"]["K[m/s]"] = (df["pl_rvamp"][0],df["pl_rvamperr1"][0])
     else:
         raise NotImplemented
 
-    pd.to_pickle(params, f"{planet_name}_sysparams.pkl")
+    pd.to_pickle(params, f"{planet_name.replace(' ','')}_sysparams.pkl")
 
     return params

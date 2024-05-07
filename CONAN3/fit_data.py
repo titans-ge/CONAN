@@ -27,7 +27,7 @@ from .utils import gp_params_convert
 from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
 
-from ._classes import _raise, fit_setup, __default_backend__, load_result, _text_format
+from ._classes import _raise, fit_setup, __default_backend__, load_result, load_lightcurves, load_rvs, _text_format
 import matplotlib
 matplotlib.use(__default_backend__)
 
@@ -58,7 +58,7 @@ def prior_transform(u,prior_dst,prior_names):
     return x 
 
 def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_folder="output", progress=True,
-            rerun_result=False, verbose=False, debug=False, save_burnin_chains=True, 
+            rerun_result=False, verbose=False, debug=False, save_burnin_chains=True, resume_sampling=False,
             dyn_kwargs=dict(sample='rwalk',bound='multi'), run_kwargs=dict() ):
     """
     function to fit the data using the light-curve object lc_obj, rv_object rv_obj, and fit_setup object fit_obj.
@@ -68,51 +68,45 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     lc_obj : lightcurve object;
         object containing lightcurve data and setup parameters. 
         see CONAN3.load_lightcurves() for more details.
-
     rv_obj : rv object
         object containing radial velocity data and setup parameters. 
         see CONAN3.load_rvs() for more details.
-
     fit_obj : fit_setup object;
         object containing fit setup parameters. 
         see CONAN3.fit_setup() for more details.
-
     statistic : str;
         statistic to run on posteriors to obtain model parameters and create model output file ".._lcout.dat".
         must be one of ["median", "max", "bestfit"], default is "median". 
         "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
             is the parameter combination that gives the maximum joint posterior probability.
-
     progress : bool;
         if True, show MCMC progress bar, default is True.
-
     out_folder : str;
         path to output folder, default is "output".
-
     rerun_result : bool;
-        if True, rerun CONAN with previous fit result in order to regenerate plots and files. Default is False.
-
+        if True, rerun CONAN with previous fit result in order to regenerate plots and files. 
+        This also allows to create files compatibile with latest CONAN version. Default is False.
+    resume_sampling : bool;
+        resume sampling from last saved position 
     verbose : bool;
         if True, print out additional information, default is False.
-
     debug : bool;
         if True, print out additional debugging information, default is False.
-
     save_burnin_chains : bool;
         if True, save burn-in chains to file, default is True.
-    
     dyn_kwargs : dict;
-        other parameters sent to dynesty.NestedSampler function. e.g dyn_kwargs=dict(sample='rwalk',bounds='multi')
-
+        other parameters sent to the dynesty.NestedSampler() or dynesty.DynamicNestedSampler() function. e.g dyn_kwargs=dict(sample='rwalk',bounds='multi')
     run_kwargs : dict;
-        other parameters sent to emcee.EnsembleSampler.run_mcmc() function or dynesty.NestedSampler.run_nested() function.
+        other parameters sent to emcee's run_mcmc() function or dynesty's run_nested() function.
+        e.g., for emcee: run_kwargs=dict(thin_by=1, tune=True, skip_initial_state_check=False)
+        e.g., for dynesty dynamic sampling: run_kwargs=dict(maxiter_init=10000, maxiter_batch=1000,n_effective=30000)
+        e.g., for static sampling: run_kwargs=dict( nlive_batch=50, maxbatch=5,maxiter=10000, maxcall=50000, logl_max=12344, n_effective=30000)
     
     Returns:
     --------
     result : object containing labeled mcmc chains
         Object that contains methods to plot the chains, corner, and histogram of parameters.
         e.g result.plot_chains(), result.plot_burnin_chains(), result.plot_corner, result.plot_posterior("T_0")
-
     """
 
     if not os.path.exists(out_folder):
@@ -125,7 +119,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             result = load_result(out_folder)
             return result
         else:
-            print(f'Fit result already exists in this folder: {out_folder}.\nRerunning with results to generate plots and files...\n')
+            print(f'Fit result already exists in this folder: {out_folder}.\nRerunning with saved posterior chains to generate plots and files...\n')
 
     print('CONAN fit launched!!!\n') 
 
@@ -135,45 +129,47 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 #============lc_obj=========================
     #from load_lightcurves()
+    if lc_obj is None: lc_obj = load_lightcurves()
     fpath      = lc_obj._fpath
-    names      = lc_obj._names
+    LCnames    = lc_obj._names
     filters    = lc_obj._filters
-    lamdas     = lc_obj._lamdas
+    wl         = lc_obj._wl
     bases      = lc_obj._bases
     bases_init = lc_obj._bases_init
     groups     = lc_obj._groups
     useGPphot  = lc_obj._useGPphot
     jitt_start = np.log(lc_obj._jitt_estimate)
 
-    nphot      = len(names)                                                 # the number of photometry input files
+    nphot      = len(LCnames)                                                 # the number of photometry input files
     njumpphot  = np.zeros(nphot)                                            # the number of jumping parameters for each photometry input file
     filnames   = np.array(list(sorted(set(filters),key=filters.index)))     # the unique filter names
-    ulamdas    = np.array(list(sorted(set(lamdas),key=lamdas.index)))       # the unique wavelengths
+    uwl        = np.array(list(sorted(set(wl),key=wl.index)))       # the unique wavelengths
     grnames    = np.array(list(sorted(set(groups))))                        # the unique group names
     nfilt      = len(filnames)                                              # the number of unique filters
     ngroup     = len(grnames)                                               # the number of unique groups
 
     useSpline_lc  = lc_obj._lcspline                                            # use spline to interpolate the light curve
-    input_lcs     = {} if lc_obj is None else lc_obj._input_lc
+    input_lcs     = lc_obj._input_lc
     s_samp        = lc_obj._ss
 
 #============rv_obj========================== 
-    # from load_rvs()
-    if rv_obj is not None and rv_obj._names == []: rv_obj = None   
-    RVnames  = [] if rv_obj is None else rv_obj._names
-    RVbases  = [] if rv_obj is None else rv_obj._RVbases
-    rv_fpath = [] if rv_obj is None else rv_obj._fpath
-    rv_dict  = {} if rv_obj is None else rv_obj._rvdict
-    sinPs    = [] if rv_obj is None else rv_dict["sinPs"]
+    # from load_rvs() 
+    if rv_obj is None: rv_obj = load_rvs() 
+    RVnames  = rv_obj._names
+    RVbases  = rv_obj._RVbases
+    rv_fpath = rv_obj._fpath
+    rv_dict  = rv_obj._rvdict
+    sinPs    = rv_dict["sinPs"]
     nRV      = len(RVnames)             # the number of RV input files
     njumpRV  = np.zeros(nRV)        # the number of jumping parameters for each RV input file
-    useGPrv  = ["n"]*nRV if rv_obj is None else rv_obj._useGPrv 
-    rvjitt_start = rv_obj._jitt_estimate if rv_obj is not None else 0
+    useGPrv  = rv_obj._useGPrv 
 
-    useSpline_rv  = [] if rv_obj is None else rv_obj._rvspline   
-    input_rvs     = {} if rv_obj is None else rv_obj._input_rv  
-    RVbases_init  = [] if rv_obj is None else rv_obj._RVbases_init
-    RVunit        = "kms" if rv_obj is None else rv_obj._RVunit
+    rvjitt_start = rv_obj._jitt_estimate 
+    useSpline_rv = rv_obj._rvspline   
+    input_rvs    = rv_obj._input_rv  
+    RVbases_init = rv_obj._RVbases_init
+    RVunit       = rv_obj._RVunit
+
     extinpars= []               # set up array to contain the names of the externally input parameters
     
     for i in range(nRV):
@@ -208,15 +204,15 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         
     for n in range(1,npl+1): 
-        if rv_obj is None: #remove k as a free parameter
+        if nRV == 0: #remove k as a free parameter
             CP[f"pl{n}"]['K'].to_fit = "n"
             CP[f"pl{n}"]['K'].step_size = 0
-        if nphot == 0: #remove rprs and impact_para as a free parameter
+        if nphot == 0: #remove rprs and impact_para as free parameters
             CP[f"pl{n}"]['RpRs'].to_fit = "n"
             CP[f"pl{n}"]['RpRs'].step_size = 0
             CP[f"pl{n}"]['Impact_para'].to_fit = "n"
             CP[f"pl{n}"]['Impact_para'].step_size = 0
-
+        assert CP[f"pl{n}"]['Period'].start_value!=0,f"Period for planet {n} cannot be zero. Make sure to set planet parameters using the lc_obj.planet_parameters() function."
 
         # # rprs   
         if CP[f"pl{n}"]['RpRs'].step_size != 0.: njumpphot=njumpphot+1                 # if step_size is 0, then rprs is not a jumping parameter
@@ -236,7 +232,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             extinpars.append('T_0')
         
         # # per    
-        if CP[f"pl{n}"]['Period'].step_size != 0.: 
+        if CP[f"pl{n}"]['Period'].step_size != 0.:
             njumpphot=njumpphot+1
             njumpRV=njumpRV+1
         if (CP[f"pl{n}"]['Period'].to_fit == 'n' and CP[f"pl{n}"]['Period'].prior == 'p'):
@@ -300,7 +296,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     DA_Aev  = lc_obj._PC_dict["A_ev"]
     DA_Adb  = lc_obj._PC_dict["A_db"]
 
-    nocc      = len(filnames) #len(DA_occ["filters_occ"])
+    nocc      = len(filnames)
     occ_in    = np.zeros((nocc,7))
     Aatm_in   = np.zeros((nocc,7))
     phoff_in  = np.zeros((nocc,7))
@@ -375,6 +371,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     burnin           = int(DA_mc['n_burn'])    # Length of bun-in
     emcee_move       = DA_mc['emcee_move']            # Differential Evolution? 
     fit_sampler      = DA_mc['sampler']               # Which sampler to use?   
+    NS_type          = DA_mc["nested_sampling"]     #static or dynamic sampling
     nlive            = DA_mc["n_live"]  
     force_nlive      = DA_mc["force_nlive"]
     dlogz            = DA_mc["dyn_dlogz"]    
@@ -390,7 +387,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #limits on parametric baseline pars: auto or user-defined
     #LC
-    lcbases_lims = [dict(off = [input_lcs[names[i]]["col1"].min(),input_lcs[names[i]]["col1"].max()], #min,max flux
+    lcbases_lims = [dict(off = [input_lcs[LCnames[i]]["col1"].min(),input_lcs[LCnames[i]]["col1"].max()], #min,max flux
                         amp=[0,1], freq=[1,333], phi=[0,1], ACNM=[0,1e8], BCNM=[0,1e8], C0=[-1,1], D0=[-1,1]) 
                         for i in range(nphot)]
 
@@ -399,14 +396,18 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         for i in range(nphot):
             for k in col_pars: lcbases_lims[i][k] = LCbase_lims
                 
-    else:                              #auto determine best lims from data. rms/1% span of the decorr_column
+    else:                              #auto determine best lims from data. range(flux)/range(column array)
         for i in range(nphot):
-            fl_arr = input_lcs[names[i]]["col1"]
+            off_step = 0.1*np.ptp(lcbases_lims[i]["off"])
+            if bases_init[i]["off"]>=lcbases_lims[i]["off"][1] - off_step: lcbases_lims[i]["off"][1] += 2*off_step
+            if bases_init[i]["off"]<=lcbases_lims[i]["off"][0] + off_step: lcbases_lims[i]["off"][0] -= 2*off_step
+            
+            fl_arr = input_lcs[LCnames[i]]["col1"]
             for c in [0,3,4,5,6,7,8]:      #col numbers
-                arr = input_lcs[names[i]][f"col{c}"]
-                arr = arr-np.median(arr) if c==0 else arr    #if time array, sutract median
+                arr = input_lcs[LCnames[i]][f"col{c}"]
+                arr = arr-np.median(arr) if c==0 else arr    #if time array, subtract median
                 if np.ptp(arr) > 0:      #if variation in this column
-                    alim = np.ptp(fl_arr)/np.ptp(arr**1)    #max flux change occuring in across the range of the decorr_column
+                    alim = np.ptp(fl_arr)/np.ptp(arr**1)    #max flux change occuring across the range of the decorr_column
                     alim = max(alim,1)
                     lcbases_lims[i][f"A{c}"] = [-alim,alim]
 
@@ -439,6 +440,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 else:
                     rvbases_lims[i][f"A{c}"] = rvbases_lims[i][f"B{c}"] = [-1,1]
 
+    #LC jitter lims
+    if isinstance(LCjitter_loglims,list):   # set all lims to user-defined LCjitter_loglims
+        lcjitter_loglims = [LCjitter_loglims]*nphot
+    else:               #auto determine best jiiter lims for each lcfile as [-15, log(10*mean(fluxerr))]
+        lcjitter_loglims = [ [-15, np.log(input_lcs[LCnames[i]]["col2"].mean()*10)] for i in range(nphot)]
+    #rv jitter lims
+    if isinstance(RVjitter_lims,list):   # set all lims to user-defined RVjitter_lims
+        rvjitter_lims = [RVjitter_lims]*nRV
+    else:               #auto determine best jiiter lims for each rvfile as [0, 10*mean(RVerr)]
+        rvjitter_lims = [ [0,input_rvs[RVnames[i]]["col2"].mean()*10] for i in range(nRV)]
 
 #========= stellar properties==========================
     #from setup_fit.stellar_parameters()
@@ -456,22 +467,22 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     #********************************************************************
         
     #============================= SETUP ARRAYS =======================================
-    if lc_obj is not None: print('Setting up photometry arrays ...')
+    if LCnames != []: print('Setting up photometry arrays ...')
     if np.any([spl.use for spl in useSpline_lc]): print('Setting up Spline fitting for LCS ...')  
 
     t_arr      = np.array([])  # initializing array with all timestamps (col0)
     f_arr      = np.array([])  # initializing array with all flux values(col1)
     e_arr      = np.array([])  # initializing array with all error values(col2)
-    col3_arr   = np.array([])  # initializing array with all col4 values (prev xarr)
-    col4_arr   = np.array([])  # initializing array with all col4 values (prev yarr)
-    col5_arr   = np.array([])  # initializing array with all col5 values (prev aarr)
-    col6_arr   = np.array([])  # initializing array with all col6 values (prev warr)
-    col7_arr   = np.array([])  # initializing array with all col7 values (prev sarr)
-    col8_arr   = np.array([])  # initializing array with all col8 values (prev darr)
+    # col3_arr   = np.array([])  # initializing array with all col4 values (prev xarr)
+    # col4_arr   = np.array([])  # initializing array with all col4 values (prev yarr)
+    # col5_arr   = np.array([])  # initializing array with all col5 values (prev aarr)
+    # col6_arr   = np.array([])  # initializing array with all col6 values (prev warr)
+    # col7_arr   = np.array([])  # initializing array with all col7 values (prev sarr)
+    # col8_arr   = np.array([])  # initializing array with all col8 values (prev darr)
 
     lind       = np.array([])  # initializing array with the lightcurve indices
-    bis_arr    = np.array([])  # initializing array with all bisector values
-    contr_arr  = np.array([])  # initializing array with all contrast values
+    # bis_arr    = np.array([])  # initializing array with all bisector values
+    # contr_arr  = np.array([])  # initializing array with all contrast values
 
     indlist    = []   # the list of the array indices
     bvars      = []   # a list that will contain lists of [0, 1] for each of the baseline parameters, for each of the LCs. 0 means it's fixed. 1 means it's variable
@@ -519,7 +530,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             stepsize[1+7*n : 7+7*n] = 0     #index 1-6
             prior[1+7*n : 7+7*n]    = 0
 
-    ttvYN = lc_obj._ttvs.to_fit
+    ttv_conf = lc_obj._ttvs.conf   #ttv configuration
+    ttvYN    = lc_obj._ttvs.to_fit
     if ttvYN == "y":
         nttv = len(lc_obj._ttvs.fit_t0s)    
         for i in range(nttv):
@@ -616,11 +628,11 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             params      = np.concatenate((params,  [jitt_start[i]]), axis=0)    
             stepsize    = np.concatenate((stepsize,[0.1]), axis=0)
             #ensure jitt start values are within the limits else set new limits around the start value
-            if LCjitter_loglims[0] >= jitt_start[i]: LCjitter_loglims[0] = jitt_start[i] - 5
-            if LCjitter_loglims[1] <= jitt_start[i]: LCjitter_loglims[1] = jitt_start[i] + 5
+            if lcjitter_loglims[i][0] >= jitt_start[i]: lcjitter_loglims[i][0] = jitt_start[i] - 5
+            if lcjitter_loglims[i][1] <= jitt_start[i]: lcjitter_loglims[i][1] = jitt_start[i] + 5
 
-            pmin        = np.concatenate((pmin,    [LCjitter_loglims[0]]), axis=0)
-            pmax        = np.concatenate((pmax,    [LCjitter_loglims[1]]), axis=0)
+            pmin        = np.concatenate((pmin,    [lcjitter_loglims[i][0]]), axis=0)
+            pmax        = np.concatenate((pmax,    [lcjitter_loglims[i][1]]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
@@ -645,17 +657,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         priorlow    = np.concatenate((priorlow,[rv_dict["gampriloa"][i]]), axis=0)
         priorup     = np.concatenate((priorup, [rv_dict["gamprihia"][i]]), axis=0)
         pnames      = np.concatenate((pnames,  [f"rv{i+1}_gamma"]), axis=0)
-
         
         if (jit_apply=='y'):
             params      = np.concatenate((params,  [rvjitt_start[i]]), axis=0)
             stepsize    = np.concatenate((stepsize,[0.0001]), axis=0)
             #ensure jitt start values are within the limits else set new limits around the start value
-            if RVjitter_lims[0] >= rvjitt_start[i]: RVjitter_lims[0] = 0
-            if RVjitter_lims[1] <= rvjitt_start[i]: RVjitter_lims[1] = rvjitt_start[i] + 2
+            if rvjitter_lims[i][0] >= rvjitt_start[i]: rvjitter_lims[i][0] = 0
+            if rvjitter_lims[i][1] <= rvjitt_start[i]: rvjitter_lims[i][1] = rvjitt_start[i] * 5
 
-            pmin        = np.concatenate((pmin,    [RVjitter_lims[0]]), axis=0)
-            pmax        = np.concatenate((pmax,    [RVjitter_lims[1]]), axis=0)
+            pmin        = np.concatenate((pmin,    [rvjitter_lims[i][0]]), axis=0)
+            pmax        = np.concatenate((pmax,    [rvjitter_lims[i][1]]), axis=0)
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
@@ -689,8 +700,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     pargps      = []  # list to hold independent variables of GP for each lc
     gpkerns     = []  # list to hold the kernel for each lc
 
-    GPdict   = {} if lc_obj is None else lc_obj._GP_dict
-    sameLCgp = False if lc_obj is None else lc_obj._sameLCgp
+    GPdict   = lc_obj._GP_dict
+    sameLCgp = lc_obj._sameLCgp
     
     #possible kernels
     george_kernels = dict(  expsq = george.kernels.ExpSquaredKernel, 
@@ -706,7 +717,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     # =================PHOTOMETRY =========================================
     for i in range(nphot):
         # t, flux, err, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in = np.loadtxt(fpath+names[i], usecols=(0,1,2,3,4,5,6,7,8), unpack = True)  # reading in the data
-        thisLCdata = input_lcs[names[i]]
+        thisLCdata = input_lcs[LCnames[i]]
         t, flux, err, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in = thisLCdata.values()
         
         if (divwhite=='y'): # if the divide - white is activated, divide the lcs by the white noise model before proceeding
@@ -716,15 +727,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         t_arr     = np.concatenate((t_arr,    t),       axis=0)
         f_arr     = np.concatenate((f_arr,    flux),    axis=0)
         e_arr     = np.concatenate((e_arr,    err),     axis=0)
-        col3_arr  = np.concatenate((col3_arr, col3_in), axis=0)
-        col4_arr  = np.concatenate((col4_arr, col4_in), axis=0)
-        col5_arr  = np.concatenate((col5_arr, col5_in), axis=0)
-        col6_arr  = np.concatenate((col6_arr, col6_in), axis=0)
-        col7_arr  = np.concatenate((col7_arr, col7_in), axis=0) 
-        col8_arr  = np.concatenate((col8_arr, col8_in), axis=0)  
-        
-        bis_arr   = np.concatenate((bis_arr,   np.zeros(len(t), dtype=int)),   axis=0)   # bisector array: filled with 0s
-        contr_arr = np.concatenate((contr_arr, np.zeros(len(t), dtype=int)), axis=0)   # contrast array: filled with 0s
         lind      = np.concatenate((lind,      np.zeros(len(t), dtype=int) + i),  axis=0)   # lightcurve index array: filled with i
         indices   = np.where(lind == i)
         indlist.append(indices)
@@ -762,7 +764,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                                             ]))        
         # note currently we have the following parameters in these arrays:
         #   [rho_star,                                   (1)
-        #   [T0,RpRs,b,per,eos, eoc,K,                   (7)*npl
+        #   [T0,RpRs,b,per,sesinw, secosw,K,                   (7)*npl
         #   ttv,...                                      (nttv)
         #   ddf_1, ..., ddf_n,                           (nddf)
         #   (occ_1,Aatm_1,phoff_1,Aev_1,A_db_1),...,occ_n,Aatm_n,phoff_n,Aev_n,Adb_n(5*nocc)
@@ -782,7 +784,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         elif useGPphot[i] in ['y','ce']:     #George or Celerite GP
             gp_conv  = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
-            thisLCgp = GPdict[names[i]]        #the GP dictionary for this LC
+            thisLCgp = GPdict[LCnames[i]]        #the GP dictionary for this LC
             gpcols   = [thisLCgp[f"amplitude{n}"].user_data[1] for n in range(thisLCgp["ngp"])]     #data column names to use for the GP
             gpkerns.append([thisLCgp[f"amplitude{n}"].user_data[0] for n in range(thisLCgp["ngp"])]) #GP kernels of this lc
 
@@ -876,19 +878,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         t_arr    = np.concatenate((t_arr,t), axis=0)
         f_arr    = np.concatenate((f_arr,rv_obj), axis=0)    # ! add the RVs to the "flux" array !
         e_arr    = np.concatenate((e_arr,err), axis=0)   # ! add the RV errors to the "earr" array !
-        col3_arr = np.concatenate((col3_arr,np.zeros(len(t),dtype=int)), axis=0)  # xshift array: filled with 0s
-        col4_arr = np.concatenate((col4_arr,np.zeros(len(t),dtype=int)), axis=0)  # yshift array: filled with 0s
-        col5_arr = np.concatenate((col5_arr,np.zeros(len(t),dtype=int)), axis=0)  # airmass array: filled with 0s
-        col6_arr = np.concatenate((col6_arr,fwhm), axis=0)
-        col7_arr = np.concatenate((col7_arr,np.zeros(len(t),dtype=int)), axis=0)  # sky array: filled with 0s
-        col8_arr = np.concatenate((col8_arr,np.zeros(len(t),dtype=int)), axis=0)  
-
-        bis_arr   = np.concatenate((bis_arr,bis), axis=0)  # bisector array
-        contr_arr = np.concatenate((contr_arr,contrast), axis=0)  # contrast array
-        lind      = np.concatenate((lind,np.zeros(len(t),dtype=int)+i+nphot), axis=0)   # indices
-        indices   = np.where(lind==i+nphot)
+        lind     = np.concatenate((lind,np.zeros(len(t),dtype=int)+i+nphot), axis=0)   # indices
+        indices  = np.where(lind==i+nphot)
         indlist.append(indices)
-        Pin       = sinPs[i]
+        Pin      = sinPs[i]
 
         #rv baseline 
         dcol0RV, dcol3RV, dcol4RV, dcol5RV,dsinRV,nbcRV = basecoeffRV(RVbases[i],Pin,RVbases_init[i],rvbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
@@ -908,7 +901,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior     = np.concatenate((prior,    np.zeros(12)))
         priorlow  = np.concatenate((priorlow, np.zeros(12)))
         priorup   = np.concatenate((priorup,  np.zeros(12)))
-        pnames   = np.concatenate((pnames, [f"rv{i+1}_A0",f"rv{i+1}_B0",
+        pnames    = np.concatenate((pnames, [f"rv{i+1}_A0",f"rv{i+1}_B0",
                                             f"rv{i+1}_A3",f"rv{i+1}_B3",
                                             f"rv{i+1}_A4",f"rv{i+1}_B4",
                                             f"rv{i+1}_A5",f"rv{i+1}_B5",
@@ -1002,9 +995,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             rv_pargps.append(gp_x) 
 
 
-    # for i in range(len(params)):
-    #     if verbose: print(pnames[i], params[i], stepsize[i], pmin[i], pmax[i], priorup[i], priorlow[i])
-        
     inmcmc='n'
 
     LCjump = [] # a list where each item contain a list of the indices of params that jump and refer to this specific lc
@@ -1024,8 +1014,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         #transit timing variation
         if ttvYN=='y':
-            ttvind = 1+7*npl+ np.arange(nt0,nt0+len(lc_obj._ttvs.conf[i].t0s))   #add indices of the t0s of this lc
-            nt0 += len(lc_obj._ttvs.conf[i].t0s)
+            ttvind = 1+7*npl+ np.arange(nt0,nt0+len(ttv_conf[i].t0s))   #add indices of the t0s of this lc
+            nt0 += len(ttv_conf[i].t0s)
             temp=np.concatenate((np.asarray(temp),ttvind),axis=0)
 
         
@@ -1225,71 +1215,81 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     print('\nPlotting initial guess\n---------------------------')
 
     inmcmc = 'n'
-    indparams = [t_arr,f_arr,col3_arr,col4_arr,col6_arr,col5_arr,col7_arr,bis_arr,contr_arr, nphot, nRV, indlist, filters, nfilt, filnames,nddf,
-                nocc,nttv,col8_arr,grprs,lc_obj._ttvs.conf,grnames,groups,ngroup,ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, 
-                cont,names,RVnames,e_arr,divwhite,dwCNMarr,dwCNMind,params,useGPphot,useGPrv,GPobjects,GPparams,GPindex,
-                pindices,jumping,pnames_all[jumping],prior_distr,pnames_all,priorwids[jumping],lim_low[jumping],lim_up[jumping],pargps,
-                jumping_noGP,gpkerns,jit_apply,jumping_GP,GPstepsizes,sameLCgp,npl,useSpline_lc,useSpline_rv,s_samp,
-                rvGPobjects,rvGPparams,rvGPindex,input_lcs, input_rvs, RVunit,rv_pargps,rv_gpkerns,sameRVgp,fit_sampler]
+    indparams = {   "t_arr": t_arr,"f_arr": f_arr,"col3_arr": _,"col4_arr": _,"col6_arr": _,"col5_arr": _,"col7_arr": _,"bis_arr": _,"contr_arr": _,"nphot": nphot,"nRV": nRV,"indlist": indlist,
+                    "filters": filters,"nfilt": nfilt,"filnames": filnames,"nddf": nddf,"nocc": nocc,"nttv": nttv,"col8_arr": _,"grprs": grprs,"ttv_conf": ttv_conf,"grnames": grnames,"groups": groups,"ngroup": ngroup,"ewarr": ewarr,
+                    "inmcmc": inmcmc,"paraCNM": paraCNM,"baseLSQ": baseLSQ,"bvars": bvars,"bvarsRV": bvarsRV,"cont": cont,"LCnames": LCnames,"RVnames": RVnames,"e_arr": e_arr,"divwhite": divwhite,"dwCNMarr": dwCNMarr,"dwCNMind": dwCNMind,
+                    "params": params,"useGPphot": useGPphot,"useGPrv": useGPrv,"GPobjects": GPobjects,"GPparams": GPparams,"GPindex": GPindex,"pindices": pindices,"jumping": jumping,"jnames": jnames,"prior_distr": prior_distr,"pnames_all": pnames_all,
+                    "norm_sigma": norm_sigma,"uni_low": uni_low,"uni_up": uni_up,"pargps": pargps,"jumping_noGP": jumping_noGP,"gpkerns": gpkerns,"jit_apply": jit_apply,"jumping_GP": jumping_GP,"GPstepsizes": GPstepsizes,"sameLCgp": sameLCgp,
+                    "npl": npl,"useSpline_lc": useSpline_lc,"useSpline_rv": useSpline_rv,"s_samp": s_samp,"rvGPobjects": rvGPobjects,"rvGPparams": rvGPparams,"rvGPindex": rvGPindex,"input_lcs": input_lcs,"input_rvs": input_rvs,
+                    "RVunit": RVunit,"rv_pargps": rv_pargps,"rv_gpkerns": rv_gpkerns,"sameRVgp": sameRVgp,"fit_sampler": fit_sampler }
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
 
     debug_t1 = time.time()
-    mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],*indparams,make_outfile=True,verbose=False,debug=debug,out_folder=out_folder)
+    mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],indparams,make_outfile=True,verbose=False,debug=debug,out_folder=out_folder)
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
     if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
-    fit_plots(mval,t_arr,f_arr,e_arr,nttv, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
+    fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
     if debug: print(f'finished fit_plots, took {(time.time() - debug_t2)} secs')
 
 
     ########################### MCMC run ###########################################
-    print(f'\n============ Samping started ... (using {fit_sampler})======================')
+    print(f'\n============ Samping started ... (using {fit_sampler} [{NS_type if fit_sampler=="dynesty" else emcee_move}])======================')
 
     inmcmc = 'y'
-    indparams[25] = inmcmc
-    print(f'No of dimensions: {ndim}')
+    indparams["inmcmc"] = inmcmc
     print(f'No of cpus: {nproc}')
+    print(f'No of dimensions: {ndim}')
+    print('fitting parameters: ', pnames_all[jumping])
     pool = Pool(nproc)
 
     nplot     = int(np.ceil(ndim/15))                #number of chain and corner plots to make
     nplotpars = int(np.ceil(ndim/nplot))             #number of parameters to plot in each plot
-
-    #TODO: allow resuming sampling with emcee and dynesty
 
     if fit_sampler == "emcee":
         if nchains < 3*ndim:
             print('WARNING: Number of chains is less than 3 times the number of dimensions. Increasing number of chains to 3*ndim')
             nchains = 3*ndim
         print('No of chains: ', nchains)
-        print('fitting parameters: ', pnames_all[jumping])
         if debug: 
             starting = {k:v for k,v in zip(pnames_all[jumping],initial[jumping])}
             print(f'initial: {starting}')
-
+        os.environ["OMP_NUM_THREADS"] = "1"  # to avoid conflicts with multiprocessing
 
         # put starting points for all walkers, i.e. chains
         p0 = np.random.rand(nchains, ndim)*np.asarray(steps[jumping])*2 + (np.asarray(initial[jumping])-np.asarray(steps[jumping]))
         for i in range(nchains):
             for jj in range(ndim):
                 assert np.isfinite(prior_distr[jj].logpdf(p0[i,jj])), f'start value: {jnames[jj]}={p0[i,jj]} is outside the prior distribution'
-            assert np.isfinite(logprob_multi(p0[i],*indparams)),f'loglikelihood of start values {p0[i]} is not finite, check that prior values are valid '
+            assert np.isfinite(logprob_multi(p0[i],indparams)),f'loglikelihood of start values {p0[i]} is not finite, check that prior values are valid '
 
         if emcee_move == "demc":      moves = emcee.moves.DEMove()
         elif emcee_move == "snooker": moves = emcee.moves.DESnookerMove()
         else: moves = emcee.moves.StretchMove()
         
+        
         if not os.path.exists(f'{out_folder}/chains_dict.pkl'):   #if chain files doesnt already exist, start sampling
-            sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams),pool=pool, moves=moves)
-            print("\nRunning first burn-in...")
-            p0, lp, _ = sampler.run_mcmc(p0, 20, progress=progress, **run_kwargs)
+            backend = emcee.backends.HDFBackend(f'{out_folder}/emcee.h5')
+            
+            if resume_sampling and os.path.exists(f'{out_folder}/emcee.h5'):
+                niter = backend.iteration
+                print(f"\nResuming emcee sampling from checkpoint file (at iteration: {niter})")
+                sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
+                                                moves=moves, backend=backend)
+                pos, prob, state = sampler.run_mcmc(None, nsteps-niter, progress=progress, **run_kwargs)
+                print(f"Final iteration: {sampler.iteration}")
+            else:
+                backend.reset(nchains, ndim)
+                sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
+                                                moves=moves, backend=backend)
+                print("\nRunning first burn-in...")
+                p0, lp, _ = sampler.run_mcmc(p0, 20, progress=progress, **run_kwargs)
 
-            print("Running second burn-in...")
-            p0 = p0[np.argmax(lp)] + steps[jumping] * np.random.randn(nchains, ndim) # this can create problems!
-            sampler.reset()
-            pos, prob, state = sampler.run_mcmc(p0, burnin, progress=progress, **run_kwargs)
-            if save_burnin_chains:
+                print("Running second burn-in...")
+                p0 = p0[np.argmax(lp)] + steps[jumping] * np.random.randn(nchains, ndim) # this can create problems!
+                sampler.reset()
+                pos, prob, state = sampler.run_mcmc(p0, burnin, progress=progress, **run_kwargs)
                 burnin_chains = sampler.chain
-
                 #save burn-in chains to file
                 burnin_chains_dict =  {}
                 for ch in range(burnin_chains.shape[2]):
@@ -1305,12 +1305,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
                 print(f"saved {nplot} burn-in chain plot(s) as {out_folder}/burnin_chains_*.png")
                 matplotlib.use(__default_backend__)
-            sampler.reset()
+                sampler.reset()
 
-            print("\nRunning production...")
-            pos, prob, state = sampler.run_mcmc(pos, nsteps,skip_initial_state_check=True, progress=progress, **run_kwargs )
+                print("\nRunning production...")
+                pos, prob, state = sampler.run_mcmc(pos, nsteps,skip_initial_state_check=True, progress=progress, **run_kwargs )
+            
             bp = pos[np.argmax(prob)]
-
             posterior = sampler.flatchain
             chains    = sampler.chain
             print((f"Mean acceptance fraction: {np.mean(sampler.acceptance_fraction):.3f}"))
@@ -1348,18 +1348,32 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         gr_print(jnames,GRvals,out_folder)
 
     else:    #dynesty sampling
-        if not os.path.exists(f'{out_folder}/chains_dict.pkl'):
+        if not os.path.exists(f'{out_folder}/chains_dict.pkl') or resume_sampling:
             if not force_nlive:   # modify nlive based on the number of dimensions
                 if nlive < 10*ndim :
                     print('WARNING: Number of dynesty live points is less than 10*ndim. Increasing number of live points to min(10*ndim, 1000)')
                     nlive = min(10*ndim, 1000)
             
             print('No of live points: ', nlive)
-            print('fitting parameters: ', pnames_all[jumping])
 
-            sampler = dynesty.NestedSampler(logprob_multi, prior_transform, ndim, nlive=nlive,logl_args=(indparams),
-                                            ptform_args=(prior_distr,jnames),pool=pool, queue_size=max(nproc-2,1), **dyn_kwargs)
-            sampler.run_nested(dlogz=dlogz, **run_kwargs)
+            if resume_sampling and os.path.exists(f'{out_folder}/dynesty.save'):
+                print("\nResuming dynesty sampling from checkpoint file")
+                sampler = dynesty.NestedSampler.restore(out_folder+f"/dynesty.save", pool=pool)
+                sampler.run_nested(resume=True, checkpoint_file=out_folder+f"/dynesty.save")
+            else:
+                if NS_type == "static":
+                    sampler = dynesty.NestedSampler(logprob_multi, prior_transform, ndim, nlive=nlive,logl_args=(indparams,),
+                                                    ptform_args=(prior_distr,jnames),pool=pool, queue_size=max(nproc,1), **dyn_kwargs)
+                    sampler.run_nested(dlogz=dlogz, checkpoint_file=out_folder+f"/dynesty.save", **run_kwargs)
+                else:  #dynamic nested sampling
+                    pfrac = float(NS_type.split("[")[-1][:-1])   #posterior/evidence fraction
+                    if "nlive_batch" not in run_kwargs: run_kwargs["nlive_batch"] = int(nlive/4)
+                    if "maxbatch" not in run_kwargs: run_kwargs["maxbatch"] = 10
+                    sampler = dynesty.DynamicNestedSampler(logprob_multi, prior_transform, ndim, logl_args=(indparams,),
+                                                            ptform_args=(prior_distr,jnames),pool=pool, queue_size=max(nproc,1), **dyn_kwargs)
+                    sampler.run_nested(dlogz_init=dlogz, nlive_init=nlive, wt_kwargs={'pfrac': pfrac},
+                                        checkpoint_file=out_folder+f"/dynesty.save", **run_kwargs)
+
             dyn_res = sampler.results
             evidence = dyn_res.logz[-1]
             #dynesty trace plot
@@ -1370,7 +1384,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                                             labels=jnames[i*nplotpars:(i+1)*nplotpars], quantiles=[0.16,0.5,0.84])
                 fig.savefig(out_folder+f"/dynesty_trace_{i}.png", bbox_inches="tight")
                 matplotlib.use(__default_backend__)
-            dyn_summary(dyn_res,out_folder)   #write summary to file evidence.dat
+            dyn_summary(dyn_res,out_folder,NS_type)   #write summary to file evidence.dat
 
             weights   = np.exp(dyn_res['logwt'] - dyn_res['logz'][-1])
             posterior = resample_equal(dyn_res.samples, weights)
@@ -1394,7 +1408,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
         print(f"\nDynesty chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.\n")  
         
-
     pool.close()  #close the pool
     pool.join()   #wait for the processes to finish
 
@@ -1406,7 +1419,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     extins=np.copy(exti[1])
 
     print("============ Sampling Finished ==============================================\n")
-
     # ==== chain and corner plot ================
     matplotlib.use('Agg')
     result = load_result(out_folder,verbose=False)
@@ -1441,10 +1453,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     bpfull[[ijnames][0]] = bp
 
     try:
-        medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+        medvals,maxvals = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
                                         nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
     except:
-        medvals,maxvals =mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+        medvals,maxvals = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
                                         nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
 
     npar=len(jnames)
@@ -1461,13 +1473,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     print('\nPlotting output figures')
 
     inmcmc='n'
-    indparams[25] = inmcmc
+    indparams["inmcmc"] = inmcmc
 
     #median
-    mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],*indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
-    fit_plots(mval,t_arr,f_arr,e_arr, nttv,nphot, nRV, indlist, filters, names, RVnames, out_folder+'/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
+    mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
+    fit_plots(nttv,nphot, nRV, filters, LCnames, RVnames, out_folder,'/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
 
-    #AKIN: save summary_stats and as a hidden files. 
+    #save summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
     stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], 
                         T0 = T0_post,  P = p_post, dur = Dur_post, evidence=evidence)
@@ -1475,14 +1487,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
     #max_posterior
-    mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],*indparams,make_outfile=(statistic=="max"),verbose=False)
-    fit_plots(mval2,t_arr,f_arr,e_arr,nttv, nphot, nRV, indlist, filters, names, RVnames, out_folder+'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
+    mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],indparams,make_outfile=(statistic=="max"),verbose=False)
+    fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
 
     maxresiduals = f_arr - mval2 if statistic != "median" else f_arr - mval  #Akin allow statistics to be based on median of posterior
     chisq = np.sum(maxresiduals**2/e_arr**2)
-
-    ndat = len(t_arr)
-    get_AIC_BIC(npar,ndat,chisq,out_folder)
+    ndata = len(t_arr)
+    get_AIC_BIC(npar,ndata,chisq,out_folder)
 
     rarr=f_arr-mval2  if statistic != "median" else f_arr - mval  # the full residuals
 
@@ -1491,7 +1502,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         of=open(out_folder+"/CF.dat",'w')
         of.write(f"{'beta_w':8s} {'beta_r':8s} {'beta_rtot':8s} {'CF':8s} {'CFerr':10s} \n")
         for i in range(nphot):   #adapt the error values
-        # print(earr[indlist[i][0]])
             of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
             if (cf_apply == 'cf'):
                 e_arr[indlist[i][0]] = np.multiply(e_arr[indlist[i][0]],cf[i])

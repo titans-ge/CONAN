@@ -6,7 +6,7 @@ import numpy as np
 
 
 def fit_configfile(config_file = "input_config.dat", out_folder = "output", 
-                   init_decorr=False, rerun_result=True, verbose=False):
+                   init_decorr=False, rerun_result=True, resume_sampling=False, verbose=False):
     """
         Run CONAN fit from configuration file. 
         This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
@@ -15,24 +15,22 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
         -----------
         config_file: filepath;
             path to configuration file.
-
         out_folder: filepath;
             path to folder where output files will be saved.
-
         init_decorr: bool;
             whether to run least-squares fit to determine start values of the decorrelation parameters. 
             Default is False
-
         rerun_result: bool;
             whether to rerun using with already exisiting result inorder to remake plots/files. Default is True
-
+        resume_sampling: bool;
+            resume sampling from last saved position 
         verbose: bool;
             show print statements
     """
 
     lc_obj, rv_obj, fit_obj = load_configfile(config_file, init_decorr=init_decorr, verbose=verbose)
     result = run_fit(lc_obj, rv_obj, fit_obj,out_folder=out_folder,
-                        rerun_result=rerun_result,verbose=verbose)
+                        rerun_result=rerun_result,resume_sampling=resume_sampling,verbose=verbose)
     return result
 
 
@@ -177,7 +175,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     # ========== Lightcurve input ====================
     _names=[]                    # array where the LC filenames are supposed to go
     _filters=[]                  # array where the filter names are supposed to go
-    _lamdas=[]
+    _wl=[]
     _bases=[]                    # array where the baseline exponents are supposed to go
     _groups=[]                   # array where the group indices are supposed to go
     _grbases=[]
@@ -195,7 +193,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
         _names.append(_adump[0])            # append the first field to the name array
         _filters.append(_adump[1])          # append the second field to the filters array
-        _lamdas.append(float(_adump[2]))    # append the second field to the filters array
+        _wl.append(float(_adump[2]))    # append the second field to the filters array
         
         #supersample
         xt = _adump[3].split("|")[-1]
@@ -226,15 +224,17 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         _useGPphot.append(_adump[16])
         
         #LC spline
-        if _adump[17] != "None":   #TODO: only works for 1d spline
+        if _adump[17] != "None": 
             _spl_lclist.append(_adump[0])
             if "|" not in _adump[17]:   #1D spline
-                _spl_knot.append(float(_adump[17].split("k")[-1]))
+                k1 = _adump[17].split("k")[-1]
+                _spl_knot.append(float(k1) if k1 != "r" else k1)
                 _spl_deg.append(int(_adump[17].split("k")[0].split("d")[-1]))
                 _spl_par.append("col" + _adump[17].split("d")[0][1])
             else: #2D spline
                 sp = _adump[17].split("|")  #split the diff spline configs
-                _spl_knot.append( (float(sp[0].split("k")[-1]),float(sp[1].split("k")[-1])) )
+                k1,k2 = sp[0].split("k")[-1], sp[1].split("k")[-1]
+                _spl_knot.append( (float(k1) if k1!="r" else k1, float(k2) if k2!="r" else k2) )
                 _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
                 _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) ) 
         #move to next LC
@@ -270,7 +270,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     
     
     # instantiate light curve object
-    lc_obj = load_lightcurves(_names, fpath, _filters, _lamdas, nplanet)
+    lc_obj = load_lightcurves(_names, fpath, _filters, _wl, nplanet)
     lc_obj.lc_baseline(*np.array(_bases).T, grp_id=None, gp=_useGPphot,verbose=False )
     lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,show_plot=False,verbose=False )
     lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
@@ -392,56 +392,58 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             dump =_file.readline()
             _adump = dump.split()
             pl_pars[par_names[i]].append(_prior_value(_adump[2]))
-        eos, eoc = ecc_om_par(pl_pars["Eccentricity"][-1],pl_pars["omega"][-1],
+        sesinw_, secosw_ = ecc_om_par(pl_pars["Eccentricity"][-1],pl_pars["omega"][-1],
                                 conv_2_obj=True,return_tuple=True)
-        sesinw.append(eos)
-        secosw.append(eoc)
+        sesinw.append(sesinw_)
+        secosw.append(secosw_)
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
     ## limb darkening
     q1, q2 = [],[]
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
+    dump   = _file.readline()
+    while dump[0] != "#":
         _adump = dump.split()
         q1.append(_prior_value(_adump[2]))
         q2.append(_prior_value(_adump[3]))
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
-    
+        dump = _file.readline()
+    assert len(q1) == len(lc_obj._filnames), f"number of q1 values must be equal to number of unique filters({len(lc_obj._filnames)}) but len(q1)={len(q1)}"
+    _skip_lines(_file,1)                                      #remove 2 comment lines
+
     #DDFs
     dump   = _file.readline()
     _adump = dump.split()
     ddfyn,ddf_pri,div_wht  = _adump[0], _prior_value(_adump[1]), _adump[2]
-    
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
     #TTVS
     dump =_file.readline()
     _adump = dump.split()
     ttvs, dt, base = _adump[0], _prior_value(_adump[1]), float(_adump[2]) 
-
     _skip_lines(_file,2)                                      #remove 2 comment lines
 
     #phase curve
     D_occ,A_atm,ph_off,A_ev,A_db = [],[],[],[],[]    
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
+    dump   = _file.readline()
+    while dump[0] != "#":
         _adump = dump.split()
         D_occ.append(_prior_value(_adump[1]))
         A_atm.append(_prior_value(_adump[2]))
         ph_off.append(_prior_value(_adump[3]))
         A_ev.append(_prior_value(_adump[4]))
         A_db.append(_prior_value(_adump[5]))
-    _skip_lines(_file,3)                                      #remove 3 comment lines
- 
+        dump = _file.readline()
+    assert len(D_occ) == len(lc_obj._filnames), f"number of D_occ values must be equal to number of unique filters({len(lc_obj._filnames)}) but len(D_occ)={len(D_occ)}"
+    _skip_lines(_file,2)                                      #remove 3 comment lines
+
     #contamination factors
     cont_fac = []
-    for _ in range(len(lc_obj._filnames)):
-        dump   = _file.readline()
+    dump   = _file.readline()
+    while dump[0] != "#":
         _adump = dump.split()
         cont_fac.append(_prior_value(_adump[1]))
-    
-    _skip_lines(_file,2)                                      #remove 2 comment lines
+        dump = _file.readline()
+    assert len(cont_fac) == len(lc_obj._filnames), f"number of contamination factors must be equal to number of unique filters({len(lc_obj._filnames)}) but len(cont_fac)={len(cont_fac)}"
+    _skip_lines(_file,1)                                      #remove 2 comment lines
     
     lc_obj.planet_parameters(**pl_pars,verbose=verbose)
     lc_obj.limb_darkening(q1,q2,verbose=verbose)
@@ -452,6 +454,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     if nphot > 0:
         if use_decorr or init_decorr:
+            if init_decorr and verbose: print("\ngetting start values for LC decorrelation parameters ...")
             lc_obj.get_decorr(**pl_pars,q1=q1,q2=q2,
                                 D_occ=D_occ[0] if len(D_occ)>0 else 0, 
                                 A_atm=A_atm[0] if len(A_atm)>0 else 0, 
@@ -461,7 +464,6 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
                                 setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
                                 enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
             if init_decorr:  #if not use_decorr, compare the  get_decorr pars to the user-defined ones and only use start values for user-defined ones
-                if verbose: print("\ngetting start values for LC decorrelation parameters ...")
                 rel_cols = [b[:6] for b in lc_obj._bases]
                 _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
                 for j in range(lc_obj._nphot):
@@ -473,13 +475,13 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     if nRV > 0:
         if use_decorrRV or init_decorr:
+            if init_decorr and verbose: print("\ngetting start values for RV decorrelation parameters ...\n")
             rv_obj.get_decorr(T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
                                 sesinw=sesinw,secosw=secosw,
                                 gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
                                 exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, delta_BIC=rvdel_BIC,
                                 plot_model=False,verbose=verbose if use_decorrRV else False)
             if init_decorr:  #if not use_decorr, compare the  get_decorr pars to the user-defined ones and only use start values for user-defined ones
-                if verbose: print("getting start values for RV decorrelation parameters ...\n")
                 rel_cols = [b[:6] for b in rv_obj._RVbases]
                 _ = [b.insert(1,0) for b in rel_cols for _ in range(2)] #insert 0 to replace cols 1 and 2
                 for j in range(rv_obj._nRV):
@@ -512,21 +514,28 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     dlogz     = float(_file.readline().split()[1])
     sampler   = _file.readline().split()[1]
     mc_move   = _file.readline().split()[1]
+    dyn_samp  = _file.readline().split()[1]
     lsq_base  = _file.readline().split()[1]
     lcjitt    = _file.readline().split()[1]
     rvjitt    = _file.readline().split()[1]
-
+    #lcjittlims
     _adump    = _file.readline().split()
-    jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-    jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
-    lcjittlim = [jittlo, jitthi]
-
+    if "auto" in _adump[1]:
+        lcjittlim = "auto"
+    else:
+        jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
+        jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        lcjittlim = [jittlo, jitthi]
+    #rvjittlims
     _adump    = _file.readline().split()
-    jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-    jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
-    rvjittlim = [jittlo, jitthi]
-
+    if "auto" in _adump[1]:
+        rvjittlim = "auto"
+    else:
+        jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
+        jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        rvjittlim = [jittlo, jitthi]
     
+    #LCbasecoeff_lims
     _adump    = _file.readline().split()
     if "auto" in _adump[1]:
         lcbaselim = "auto"
@@ -534,7 +543,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
         basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
         lcbaselim = [baselo, basehi]
-    
+    #RVbasecoeff_lims
     _adump    = _file.readline().split()
     if "auto" in _adump[1]:
         rvbaselim = "auto"
@@ -553,7 +562,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     
     fit_obj.sampling(sampler=sampler,n_cpus=ncpus, emcee_move=mc_move,
                     n_chains=nchains, n_burn   = nburn, n_steps  = nsteps, 
-                    n_live=nlive, force_nlive=force_nl,
+                    n_live=nlive, force_nlive=force_nl, nested_sampling=dyn_samp,
                     dyn_dlogz=dlogz,verbose=verbose )
 
     _file.close()

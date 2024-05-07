@@ -98,6 +98,8 @@ def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=1.):
     # split t into chunks with gaps larger than gap_threshold*bin_size
     # then bin each chunk separately
     """
+    if binsize==0:
+        return (t,f) if e is None else (t,f,e)
     try:
         gap = np.diff(t)
         gap = np.insert(gap,0,0)
@@ -267,22 +269,22 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
 
     to_fit = "y" if ecc.to_fit=="y" or omega.to_fit=="y" else "n"
     pri    =  ecc.prior
-    eos_in=[to_fit,sesino,sesinostep,pri,sesinop,sesinoplo,sesinopup,sesinolo,sesinoup]
-    eoc_in=[to_fit,secoso,secosostep,pri,secosop,secosoplo,secosopup,secosolo,secosoup]
+    sesinw_in=[to_fit,sesino,sesinostep,pri,sesinop,sesinoplo,sesinopup,sesinolo,sesinoup]
+    secosw_in=[to_fit,secoso,secosostep,pri,secosop,secosoplo,secosopup,secosolo,secosoup]
 
     from ._classes import _param_obj
-    eos_in = _param_obj(*eos_in)
-    eoc_in = _param_obj(*eoc_in)
+    sesinw_in = _param_obj(*sesinw_in)
+    secosw_in = _param_obj(*secosw_in)
 
     if return_tuple:
-        eos_mean_prior_width = np.mean([eos_in.prior_width_lo,eos_in.prior_width_hi])
-        eoc_mean_prior_width = np.mean([eoc_in.prior_width_lo,eoc_in.prior_width_hi])
+        sesinw_mean_prior_width = np.mean([sesinw_in.prior_width_lo,sesinw_in.prior_width_hi])
+        secosw_mean_prior_width = np.mean([secosw_in.prior_width_lo,secosw_in.prior_width_hi])
 
-        eos = eos_in.start_value if eos_in.to_fit=="n" else (eos_in.start_value, eos_mean_prior_width) if eos_mean_prior_width>0 else (eos_in.bounds_lo, eos_in.start_value,eos_in.bounds_hi)
-        eoc = eoc_in.start_value if eoc_in.to_fit=="n" else (eoc_in.start_value, eoc_mean_prior_width) if eoc_mean_prior_width>0 else (eoc_in.bounds_lo, eoc_in.start_value,eoc_in.bounds_hi)
-        return eos, eoc
+        sesinw = sesinw_in.start_value if sesinw_in.to_fit=="n" else (sesinw_in.start_value, sesinw_mean_prior_width) if sesinw_mean_prior_width>0 else (sesinw_in.bounds_lo, sesinw_in.start_value,sesinw_in.bounds_hi)
+        secosw = secosw_in.start_value if secosw_in.to_fit=="n" else (secosw_in.start_value, secosw_mean_prior_width) if secosw_mean_prior_width>0 else (secosw_in.bounds_lo, secosw_in.start_value,secosw_in.bounds_hi)
+        return sesinw, secosw
 
-    return eos_in, eoc_in
+    return sesinw_in, secosw_in
 
 
 
@@ -550,9 +552,10 @@ def convert_rho(rho, ecc, w, conv="true2obs"):
 def cosine_atm_variation(phase, Fd=0, A=0, delta_deg=0):
     """
     Calculate the phase curve of a planet approximated by a cosine function with peak-to-peak amplitude  A=F_max-F_min.
-    The equation is given as F = Fmin + A/2(1-cos(phi + delta)) where
-    phi is the phase angle in radians = 2pi*phase
-    delta is the hotspot offset (in radians)
+    The equation is given as F = Fmin + A(1-cos(phi + delta)) where A is the semi-amplitude of the atmospheric phase variation  = (Fmax-Fmin)/2,
+    phi is the phase angle in radians = 2pi*phase, and delta is the hotspot offset (in radians).
+    Fday and Fnight are obtained as the value of F at phi=pi and 0 respectively.
+
 
     Parameters
     ----------
@@ -561,7 +564,7 @@ def cosine_atm_variation(phase, Fd=0, A=0, delta_deg=0):
     Fd : float
         Dayside flux/occultation depth
     A : float
-        peak-to-peak amplitude
+        semi amplitude of planet phase variation
     delta_deg : float
         hotspot offset in degrees.
         
@@ -574,9 +577,9 @@ def cosine_atm_variation(phase, Fd=0, A=0, delta_deg=0):
     res.delta  = np.deg2rad(delta_deg)
     res.phi    = 2*np.pi*phase
 
-    res.Fmin   = Fd - A/2*(1-np.cos(np.pi+res.delta))
-    res.Fnight = Fd - A * np.cos(res.delta)
-    res.pc     = res.Fmin + A/2*(1-np.cos(res.phi+res.delta))
+    res.Fmin   = Fd - A*(1-np.cos(np.pi+res.delta))
+    res.Fnight = Fd - 2*A * np.cos(res.delta)
+    res.pc     = res.Fmin + A*(1-np.cos(res.phi+res.delta))
     return res    
     
 def reflection_atm_variation(phase, Fd=0, A=0, delta_deg=0):

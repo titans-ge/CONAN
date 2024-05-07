@@ -12,14 +12,14 @@
 #         b = [0.5]
 #         dur = [2.0]
 #         per = [10.0]
-#         eos = [0.0]
-#         eoc = [0.0]
+#         sesinw = [0.0]
+#         secosw = [0.0]
 #         ddf = [0.0]
 #         occ = [0.0]
 #         c1 = [0.0]
 #         c2 = [0.0]
 #         npl = 1
-#         self.model = Transit_Model(T0, RpRs, b, dur, per, eos, eoc, ddf, occ, c1, c2, npl)
+#         self.model = Transit_Model(T0, RpRs, b, dur, per, sesinw, secosw, ddf, occ, c1, c2, npl)
 
 #     def test_get_value(self):
 #         # Test the get_value method with a sample time array
@@ -30,18 +30,18 @@
 
 #     def test_parameter_names(self):
 #         # Test the parameter_names attribute
-#         expected_names = ['T0', 'RpRs', 'b', 'dur', 'per', 'eos', 'eoc', 'ddf', 'occ', 'c1', 'c2']
+#         expected_names = ['T0', 'RpRs', 'b', 'dur', 'per', 'sesinw', 'secosw', 'ddf', 'occ', 'c1', 'c2']
 #         names = self.model.parameter_names
 #         self.assertEqual(names, expected_names)
 
-# def conv(rho_star, T_0, RpRs, Impact_para, Period, eos=[0], eoc=[0], ddf=0, 
+# def conv(rho_star, T_0, RpRs, Impact_para, Period, sesinw=[0], secosw=[0], ddf=0, 
 #              q1=[0], q2=[0], D_occ=0, A_atm=None, delta=None, A_ev=None):
     
 #     DA = locals().copy()
 #     npl = len(T_0)
     
-#     pl_vars = ["T_0", "Period", "rho_star", "D_occ", "Impact_para","RpRs", "eos", 
-#                                                "eoc", "A_atm", "delta", "A_ev","q1","q2"]
+#     pl_vars = ["T_0", "Period", "rho_star", "D_occ", "Impact_para","RpRs", "sesinw", 
+#                                                "secosw", "A_atm", "delta", "A_ev","q1","q2"]
 #     tr_pars = {}
 #     for p in pl_vars:
 #         for n in range(npl):
@@ -68,8 +68,8 @@
 #         bt.t0  = tr_params["T_0"+lbl]
 #         bt.rp  = tr_params["RpRs"+lbl]
 #         b      = tr_params["Impact_para"+lbl]
-#         bt.ecc = tr_params["eos"+lbl]**2 + tr_params["eoc"+lbl]**2
-#         bt.w   = np.arctan2(tr_params["eos"+lbl],tr_params["eoc"+lbl])
+#         bt.ecc = tr_params["sesinw"+lbl]**2 + tr_params["secosw"+lbl]**2
+#         bt.w   = np.arctan2(tr_params["sesinw"+lbl],tr_params["secosw"+lbl])
 #         if "rho_star" in tr_params.keys(): bt.a = rho_to_aR(tr_params["rho_star"], bt.per)
 #         else: bt.a = Tdur_to_aR(tr_params["Duration"+lbl],b,bt.rp,bt.per, bt.ecc, bt.w)#         bt.fp  = tr_params["D_occ"]                                        
 #         bt.fp  = tr_params["D_occ"]*1e-6                                       
@@ -110,7 +110,7 @@
 # tr_pars  = conv(*pars)
 # batmodel = batman_model(tr_pars,t)
 # TM = Transit_Model(*pars)
-# mm,_ = TM.get_value(t,planet_only=True)
+# mm,_ = TM.get_value(t)
 
 # np.allclose(mm,batmodel)
 

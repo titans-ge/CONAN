@@ -4,10 +4,56 @@ from .utils import rho_to_tdur, rho_to_aR, convert_LD,aR_to_Tdur, tdur_to_rho
 from .funcs import credregionML
 
 
-def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
                     nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder):
     
+    """
+    Function to write out the medians, best values and distributions of the jump parameters
+    and derived parameters to files. It also plots the histograms of the parameters and derived parameters
+    and saves them to the output folder.
 
+    Parameters
+    ----------
+    posterior : array
+        The posterior samples from the sampling.
+    jnames : list
+        List of the names of the jump parameters.
+    ijnames : list
+        List of the indices of the jump parameters.
+    njnames : list
+        List of the names of the non-jump parameters.
+    nijnames : list
+        List of the indices of the non-jump parameters.
+    bp : array
+        The max-probability values of the parameters.
+    uwl : array
+        The effective wavelengths of the filters.
+    Rs_in : float
+        The input value of the stellar radius.
+    Ms_in : float
+        The input value of the stellar mass.
+    Rs_PDF : array
+        The PDF of the stellar radius.
+    Ms_PDF : array
+        The PDF of the stellar mass.
+    nfilt : int
+        The number of filters.
+    filnames : list
+        The names of the filters.
+    howstellar : str
+        The method used to specify the stellar parameters.
+    extinpars : list
+        The names of the external input parameters.
+    RVunit : str
+        The unit of the radial velocity.
+    extind_PDF : array
+        The PDF of the external input parameters.
+    npl : int
+        The number of planets.
+    out_folder : str
+        The folder to save the outputs.
+
+    """
     npoint,npara=posterior.shape
     #TODO: can be improved with parameter names already in posterior dict
     # =============== calculate the physical parameters taking into account the input and inferred PDFs ========
@@ -47,6 +93,77 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
             dur_bp = bp[nijnames[0][indn]]
         if (len(inde) > 0):
             dur_PDF = np.squeeze(extind_PDF[:,inde])   
+
+
+    q1_PDF, q2_PDF = np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt))
+    q1_bp,  q2_bp  = np.zeros(nfilt), np.zeros(nfilt)
+    Aatm_PDF, DFocc_PDF, phoff_PDF,dRpRs_PDF = np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt))
+    Aatm_bp,  DFocc_bp,  phoff_bp, dRpRs_bp  = np.zeros(nfilt),np.zeros(nfilt),np.zeros(nfilt),np.zeros(nfilt)
+
+    for i,fil in enumerate(filnames):
+        #q1
+        ind = np.where(np.char.find(jnames, fil+'_q1')==0)[0]
+        indn = np.where(np.char.find(njnames, fil+'_q1')==0)[0]
+        if (len(ind) > 0):
+            q1_PDF[:,i] = posterior[:,ind[0]]
+            q1_bp[i] = bp[ijnames[0][ind]]
+        else:
+            q1_PDF[:,i] = bp[nijnames[0][indn]]
+            q1_bp[i] = bp[nijnames[0][indn]]
+        #q2
+        ind = np.where(np.char.find(jnames, fil+'_q2')==0)[0]
+        indn = np.where(np.char.find(njnames, fil+'_q2')==0)[0]
+        if (len(ind) > 0):
+            q2_PDF[:,i] = posterior[:,ind[0]]
+            q2_bp[i] = bp[ijnames[0][ind]]
+        else:
+            q2_PDF[:,i] = bp[nijnames[0][indn]]
+            q2_bp[i] = bp[nijnames[0][indn]]   
+
+        #Aatm
+        ind = np.where(np.char.find(jnames, fil+'_Aatm')==0)[0]
+        indn = np.where(np.char.find(njnames, fil+'_Aatm')==0)[0]
+        if (len(ind) > 0):
+            Aatm_PDF[:,i] = posterior[:,ind[0]]
+            Aatm_bp[i] = bp[ijnames[0][ind]]
+        else:
+            Aatm_PDF[:,i] = bp[nijnames[0][indn]]
+            Aatm_bp[i] = bp[nijnames[0][indn]]
+
+        #DFocc
+        ind = np.where(np.char.find(jnames, fil+'_DFocc')==0)[0]
+        indn = np.where(np.char.find(njnames, fil+'_DFocc')==0)[0]
+        if (len(ind) > 0):
+            DFocc_PDF[:,i] = posterior[:,ind[0]]
+            DFocc_bp[i] = bp[ijnames[0][ind]]
+        else:
+            DFocc_PDF[:,i] = bp[nijnames[0][indn]]
+            DFocc_bp[i] = bp[nijnames[0][indn]]
+
+        #phoff
+        ind  = np.where(np.char.find(jnames,  fil+'_ph_off')==0)[0]
+        indn = np.where(np.char.find(njnames, fil+'_ph_off')==0)[0]
+        if (len(ind) > 0):
+            phoff_PDF[:,i] = posterior[:,ind[0]]
+            phoff_bp[i] = bp[ijnames[0][ind]]
+        else:
+            phoff_PDF[:,i] = bp[nijnames[0][indn]]
+            phoff_bp[i] = bp[nijnames[0][indn]]
+
+        #dRpRs
+        if f"{fil}_dRpRs" in jnames:
+            ind = np.where(np.char.find(jnames, fil+'_dRpRs')==0)[0]
+            indn = np.where(np.char.find(njnames, fil+'_dRpRs')==0)[0]
+            if (len(ind) > 0):
+                dRpRs_PDF[:,i] = posterior[:,ind[0]]
+                dRpRs_bp[i] = bp[ijnames[0][ind]]
+            else:
+                dRpRs_PDF[:,i] = bp[nijnames[0][indn]]
+                dRpRs_bp[i] = bp[nijnames[0][indn]]
+
+    # mean radius deviation across all wls
+    mean_RpRs_PDF = np.mean(dRpRs_PDF,axis=1)
+    mean_RpRs_bp  = np.mean(dRpRs_bp)
 
     for n in range(npl):
         nm = f"_{n+1}" if npl>1 else ""
@@ -156,41 +273,21 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
             K_bp  = K_bp/1000.
 
         if "rho_star" in jnames or "rho_star" in njnames:
-            dur_PDF = rho_to_tdur(rho_PDF, b_PDF, RpRs_PDF, Period_PDF,
+            dur_PDF = rho_to_tdur(rho_PDF, b_PDF, RpRs_PDF+mean_RpRs_PDF, Period_PDF,
                                     e=esinw_PDF**2+ecosw_PDF**2, w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
             dur_bp  = rho_to_tdur(rho_bp, b_bp, RpRs_bp, Period_bp,
                                     e=esinw_bp**2+ecosw_bp**2, w=np.degrees(np.arctan2(esinw_bp,ecosw_bp)))
         else:
-            rho_PDF = tdur_to_rho(dur_PDF, b_PDF, RpRs_PDF, Period_PDF,e=esinw_PDF**2+ecosw_PDF**2, 
+            rho_PDF = tdur_to_rho(dur_PDF, b_PDF, RpRs_PDF+mean_RpRs_PDF, Period_PDF,e=esinw_PDF**2+ecosw_PDF**2, 
                                     w=np.degrees(np.arctan2(esinw_PDF,ecosw_PDF)))
             rho_bp  = tdur_to_rho(dur_bp, b_bp, RpRs_bp, Period_bp,e=esinw_bp**2+ecosw_bp**2,
                                     w=np.degrees(np.arctan2(esinw_bp,ecosw_bp)))
 
-        q1_PDF = np.zeros((npoint,nfilt))
-        q2_PDF = np.zeros((npoint,nfilt))
-        q1_bp  = np.zeros(nfilt)
-        q2_bp  = np.zeros(nfilt)
         
-        for i in range(nfilt):
-            ind = np.where(np.char.find(jnames, filnames[i]+'_q1')==0)[0]
-            indn = np.where(np.char.find(njnames, filnames[i]+'_q1')==0)[0]
-            if (len(ind) > 0):
-                q1_PDF[:,i] = posterior[:,ind[0]]
-                q1_bp[i] = bp[ijnames[0][ind]]
-            else:
-                q1_PDF[:,i] = bp[nijnames[0][indn]]
-                q1_bp[i] = bp[nijnames[0][indn]]
-            ind = np.where(np.char.find(jnames, filnames[i]+'_q2')==0)[0]
-            indn = np.where(np.char.find(njnames, filnames[i]+'_q2')==0)[0]
-            if (len(ind) > 0):
-                q2_PDF[:,i] = posterior[:,ind[0]]
-                q2_bp[i] = bp[ijnames[0][ind]]
-            else:
-                q2_PDF[:,i] = bp[nijnames[0][indn]]
-                q2_bp[i] = bp[nijnames[0][indn]]
-        
-        pnames, PDFs, starstring = derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF,rho_PDF, ecosw_PDF, esinw_PDF, K_PDF, q1_PDF, q2_PDF, howstellar) 
-        _,   bp_PDFs, _          = derive_parameters(filnames, nm, Rs_in,  Ms_in,  RpRs_bp,  Period_bp,  b_bp,  dur_bp, rho_bp,  ecosw_bp,  esinw_bp,  K_bp,  q1_bp,  q2_bp,  howstellar)
+        pnames, PDFs, starstring = derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF+mean_RpRs_PDF, Period_PDF, b_PDF, dur_PDF,rho_PDF, ecosw_PDF, esinw_PDF, K_PDF, 
+                                                        q1_PDF, q2_PDF,Aatm_PDF, DFocc_PDF,phoff_PDF,howstellar) 
+        _,   bp_PDFs, _          = derive_parameters(filnames, nm, Rs_in,  Ms_in,  RpRs_bp+mean_RpRs_bp,  Period_bp,  b_bp,  dur_bp, rho_bp,  ecosw_bp,  esinw_bp,  K_bp,  
+                                                        q1_bp,  q2_bp, Aatm_bp, DFocc_bp,phoff_bp, howstellar)
 
         derived_pnames.extend(pnames)
         derived_PDFs.extend(PDFs)
@@ -516,12 +613,12 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, ulamdas, Rs_
             edRpRsres= np.concatenate((edRpRsres, [sig1[i,1]]))
     
     if len(dRpRsres)>0:
-        plot_traspec(dRpRsres, edRpRsres, ulamdas,out_folder)
+        plot_traspec(dRpRsres, edRpRsres, uwl,out_folder)
 
     
     return medvals, maxvals
- 
- 
+
+
 def gr_print(jnames,GRvals, out_folder):
     
     outfile=out_folder+'/GRvals.dat'
@@ -529,20 +626,20 @@ def gr_print(jnames,GRvals, out_folder):
     npara=len(jnames)
     for i in range(npara):
         of.write('%-25s %10.6f \n' % (jnames[i], GRvals[i]))
-         
+
     of.close()
 
 
-def get_AIC_BIC(npar,ndat,chi2,out_folder):
+def get_AIC_BIC(npar,ndata,chi2,out_folder):
     
-    BIC = chi2 + npar * np.log(ndat)
-    AIC = chi2 + npar * ndat *2. / (ndat - npar -1.)
+    BIC = chi2 + npar * np.log(ndata)
+    AIC = chi2 + npar * ndata *2. / (ndata - npar -1.)
 
-    RCHI = chi2 /(ndat-npar)
+    RCHI = chi2 /(ndata-npar)
     
     outfile=out_folder+'/AIC_BIC.dat'
     of=open(outfile,'w')
-    of.write(f'{"data points:":20s} {ndat:10.0f} \n')
+    of.write(f'{"data points:":20s} {ndata:10.0f} \n')
     of.write(f'{"free parameters:":20s} {npar:10.0f} \n')
     of.write(f'{"AIC":10s}\t{"BIC":10s}\t{"reduced CHI2"}\n')
     of.write(f'{AIC:10.3f}\t{BIC:10.3f}\t{RCHI:10.2f} \n')
@@ -550,19 +647,21 @@ def get_AIC_BIC(npar,ndat,chi2,out_folder):
     return
 
 
-def dyn_summary(res,out_folder):
+def dyn_summary(res,out_folder,ns_type):
     """Return a formatted string giving a quick summary
     of the results."""
-
+    try: nlive = res.nlive
+    except: nlive = 0
     res_print = ("nlive: {:d}\n"
                     "niter: {:d}\n"
                     "ncall: {:d}\n"
-                    "eff(%): {:6.3f}\n"
-                    "logz: {:6.3f} +/- {:6.3f}"
-                    .format(res.nlive, res.niter, sum(res.ncall),
-                            res.eff, res.logz[-1], res.logzerr[-1]))
+                    "eff(%): {:10.3f}\n"
+                    "logz: {:10.3f} +/- {:8.3f}\n"
+                    "max_logl: {:10.3f}"
+                    .format(nlive, res.niter, sum(res.ncall),
+                            res.eff, res.logz[-1], res.logzerr[-1], res.logl[-1]))
     f = open(f"{out_folder}/evidence.dat", "w")
-    print('Summary\n=======\n'+res_print, file=f)
+    print(f'Summary [{ns_type}]\n=======\n'+res_print, file=f)
     f.close()
     return
 
@@ -573,7 +672,8 @@ def get_PDF_Gauss(cen,sig1,sig2,dim):
     val_PDF = np.random.normal(cen, sig, int(npoints))
     return val_PDF
 
-def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, rhoS_PDF, ecosw_PDF, esinw_PDF, K_PDF, q1_PDF, q2_PDF, howstellar):
+def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, rhoS_PDF, ecosw_PDF, esinw_PDF, K_PDF, 
+                        q1_PDF, q2_PDF, Aatm_PDF, DFocc_PDF, phoff_PDF, howstellar):
     
     import scipy.constants as cn
 
@@ -596,8 +696,8 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     rhoSolar = 3. / (4. * np.pi) * Msolar / Rsolar**3 
     rhoJup   = 3. / (4. * np.pi) * Mjup / Rjup**3 
     rhoEarth = 3. / (4. * np.pi) * Mearth / Rearth**3 
-        
-    Rp_PDF  = RpRs_PDF * (Rs_PDF * Rsolar) / Rjup
+    
+    Rp_PDF  = RpRs_PDF * (Rs_PDF * Rsolar) / Rjup  
     dF_PDF  = RpRs_PDF**2
     ecc_PDF = ecosw_PDF**2 + esinw_PDF**2
     ome_PDF = np.arctan(np.abs(esinw_PDF / ecosw_PDF))
@@ -677,14 +777,32 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
             LD_PDFs.append(u1)
             LD_PDFs.append(u2)
 
+    if len(Aatm_PDF.shape)<2:
+        nfil = Aatm_PDF.shape
+        pnames_Fn = []
+        Fn_PDFs = []
+        for i in range(nfil[0]):
+            Fn = DFocc_PDF[i] - 2*Aatm_PDF[i] * np.cos(np.deg2rad(phoff_PDF[i]))
+            pnames_Fn += [filnames[i]+'_Fn']
+            Fn_PDFs.append(Fn)
+    else:
+        npo, nfil = Aatm_PDF.shape
+        pnames_Fn = []
+        Fn_PDFs = []
+    
+        for i in range(nfil):
+            Fn = DFocc_PDF[:,i] - 2*Aatm_PDF[:,i] * np.cos(np.deg2rad(phoff_PDF[:,i]))
+            pnames_Fn += [filnames[i]+'_Fn']
+            Fn_PDFs.append(Fn)
+
 
     derived_pnames = [f"Rp{nm}_[Rjup]",f"Mp{nm}_[Mjup]", f"rho{nm}_p_[rhoJup]", f"g_p{nm}_[SI]", f"dF{nm}", f"aRs{nm}", f"a{nm}_[au]", f"rhoS{nm}_[rhoSun]", "Ms_[Msun]", "Rs_[Rsun]",
                         f"inclination{nm}_[deg]", f"eccentricity{nm}", f"omega{nm}_[deg]", f"Occult_dur{nm}", f"Rs_a{nm}", "MF_PDF_[Msun]",f"Dur{nm}_[d]"]
     
-    derived_pnames =  derived_pnames + pnames_LD
+    derived_pnames =  derived_pnames + pnames_LD + pnames_Fn
         
     derived_PDFs = [Rp_PDF, Mp_PDF, rhoP_PDF, gP_PDF, dF_PDF, aRs_PDF, a_PDF, rhoS_PDF, Ms_PDF, Rs_PDF, inc_PDF, ecc_PDF, ome_PDF, durocc_PDF, Rsa_PDF, MF_PDF,dur_PDF]
-    derived_PDFs = derived_PDFs + LD_PDFs
+    derived_PDFs = derived_PDFs + LD_PDFs + Fn_PDFs
         
     return derived_pnames, derived_PDFs, starstring
 
