@@ -100,6 +100,7 @@ class get_TESS_data(object):
             print(f"downloaded lightcurve for sector {s}")
 
         if hasattr(self,"_ok_mask"): del self._ok_mask
+        self.data_splitted = False
 
     def discard_ramp(self,length=0.25, gap_size=1, start=True, end=True):
         """
@@ -156,7 +157,75 @@ class get_TESS_data(object):
         """
         assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
         for s in self.sectors:
-            self.lc[s].scatter()
+            ax = self.lc[s].scatter()
+            ax.set_title(f"sector {s}")
+
+    def split_data(self, gap_size=None, split_times=None, show_plot=True):
+        """
+        Split the light curves into sections based on (1)gaps in the data, (2)given time intervals (3)given split time(s).
+
+        Parameters
+        ----------
+        gap_size : float
+            minimum gap size at which data will be splitted. same unit as the time axis. Default is None.
+        split_times : float,list
+            Time to split the data. Default is None.
+        show_plot : bool
+            Show plot of the split times. Default is True.
+        """
+
+        assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
+        if isinstance(split_times,(int,float)): split_times = [split_times] #convert to list
+        if self.data_splitted: 
+            print("data has already being split. Run `.download()` again to restart.")
+            return
+
+        remove_sectors = []
+        curr_sector = self.sectors.copy()
+        for s in curr_sector:
+            t = self.lc[s].time.value
+    
+            if gap_size is not None:
+                self._find_gaps(t,gap_size)
+                if show_plot:
+                    ax = self.lc[s].scatter()
+                    [ax.axvline(t[i], color='r', linestyle='--') for i in self.gap_ind[1:-1]]
+                nsplit = len(self.gap_ind)-1
+                for i in range(len(self.gap_ind)-1):
+                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= t[self.gap_ind[i]]) & (t < t[self.gap_ind[i+1]])]
+            
+            if split_times is not None:
+                split_times = np.array([0] +split_times +[t[-1]])
+                if show_plot:
+                    ax = self.lc[s].scatter()
+                    [ax.axvline(ti, color='r', linestyle='--') for ti in split_times[1:-1]]
+                nsplit = len(split_times)-1
+                for i in range(len(split_times)-1):
+                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= split_times[i]) & (t < split_times[i+1])]
+            
+            if split_times is None and gap_size is None:
+                raise ValueError("either gap_size or split_time must be given")
+            
+            remove_sectors.append(s)
+            self.sectors += [f"{s}_{i+1}" for i in range(nsplit)]
+        
+        print(f"Sector {s} data splitted into {nsplit} chunks: {list(self.sectors)}")
+        #remove sectors that have been split        
+        _ = [self.sectors.pop(self.sectors.index(s)) for s in remove_sectors]
+        self.data_splitted = True
+        
+
+    def _find_gaps(self,t,gap_size):
+        """
+        find gaps in the data
+        """
+        gap = np.diff(t) 
+        gap = np.insert(gap,len(gap),0) #insert diff of 0 at the beginning
+        self.gap_ind = np.where(gap > gap_size)[0]
+        self.gap_ind = np.array([0]+list(self.gap_ind)+[len(t)-1])
+        # self.gap_ind = np.append(0,self.gap_ind)
+        # self.gap_ind = np.append(self.gap_ind, len(t)-1)
+
     
     def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None):
         """
@@ -227,7 +296,8 @@ class get_CHEOPS_data(object):
         print(pd.DataFrame(data, columns=["obj_id_catname","file_key", "pi_name", "date_mjd_start",
                                             "obs_total_exptime", "data_arch_rev",'status_published']))
 
-    def download(self, file_keys="all", aperture="DEFAULT", decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,verbose=True):
+    def download(self, file_keys="all", aperture="DEFAULT", decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,
+                 outlier_clip=4, outlier_window_width=11,outlier_clip_niter=1, verbose=True):
         """   
         Download CHEOPS light curves from the cheops database using the dace_query package
 
@@ -235,18 +305,20 @@ class get_CHEOPS_data(object):
         ----------
         file_keys : list of str
             List of file keys to download. if "all" is given, all file_keys shown in `.search()` result will be downloaded.
-
         aperture : str
             Aperture to use for the light curve. Default is "DEFAULT". The options are: "R15","R16",...,"R40","RINF","RSUP".
-
         decontaminate : bool
             Decontaminate the light curve. Default is True.
-
         reject_highpoints : bool
             Reject high points in the light curve. Default is True. 
-        
         bg_MAD_reject : float
             Number of median absolute deviations to reject high background points. Default is 3.
+        outlier_clip : float
+            Number of standard deviations to clip outliers. Default is 4.
+        outlier_window_width : int
+            Window width to use for clipping outliers. Default is 11.
+        outlier_clip_niter : int
+            Number of iterations to clip outliers. Default is 3.
         """
         
         
@@ -267,6 +339,9 @@ class get_CHEOPS_data(object):
             #remove points with high background
             mask  = d.lc["bg"] > bg_MAD_reject*np.nanmedian(d.lc["bg"])
             _,_,_ = d.mask_data(mask, verbose=False)
+
+            #iterative sigma clipping
+            for _ in range(outlier_clip_niter): t_,f_,e_ = d.clip_outliers(outlier_clip,outlier_window_width, verbose=verbose)
 
             self.lc.append(d)
 
@@ -551,7 +626,7 @@ class get_EULER_data_from_server(object):
 
 
 
-def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars", overwrite_cache=False):
+def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars", ps_select_index=None,overwrite_cache=False):
     """
     get stellar and planet parameters from nasa exoplanet archive or exoplanet.eu
 
@@ -561,6 +636,9 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         Name of the planet.
     database : str
         Database to use. Default is "exoplanetarchive". Options are "exoplanetarchive" or "exoplanet.eu".
+    table : str
+        Table to use. Default is "pscomppars". Options are "pscomppars" or "ps".
+
     overwrite_cache : bool
         Overwrite the cached parameters. Default is True.
     """
@@ -580,14 +658,23 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         if table=="pscomppars":
             df = NasaExoplanetArchive.query_object(planet_name,table=table)
         elif table=="ps":
-            df = NasaExoplanetArchive.query_object(planet_name,table=table) 
-            df = df[df['default_flag']==1]
+            ref_table = NasaExoplanetArchive.query_object(planet_name,table=table)
+            ref_table["pl_refname"] = [ref.split('refstr=')[1].split(' href')[0] for ref in ref_table["pl_refname"]]
+            ref_table["sy_refname"] = [ref.split('refstr=')[1].split(' href')[0] for ref in ref_table["sy_refname"]]
+            print("\nAvailable parameters:\n---------------------")
+            print(ref_table[["pl_name","default_flag","pl_refname","sy_refname",]].to_pandas())
+            if ps_select_index is None:
+                df = ref_table[ref_table['default_flag']==1]
+                print(f"\nselecting default parameters: {df['pl_refname'][0]}. Set `ps_select_index` [between 0 – {len(ref_table)-1}] to select another")
+            else:
+                ref_table["index"] = np.arange(len(ref_table))
+                df = ref_table[ref_table["index"]==ps_select_index]
+                print(f"\nselecting parameters: {df['pl_refname'][0]}")
         else: 
             raise ValueError("table must be either 'pscomppars' or 'ps'")
         
         df = df.to_pandas()
         
-
         params["star"]["Teff"]     = (df["st_teff"][0],df["st_tefferr1"][0])
         params["star"]["logg"]     = (df["st_logg"][0],df["st_loggerr1"][0])
         params["star"]["FeH"]      = (df["st_met"][0],df["st_meterr1"][0])

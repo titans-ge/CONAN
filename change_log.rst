@@ -1,3 +1,14 @@
+3-Jun-2024: version 3.2.1
+~~~~~~~~~~~~~
+* added function to read the parameters values and errors from the result_**.dat file --> result.get_all_params_dict()
+* automatically save fit config file in the output folder as config_save.dat
+* input files no longer overwritten when modified within CONAN. CONAN injests the file and works with a copy of it.
+* fixed bug in splitting filenames with multiple dots
+* selection of system parameter reference when using 'ps' table of the NASA exoplanet archive
+* changed reported stellar density unit from rho_sun to g/cm3
+* outlier rejection can be performed on selected columns of the data. e.g. lc_obj.clip_outliers(clip=4,width=11,selected_column=["col1","col3","col4"])
+* when Downloading TESS data, user can now split the sector into orbits to create different file that can be detrended differently
+* fixed bug in writing result files when duration is a fixed parameter
 
 7-May-2024: version 3.2.0
 ~~~~~~~~~~~~~

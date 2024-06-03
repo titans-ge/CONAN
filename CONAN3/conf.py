@@ -1,5 +1,4 @@
 from ._classes import load_lightcurves, load_rvs, fit_setup,_print_output
-from .fit_data import run_fit
 from .utils import ecc_om_par
 import numpy as np 
 
@@ -27,6 +26,7 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
         verbose: bool;
             show print statements
     """
+    from .fit_data import run_fit
 
     lc_obj, rv_obj, fit_obj = load_configfile(config_file, init_decorr=init_decorr, verbose=verbose)
     result = run_fit(lc_obj, rv_obj, fit_obj,out_folder=out_folder,
@@ -64,6 +64,9 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
         
         fit_obj : object;
             Instance of CONAN.fit_setup() object and its attributes.
+
+        filename : str;
+            name of the configuration file to be saved.
     """
     if lc_obj is None:
         lc_obj = load_lightcurves()

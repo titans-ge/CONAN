@@ -24,6 +24,7 @@ import celerite
 from celerite import GP as cGP
 from copy import deepcopy
 from .utils import gp_params_convert
+from .conf import create_configfile
 from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
 
@@ -112,6 +113,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if not os.path.exists(out_folder):
         print(f"Creating output folder...{out_folder}")
         os.mkdir(out_folder)
+        # print(f"Saving configuration to file: {out_folder}/config_save.dat")
+        create_configfile(lc_obj, rv_obj, fit_obj, f"{out_folder}/config_save.dat")  #create config file
+
 
     if os.path.exists(f'{out_folder}/chains_dict.pkl'):
         if not rerun_result:
@@ -1453,10 +1457,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     bpfull[[ijnames][0]] = bp
 
     try:
-        medvals,maxvals = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+        medvals,maxvals,sigma1s = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
                                         nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
     except:
-        medvals,maxvals = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
+        medvals,maxvals,sigma1s = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
                                         nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
 
     npar=len(jnames)
@@ -1468,6 +1472,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     medp[[ijnames][0]]=medvals
     maxp=initial
     maxp[[ijnames][0]]=maxvals
+    stdev = np.zeros_like(initial)
+    stdev[[ijnames][0]] = sigma1s
 
     #============================== PLOTTING ===========================================
     print('\nPlotting output figures')
@@ -1481,7 +1487,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #save summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
-    stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], 
+    stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], stdev=stdev[jumping],
                         T0 = T0_post,  P = p_post, dur = Dur_post, evidence=evidence)
     pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
 

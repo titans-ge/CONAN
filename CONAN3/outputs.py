@@ -334,17 +334,17 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
     sig1md =  np.zeros([nderived,2]) 
     sig3md =  np.zeros([nderived,2]) 
     
-    of.write('====================================================================================================\n')
-    of.write(f'{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
-    of.write('====================================================================================================\n')
+    of.write('#====================================================================================================\n')
+    of.write(f'#{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
+    of.write('#====================================================================================================\n')
     
-    of2.write('====================================================================================================\n')
-    of2.write(f'{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
-    of2.write('====================================================================================================\n')
+    of2.write('#====================================================================================================\n')
+    of2.write(f'#{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
+    of2.write('#====================================================================================================\n')
 
-    of3.write('====================================================================================================\n')
-    of3.write(f'{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
-    of3.write('====================================================================================================\n')
+    of3.write('#====================================================================================================\n')
+    of3.write(f'#{"Jump parameters":25s} {"median":14s} {"-1sigma":14s} {"+1sigma":14s} {"-3sigma":14s} {"+3sigma":14s}\n')
+    of3.write('#====================================================================================================\n')
 
     for i in range(npara):
         vals=posterior[:,i]
@@ -357,9 +357,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         #print jnames[i], medvals[i],sig1[i,0],sig1[i,1], sig3[i,0], sig3[i,1]
         of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (jnames[i], medvals[i],sig1[i,0],sig1[i,1], sig3[i,0], sig3[i,1]))       
     
-    of.write('====================================================================================================\n')
-    of.write('Stellar input parameters: \n')
-    of.write('====================================================================================================\n')
+    of.write('#====================================================================================================\n')
+    of.write('#Stellar input parameters: \n')
+    of.write('#====================================================================================================\n')
     if howstellar == 'Rrho':
         vals=Rs_PDF
         # calculate median
@@ -368,7 +368,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         sval   = np.sort(dval)
         sig1s  = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
         sig3s  = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
-        of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
+        of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('#Rstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
     if howstellar == 'Mrho':
         vals   = Ms_PDF
         # calculate median
@@ -377,7 +377,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         sval   = np.sort(dval)
         sig1s  = sval[i1sig] # the 1-sigma intervals (the left side is naturally negative) 
         sig3s  = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
-        of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
+        of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('#Mstar', medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
 
     for i in range(len(extinpars)):
         vals   = extind_PDF[:,i]
@@ -389,9 +389,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (extinpars[i], medval,sig1s[0],sig1s[1], sig3s[0], sig3s[1]))  
 
 
-    of.write('====================================================================================================\n')
-    of.write('Derived parameters: ('+starstring+') \n')
-    of.write('====================================================================================================\n')
+    of.write('#====================================================================================================\n')
+    of.write('#Derived parameters: ('+starstring+') \n')
+    of.write('#====================================================================================================\n')
         
     for i in range(nderived):
         vals=derived_PDFs[i]
@@ -403,9 +403,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         sig3d[i]    = sval[i3sig] # the 1-sigma intervals (the left side is naturally negative) 
         of.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (derived_pnames[i], medvalsd[i],sig1d[i,0],sig1d[i,1], sig3d[i,0], sig3d[i,1])) 
 
-    of.write('====================================================================================================\n')     
-    of.write('Fixed parameters: \n')
-    of.write('====================================================================================================\n')
+    of.write('#====================================================================================================\n')     
+    of.write('#Fixed parameters: \n')
+    of.write('#====================================================================================================\n')
 
     nfix = len(njnames)
     for i in range(nfix):
@@ -414,7 +414,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         else:
             of.write('%-25s %14.8f \n' % (njnames[i], bp[nijnames[0][i]])) 
         
-    of.write('====================================================================================================\n')
+    of.write('#====================================================================================================\n')
     of.close()
     
     #now write out outfile2: the peak of the posterior and the area containing 68% of points
@@ -431,9 +431,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (jnames[i], maxvals[i],sig1m[i,0],sig1m[i,1], sig3m[i,0], sig3m[i,1])) 
         param_histbp(vals,jnames[i],medvals[i],sig1[i],sig3[i],maxvals[i],sig1m[i],sig3m[i],bp[ijnames[0][i]],s1bps,out_folder)
 
-    of2.write('====================================================================================================\n')
-    of2.write('Stellar input parameters: \n')
-    of2.write('====================================================================================================\n')
+    of2.write('#====================================================================================================\n')
+    of2.write('#Stellar input parameters: \n')
+    of2.write('#====================================================================================================\n')
     if howstellar == 'Rrho':
         vals=Rs_PDF
         pdf, xpdf, HPDmin, iHDP = credregionML(vals)
@@ -443,7 +443,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
         sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
         sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-        of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('#Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
         param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
     if howstellar == 'Mrho':
         vals=Ms_PDF
@@ -454,7 +454,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
         sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
         sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-        of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('#Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
         param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
 
     for i in range(len(extinpars)):
@@ -468,9 +468,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
         of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (extinpars[i], maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1]))  
     
-    of2.write('====================================================================================================\n')
-    of2.write('Derived parameters: ('+starstring+') \n')
-    of2.write('====================================================================================================\n')    
+    of2.write('#====================================================================================================\n')
+    of2.write('#Derived parameters: ('+starstring+') \n')
+    of2.write('#====================================================================================================\n')    
     
     for i in range(nderived):     
         vals=derived_PDFs[i]
@@ -501,9 +501,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (derived_pnames[i], maxvalsd[i], sig1md[i,0],sig1md[i,1], sig3md[i,0], sig3md[i,1])) 
         param_hist(vals,derived_pnames[i],medvalsd[i],sig1d[i],sig3d[i],maxvalsd[i],sig1md[i],sig3md[i],out_folder=out_folder)
     
-    of2.write('====================================================================================================\n')
-    of2.write('Fixed parameters: \n')
-    of2.write('====================================================================================================\n')
+    of2.write('#====================================================================================================\n')
+    of2.write('#Fixed parameters: \n')
+    of2.write('#====================================================================================================\n')
 
     nfix = len(njnames)
     for i in range(nfix):
@@ -513,7 +513,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
             of2.write('%-25s %14.8f \n' % (njnames[i], bp[nijnames[0][i]])) 
 
     
-    of2.write('====================================================================================================\n')    
+    of2.write('#====================================================================================================\n')    
     of2.close()
         
         
@@ -533,9 +533,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         
         of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (jnames[i],bp[ijnames[0][i]],s1bps[0],s1bps[1],s3bps[0],s3bps[1]))     
         
-    of3.write('====================================================================================================\n')
-    of3.write('Stellar input parameters: \n')
-    of3.write('====================================================================================================\n')
+    of3.write('#====================================================================================================\n')
+    of3.write('#Stellar input parameters: \n')
+    of3.write('#====================================================================================================\n')
     if howstellar == 'Rrho':
         vals=Rs_PDF
         pdf, xpdf, HPDmin, iHDP = credregionML(vals)
@@ -545,7 +545,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
         sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
         sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-        of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('#Rstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
         param_hist(vals,'Rstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
     if howstellar == 'Mrho':
         vals=Ms_PDF
@@ -556,7 +556,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         pdf, xpdf, HPDmin, iHDP = credregionML(vals,pdf=pdf, xpdf=xpdf, percentile=0.9973)
         sig3ms[0] = np.amin(xpdf[pdf>HPDmin]) - maxval
         sig3ms[1] = np.amax(xpdf[pdf>HPDmin]) - maxval      
-        of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
+        of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % ('#Mstar', maxval,sig1ms[0],sig1ms[1], sig3ms[0], sig3ms[1])) 
         param_hist(vals,'Mstar',medval,sig1s,sig3s,maxval,sig1ms,sig3ms,out_folder=out_folder)
     for i in range(len(extinpars)):
         vals = extind_PDF[:,i]
@@ -577,9 +577,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
     
     # FIRST: derive the bp values, call them der_bp
 
-    of3.write('====================================================================================================\n')
-    of3.write('Derived parameters: ('+starstring+') \n')
-    of3.write('====================================================================================================\n')    
+    of3.write('#====================================================================================================\n')
+    of3.write('#Derived parameters: ('+starstring+') \n')
+    of3.write('#====================================================================================================\n')    
     
     for i in range(nderived):     
         
@@ -588,9 +588,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         
         of3.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (derived_pnames[i], derived_bp[i], sig1bp[0],sig1bp[1], sig3bp[0], sig3bp[1])) 
     
-    of3.write('====================================================================================================\n')
-    of3.write('Fixed parameters: \n')
-    of3.write('====================================================================================================\n')
+    of3.write('#====================================================================================================\n')
+    of3.write('#Fixed parameters: \n')
+    of3.write('#====================================================================================================\n')
 
     nfix = len(njnames)
     for i in range(nfix):
@@ -599,7 +599,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         else:
             of3.write('%-25s %14.8f \n' % (njnames[i], bp[nijnames[0][i]])) 
     
-    of3.write('====================================================================================================\n')    
+    of3.write('#====================================================================================================\n')    
     of3.close()        
         
         
@@ -616,7 +616,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         plot_traspec(dRpRsres, edRpRsres, uwl,out_folder)
 
     
-    return medvals, maxvals
+    return medvals, maxvals,np.median(abs(sig1),axis=1)
 
 
 def gr_print(jnames,GRvals, out_folder):
@@ -731,7 +731,7 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     a_PDF = aRs_PDF * Rs_PDF * Rsolar / au
     Rsa_PDF = 1./aRs_PDF
 
-    rhoS_PDF = rhoS_PDF / (rhoSolar/1000)   #solar units
+    rhoS_PDF = rhoS_PDF #/ (rhoSolar/1000)   #solar units
 
     ome_PDF = ome_PDF * 180. / np.pi
 
@@ -796,7 +796,7 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
             Fn_PDFs.append(Fn)
 
 
-    derived_pnames = [f"Rp{nm}_[Rjup]",f"Mp{nm}_[Mjup]", f"rho{nm}_p_[rhoJup]", f"g_p{nm}_[SI]", f"dF{nm}", f"aRs{nm}", f"a{nm}_[au]", f"rhoS{nm}_[rhoSun]", "Ms_[Msun]", "Rs_[Rsun]",
+    derived_pnames = [f"Rp{nm}_[Rjup]",f"Mp{nm}_[Mjup]", f"rho{nm}_p_[rhoJup]", f"g_p{nm}_[SI]", f"dF{nm}", f"aRs{nm}", f"a{nm}_[au]", f"rho_star{nm}_[g_cm3]", "Ms_[Msun]", "Rs_[Rsun]",
                         f"inclination{nm}_[deg]", f"eccentricity{nm}", f"omega{nm}_[deg]", f"Occult_dur{nm}", f"Rs_a{nm}", "MF_PDF_[Msun]",f"Dur{nm}_[d]"]
     
     derived_pnames =  derived_pnames + pnames_LD + pnames_Fn

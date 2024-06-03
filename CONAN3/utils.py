@@ -417,7 +417,7 @@ def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
     factr =  ((1+Rp)**2 - b**2)/(aR**2-b**2)
     ecc_fac = np.sqrt(1-e**2)/(1+e*np.sin(np.deg2rad(w)))  if tra_occ=="tra" else np.sqrt(1-e**2)/(1-e*np.sin(np.deg2rad(w)))
     Tdur = (P/np.pi)*np.arcsin( np.sqrt(factr) ) * ecc_fac
-    return Tdur
+    return np.round(Tdur,8)
 
 
 def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):

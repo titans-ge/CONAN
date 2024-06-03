@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from .utils import rho_to_tdur, gp_params_convert
 import matplotlib
 from ._classes import __default_backend__
+from os.path import splitext
 
 
 def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,get_model=False,out_folder=""):
@@ -324,9 +325,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
 
                 out_data = np.hstack((out_data,phases))
                 if make_outfile:
-                    outfile=out_folder+"/"+name.split(".")[0]+'_lcout.dat' 
+                    outfile=out_folder+"/"+splitext(name)[0]+'_lcout.dat' 
                     if verbose: print(f"Writing LC output to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
         
         elif useGPphot[j] in ['y','ce']: 
             gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
@@ -384,9 +385,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
 
                 out_data = np.hstack((out_data,phases))
                 if make_outfile:
-                    outfile=out_folder+"/"+name.split(".")[0]+'_lcout.dat'
+                    outfile=out_folder+"/"+splitext(name)[0]+'_lcout.dat'
                     if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
 
 
     # now do the RVs and add their probabilities to the model
@@ -534,10 +535,10 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                     header_fmt += "{:<16s}\t"
                     header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
                 if make_outfile:   
-                    outfile  = out_folder+"/"+RVnames[j].split(".")[0]+'_rvout.dat'
+                    outfile  = out_folder+"/"+splitext(RVnames[j])[0]+'_rvout.dat'
                     out_data = np.hstack((out_data,phases))
                     if verbose: print(f"Writing RV output to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
                     # pd.DataFrame(out_data,columns=header).to_csv(outfile,sep="\t",index=False, float_format='%-16.6f')
 
 
@@ -593,9 +594,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 
                 if make_outfile:   
                     out_data = np.hstack((out_data,phases))
-                    outfile  = out_folder+"/"+RVnames[j].split(".")[0]+'_rvout.dat'
+                    outfile  = out_folder+"/"+splitext(RVnames[j])[0]+'_rvout.dat'
                     if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f')
+                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
 
 
     if get_model:

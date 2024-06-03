@@ -16,6 +16,7 @@ from .utils import rescale_minus1_1, cosine_atm_variation, split_transits
 from .utils import phase_fold, supersampling, convert_LD, get_transit_time, bin_data_with_gaps
 from copy import deepcopy
 from scipy.interpolate import LSQUnivariateSpline,LSQBivariateSpline
+from uncertainties import ufloat
 
 __all__ = ["load_lightcurves", "load_rvs", "fit_setup", "load_result", "__default_backend__"]
 
@@ -900,7 +901,7 @@ class load_lightcurves:
                 print(f"writing ones to the missing columns of file: {f}")
                 new_cols = np.ones((nrow,9-ncol))
                 fdata = np.hstack((fdata,new_cols))
-                np.savetxt(self._fpath+f,fdata,fmt='%.8f')
+                # np.savetxt(self._fpath+f,fdata,fmt='%.8f')   # no need to replace the file since its stored in lc_obj
             #remove nan rows from fdata and print number of removed rows
             n_nan = np.sum(np.isnan(fdata).any(axis=1))
             if n_nan > 0: print(f"removed {n_nan} row(s) with NaN values from file: {f}")            
@@ -1270,7 +1271,7 @@ class load_lightcurves:
         return self._decorr_result
     
     
-    def clip_outliers(self, lc_list="all", clip=5, width=15, show_plot=False, verbose=True):
+    def clip_outliers(self, lc_list="all", clip=5, width=15, select_column=["col1"], niter=1, show_plot=False, verbose=True):
 
         """
         Remove outliers using a running median method. Points > clip*M.A.D are removed
@@ -1280,16 +1281,16 @@ class load_lightcurves:
         ------------
         lc_list: list of string, None, 'all';
             list of lightcurve filenames on which perform outlier clipping. Default is 'all' which clips all lightcurves in the object.
-        
         clip: int/float,list;
-            cut off value above the median. Default is 5
-
+            cut off value above the median deviation. Default is 5. If list, must be same length as lc_list.
         width: int,list;
-            Number of points in window to use when computing the running median. Must be odd. Default is 15
-
+            Number of points in window to use when computing the running median. Must be odd. Default is 15. If list, must be same length as lc_list.
+        select_column: list of str;
+            list of column names on which to perform clipping. Default is only ["col1"] which is the flux column.
+        niter: int;
+            Number of iterations to perform clipping. Default is 1
         show_plot: bool;
             set True to plot the data and show clipped points.
-        
         verbose: bool;
             Prints number of points that have been cut. Default is True
 
@@ -1301,6 +1302,12 @@ class load_lightcurves:
         if lc_list == None or lc_list == []: 
             print("lc_list is None: No lightcurve to clip outliers.")
             return None
+        
+        if isinstance(select_column,str): select_column = [select_column]
+        if isinstance(select_column, list):
+            for col in select_column: 
+                    assert col in ["col1","col3","col4","col5","col6","col7","col8"],\
+                            f'clip_outliers(): elements of select_column must be in ["col1","col3","col4","col5","col6","col7","col8"] but "{col}" given.'
         
         if isinstance(lc_list, str) and (lc_list != 'all'): lc_list = [lc_list]
         if lc_list == "all": lc_list = self._names
@@ -1333,23 +1340,31 @@ class load_lightcurves:
             
             self._clipped_data.config[self._names.index(file)] = f"W{width[i]}C{clip[i]}"
 
-            thisLCdata = self._input_lc[file]
-            _,_,clpd_mask = outlier_clipping(x=thisLCdata["col0"],y=thisLCdata["col1"],clip=clip[i],width=width[i],
-                                                verbose=False, return_clipped_indices=True)   #returns mask of the clipped points
-            ok = ~clpd_mask     #invert mask to get indices of points that are not clipped
-            if verbose and (not show_plot): print(f'\n{file}: Rejected {sum(~ok)} pts > {clip[i]:0.1f}MAD from the median')
+            thisLCdata = deepcopy(self._input_lc[file])
+            ok      = np.ones(len(thisLCdata["col0"]), dtype=bool)  #initialize mask to all True, used to store indices of points that are not clipped
+            ok_iter = np.ones(len(thisLCdata["col0"]), dtype=bool)  #initialize mask to all True, ok points for each iteration
+
+            for col in select_column:
+                for _ in range(niter):
+                    thisLCdata  = {k:v[ok_iter] for k,v in thisLCdata.items()}   #remove clipped points from previous iteration
+                    _,_,clpd_mask = outlier_clipping(x=thisLCdata["col0"],y=thisLCdata[col],clip=clip[i],width=width[i],
+                                                        verbose=False, return_clipped_indices=True)   #returns mask of the clipped points
+                    ok_iter = ~clpd_mask     #invert mask to get indices of points that are not clipped
+                    ok[ok] &= ok_iter        #update points in ok mask with the new iteration clipping
+            if verbose and (not show_plot): print(f'\n{file}: Rejected {sum(~ok)}pts > {clip[i]:0.1f}MAD from the median of columns {select_column}')
 
             if show_plot:
-                ax[i].set_title(f'{file}: Rejected {sum(~ok)} pts > {clip[i]:0.1f}MAD')
-                ax[i].plot(thisLCdata["col0"][ok],  thisLCdata["col1"][ok], '.C0', ms=5)
-                ax[i].plot(thisLCdata["col0"][~ok], thisLCdata["col1"][~ok], '.r', ms=5)
+                ax[i].set_title(f'{file}: Rejected {sum(~ok)}pts>{clip[i]:0.1f}MAD')
+                ax[i].plot(self._input_lc[file]["col0"][ok],  self._input_lc[file]["col1"][ok], '.C0', ms=5)
+                ax[i].plot(self._input_lc[file]["col0"][~ok], self._input_lc[file]["col1"][~ok], '.r', ms=5)
+
             
             #replace all columns of input file with the clipped data
-            self._input_lc[file] = {k:v[ok] for k,v in thisLCdata.items()}
+            self._input_lc[file] = {k:v[ok] for k,v in self._input_lc[file].items()}
 
             #recompute rms estimate and multiplicative jitter
-            self._rms_estimate[self._names.index(file)]  = np.std(np.diff(thisLCdata["col1"][ok]))/np.sqrt(2)
-            self._jitt_estimate[self._names.index(file)] = np.sqrt(self._rms_estimate[self._names.index(file)]**2 - np.mean(thisLCdata["col2"][ok]**2))
+            self._rms_estimate[self._names.index(file)]  = np.std(np.diff(self._input_lc[file]["col1"]))/np.sqrt(2)
+            self._jitt_estimate[self._names.index(file)] = np.sqrt(self._rms_estimate[self._names.index(file)]**2 - np.mean(self._input_lc[file]["col2"]**2))
             if np.isnan(self._jitt_estimate[self._names.index(file)]): self._jitt_estimate[self._names.index(file)] = 1e-20
         
         self._clipped_data.flag = True # SimpleNamespace(flag=True, width=width, clip=clip, lc_list=lc_list, config=conf)
@@ -1635,7 +1650,7 @@ class load_lightcurves:
         celerite_allowed = dict(kernels = ["real","mat32","sho"], columns= ["col0","col3","col4","col5","col6","col7","col8"])
 
         self._GP_dict  = {}
-        self._sameLCgp  = SimpleNamespace(flag = False, first_index =None)
+        self._sameLCgp  = SimpleNamespace(flag = False, first_index =None) #flag to indicate if same GP is to be used for all lcs
 
         if lc_list is None or lc_list == []:
             if self._nphot>0:
@@ -1744,10 +1759,10 @@ class load_lightcurves:
                                                                         user_data = [this_kern, this_par])
                     elif isinstance(v, tuple):
                         if len(v)==2:
-                            steps = 0 if (self._sameLCgp.flag and i!=0) else 0.1*v[1]   #if sameRVgp is set, only first pars will jump and be used for all rvs
+                            steps = 0 if (self._sameLCgp.flag and i!=0) else 0.1*v[1]   #if sameLCgp is set, only first pars will jump and be used for all rvs
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[0],step_size=steps,prior="p", 
                                                                         prior_mean=v[0], prior_width_lo=v[1], prior_width_hi=v[1], 
-                                                                        bounds_lo=v[0]-10*v[1], bounds_hi=v[0]+10*v[1],
+                                                                        bounds_lo=v[0]-10*v[1], bounds_hi=v[0]+10*v[1],     #10sigma cutoff
                                                                         user_data=[this_kern, this_par])
                         elif len(v)==3:
                             steps = 0 if (self._sameLCgp.flag and i!=0) else min(0.001,0.001*np.ptp(v))
@@ -3333,6 +3348,30 @@ class load_result:
         Examples:
         ---------
         >>> result = CONAN3.load_result(folder="output")
+        # different plots from the result object
+        >>> fig    = result.plot_corner()                       # corner plot
+        >>> fig    = result.plot_burnin_chains()                # burn-in chains
+        >>> fig    = result.plot_chains()                       # posterior chains
+        >>> fig    = result.lc.plot_bestfit(detrend=True)        # model of the light curves
+        >>> fig    = result.rv.plot_bestfit(detrend=True)        # model of the RV curves
+
+        #get the best-fit parameters
+        >>> med_pars = result.params.median()      # median values of the fitted parameters
+        >>> stdev    = result.params.stdev()       # standard deviation of the fitted parameters
+        >>> pars_dict= result.get_all_params_dict(stat="med")              # get all parameters (fitted, derived, and fixed) as a dictionary
+        
+        # load files
+        >>> out_lc  = result.lc.out_data()            # output data of the light curves i.e *_lcout.dat files
+        >>> out_rv  = result.rv.out_data()            # output data of the RV curves i.e *_rvout.dat files
+        >>> in_lc   = result.lc.in_data()             # input light curves
+        >>> in_rv   = result.rv.in_data()             # input RV data 
+
+        # evaluate model (lc or rv) at user-defined times
+        >>> t = np.linspace(0,1,1000)
+        >>> model  = result.lc.evaluate(file="lc1.dat", time=t, params= result.params.median, return_std=True)                # model of the light curve "lc1.dat" at user time t
+        >>> lc_mod = model.planet_model      # model of the planet
+        >>> comps  = model.components        # for multiplanet fit, this will be a dict with lc_mod for each planet. i.e. comps["pl_1"] for planet 1 
+        >>> sigma_low, sigma_hi = model.sigma_low, model.sigma_hi    # lower and upper 1-sigma model uncertainties that can be plotted along with lc_mod
     """
 
     def __init__(self, folder="output",chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl",verbose=True):
@@ -3380,6 +3419,7 @@ class load_result:
             self.params     = SimpleNamespace(  names   = list(self._par_names),
                                                 median  = self._stat_vals["med"],
                                                 max     = self._stat_vals["max"],
+                                                stdev   = self._stat_vals["stdev"] if "stdev" in self._stat_vals.keys() else np.zeros_like(self._stat_vals["med"]),
                                                 bestfit = self._stat_vals["bf"],
                                                 T0      = self._stat_vals["T0"],
                                                 P       = self._stat_vals["P"],
@@ -3387,10 +3427,11 @@ class load_result:
             assert len(self.params.median)==len(self.params.names), "load_result(): number of parameter names and values do not match."
         except:
             self.params     = SimpleNamespace(  names   = list(self._par_names),
-                                                median  = np.median(self.flat_posterior,axis=0))
+                                                median  = np.median(self.flat_posterior,axis=0),
+                                                stdev   = np.std(self.flat_posterior,axis=0))
             
         self.evidence   = self._stat_vals["evidence"] if hasattr(self,"_stat_vals") and "evidence" in self._stat_vals.keys() else None
-        self.params_dict  = {k:v for k,v in zip(self.params.names, self.params.median)}
+        self.params_dict  = {k:ufloat(v,e) for k,v,e in zip(self.params.names, self.params.median,self.params.stdev)}
 
         if hasattr(self,"_stat_vals"):     #summary statistics are available only if fit completed
             # evaluate model of each lc at a smooth time grid
@@ -3421,7 +3462,7 @@ class load_result:
                 self._rv_smooth_time_mod[rv] = SimpleNamespace()
                 tmin, tmax = input_rvs[rv]["col0"].min(), input_rvs[rv]["col0"].max()
                 t_sm  = np.linspace(tmin,tmax,max(2000, len(input_rvs[rv]["col0"])))
-                gam = self.params_dict[f"rv{i+1}_gamma"]
+                gam = self.params_dict[f"rv{i+1}_gamma"].n
                 self._rv_smooth_time_mod[rv].time    = t_sm
                 self._rv_smooth_time_mod[rv].model   = self._evaluate_rv(file=rv, time=self._rv_smooth_time_mod[rv].time).planet_model + gam
                 self._rv_smooth_time_mod[rv].gamma   = gam
@@ -3816,6 +3857,58 @@ class load_result:
 
             if return_fig: return fig
 
+    def get_all_params_dict(self, stat="med",uncertainty="1sigma", return_type="ufloat"):
+        """
+            Get all parameters(jumping,derived,fixed) from the result_**.dat and load in a dictionary with uncertainties.
+
+            Parameters:
+            -----------
+            stat : str;
+                summary statistic to load for model calculation. Must be one of ["med","max","bf"] for median, maximum and bestfit respectively.
+                Default is "med" to load the 'result_med.dat' file.
+            uncertainty : str;
+                uncertainty to load from file. Must be one of ["1sigma","3sigma"] for 1sigma or 3sigma uncertainties.
+                Default is "1sigma".
+            return_type : str;
+                return type of the values. Must be one of ["ufloat","array"] to return each parameter as ufloat(val,+/-sigma) or array of [val,lo_sigma,hi_sigma] .
+                Default is "ufloat".
+            Returns:
+            --------
+            results_dict : dict;
+                dictionary of all parameters with uncertainties for jumping and derived parameters
+
+        """
+        results_dict = {}
+        assert uncertainty in  ["1sigma","3sigma"], "get_all_params_dict(): uncertainty must be one of ['1sigma','3sigma']"
+        assert stat in ["med","max","bf"], "get_all_params_dict(): stat must be one of ['med','max','bf']"
+        assert return_type in ["ufloat","array"], "get_all_params_dict(): return_type must be one of ['ufloat','array']"
+        
+        print(f"Loading file: {self._folder}/results_{stat}.dat ...\n")
+
+        with open(f"{self._folder}/results_{stat}.dat", 'r') as file:
+            for line in file:
+                # Ignore lines that start with '#'
+                if not line.startswith('#'):
+                    # Split the line into words
+                    words = line.split()
+                    # Use the first word as the key
+                    val = float(words[1])
+                    
+                    if len(words) > 2: # jumping and derived parameters
+                        if uncertainty == "1sigma":
+                            lo, up = abs(float(words[2])), float(words[3])
+                            sigma  = np.median([lo, up]) if return_type == "ufloat" else [lo,up]
+                        else:
+                            lo, up = abs(float(words[4])), float(words[5])
+                            sigma  = np.median([lo, up]) if return_type == "ufloat" else [lo,up]
+                        
+                        results_dict[words[0]] = ufloat(val, sigma) if return_type=="ufloat" else np.array([val]+sigma)
+                    
+                    else:
+                        results_dict[words[0]] = val
+                        
+        return results_dict
+    
     def _load_result_array(self, data=["lc","rv"],verbose=True):
         """
             Load result array from CONAN3 fit allowing for customised plots.

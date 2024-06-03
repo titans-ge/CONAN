@@ -6,6 +6,7 @@ from matplotlib.ticker import FormatStrFormatter
 import matplotlib.pyplot as plt    
 from CONAN3.logprob_multi import logprob_multi
 import pickle
+from os.path import splitext
 
 
 def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVunit="km/s",params=None,T0=None,period=None,Dur=None):
@@ -20,7 +21,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
     
     #model plot for each LC
     for j in range(nphot):
-        infile=out_folder + "/" + names[j].split(".")[0]+'_lcout.dat'
+        infile=out_folder + "/" + splitext(names[j])[0]+'_lcout.dat'
         tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9), unpack = True)  # reading in the lightcurve data
         
         #evaluate rv model on smooth time grid
@@ -37,7 +38,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         _,    resbin          = bin_data_with_gaps(tt, flux-full_mod,binsize=binsize)    #residuals
 
         ########## Plot and save lightcurve with fit ########
-        outname=out_folder+prefix+names[j].split(".")[0]+'_fit.png'
+        outname=out_folder+prefix+splitext(names[j])[0]+'_fit.png'
 
         fig,ax = plt.subplots(3,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title('Fit for lightcurve '+names[j][:-4])
@@ -136,8 +137,8 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
     ############ RVs#####################
     for j in range(nRV):
-        infile  = out_folder + "/" + RVnames[j].split(".")[0]+'_rvout.dat'
-        outname = out_folder+prefix+RVnames[j].split(".")[0]+'_fit.png'
+        infile  = out_folder + "/" + splitext(RVnames[j])[0]+'_rvout.dat'
+        outname = out_folder+prefix+splitext(RVnames[j])[0]+'_fit.png'
         tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9),unpack = True)  # reading in the rvcurve data
         rv_resid = y_rv-full_mod
 
@@ -188,7 +189,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
             phase_all = []
 
             for j in range(nRV):
-                infile  = out_folder + "/" + RVnames[j].split(".")[0]+'_rvout.dat'
+                infile  = out_folder + "/" + splitext(RVnames[j])[0]+'_rvout.dat'
                 tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9), unpack = True)
                 rv_resid = y_rv-full_mod
 

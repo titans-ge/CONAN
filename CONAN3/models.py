@@ -339,33 +339,6 @@ class Transit_Model(Model):
         return mm, model_components
 
 
-        # #==== set up for LC and baseline creation
-        # col5 = np.copy(col5_in)
-        # col3 = np.copy(col3_in)
-        # col4 = np.copy(col4_in)
-        # col6 = np.copy(col6_in)
-        # col7 = np.copy(col7_in)
-        # col8 = np.copy(col8_in)
-        # ts   = tt-np.median(tt)  
-
-        # # MONIKA: added least square optimisation for baselines
-        # if (baseLSQ == 'y'):
-        #     #bvar contains the indices of the non-fixed baseline variables        
-        #     coeffstart  = np.copy(bases[bvar])   
-        #     icoeff,dump = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mm, ft, ts, col5, col3, col4, col6, col7,col8))
-        #     coeff = np.copy(bases)
-        #     coeff[bvar] = np.copy(icoeff)   
-        # else:        
-        #     coeff = np.copy(bases)  # the input coefficients 
-
-        # bfunc,spl_comp = basefunc_noCNM(coeff, ts, col5, col3, col4, col6, col7,col8,ft/mm,useSpline)
-        # mod=mm*bfunc
-        
-        # lc_result = SimpleNamespace(planet_LC=mm, full_LCmod=mod, LC_bl=bfunc, spline=spl_comp )
-
-        # return lc_result
-
-
 def basefunc_noCNM(coeff, LCdata,res,useSpline):
     # the full baseline function calculated with the coefficients given; of which some are not jumping and set to 0
     t, flux, err, col3, col4, col5, col6, col7, col8 = LCdata.values()
@@ -547,33 +520,6 @@ def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,npl=None):
     mod_RV += Gamma #add gamma to the total RV
 
     return mod_RV, model_components
-
-    # bfstartRV= 1+7*npl + nttv + nddf + nocc*5 + nfilt*2 + nphot+ 2*nRV + nphot*22 +j*12  #the first index in the param array that refers to a baseline function
-    # incoeff = list(range(bfstartRV,bfstartRV+12))  # the indices for the coefficients for the base function        
-
-    # ts = tt-np.median(tt)
-
-    # if (baseLSQ == 'y'):
-    #     #get the indices of the variable baseline parameters via bvar (0 for fixed, 1 for variable)
-    #     ivars = np.copy(bvarsRV[j][0])
-
-    #     incoeff=np.array(incoeff)
-    #     coeffstart = np.copy(params[incoeff[ivars]]) 
-    #     if len(ivars) > 0:
-    #         icoeff,dump = scipy.optimize.leastsq(para_minfuncRV, coeffstart, args=(ivars, mod_RV, RVmes, ts, bis, fwhm, contra))
-    #         coeff = np.copy(params[incoeff])   # the full coefficients -- set to those defined in params (in case any are fixed non-zero)
-    #         coeff[ivars] = np.copy(icoeff)     # and the variable ones are set to the result from the minimization
-    #     else:
-    #         coeff = np.copy(params[incoeff])
-    # else:        
-    #     coeff = np.copy(params[incoeff])   # the coefficients for the base function
-    
-    # bfuncRV,spl_comp=basefuncRV(coeff, ts, bis, fwhm, contra,RVmes-mod_RV ,useSpline)
-    # mod_RVbl = mod_RV + bfuncRV
-
-    # rv_result = SimpleNamespace(planet_RV=mod_RV-Gamma_in, full_RVmod=mod_RVbl, RV_bl=bfuncRV, spline=spl_comp ) 
-    # return rv_result
-
 
 def para_minfuncRV(icoeff, ivars, mod_RV, RVdata):
     """
