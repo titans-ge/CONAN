@@ -38,6 +38,12 @@ pip install -e git+https://github.com/mlendl42/CONAN3.git#egg=CONAN3
 ```
 Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 
+if having troubles compiling the fortran code used for the transit model, set `NO_FORTRAN=True` in terminal before pip installing. This uses a python implementation of the fortran code (which is ~30X slower)
+```
+export NO_FORTRAN=True
+```
+
+-------------------------
 See recent changes in change_log.rst
 
 

@@ -3,6 +3,10 @@ import astropy.constants as c
 import astropy.units as u
 from types import SimpleNamespace
 import matplotlib.pyplot as plt
+from uncertainties import ufloat 
+from uncertainties.umath import sin,cos, sqrt
+from scipy.interpolate import interp1d
+
 
 def phase_fold(t, per, t0,phase0=-0.5):
     """Phase fold a light curve.
@@ -24,6 +28,62 @@ def phase_fold(t, per, t0,phase0=-0.5):
         Phases starting from phase0.
     """
     return ( ( ( (t-t0)/per % 1) - phase0) % 1) + phase0
+
+def get_orbital_elements(t, T0, per, ecc, omega):
+    """
+    Calculate the mean,eccentric, and true anomaly for a given time t.
+
+    Parameters 
+    ----------
+    t : array-like
+        timestamps
+    T0 : float
+        mid-transit time
+    per : float
+        orbital period
+    ecc : float
+        eccentricity
+    omega : float  
+        argument of periastron in radians
+    
+    Returns
+    -------
+    orb_pars : SimpleNamespace
+        mean_anom : array-like
+            mean anomaly
+        ecc_anom : array-like
+            eccentric anomaly
+        true_anom : array-like  
+            true anomaly
+        phase_angle : array-like
+            phase angle
+    """
+    # calculate the true -> eccentric -> mean anomaly at transit -> perihelion time
+    if ecc==0: omega = np.pi/2.  # if circular orbit, set omega to pi/2
+    TA_tra = np.pi/2. - omega
+    TA_tra = np.mod(TA_tra,2.*np.pi)
+    EA_tra = 2.*np.arctan( np.tan(TA_tra/2.) * np.sqrt((1.-ecc)/(1.+ecc)) )
+    EA_tra = np.mod(EA_tra,2.*np.pi)
+    MA_tra = EA_tra - ecc * np.sin(EA_tra)
+    MA_tra = np.mod(MA_tra,2.*np.pi)
+    mmotio = 2.*np.pi/per   # the mean motion, i.e. angular velocity [rad/day] if we had a circular orbit
+    T_peri = T0 - MA_tra/mmotio
+
+    MA = (t - T_peri)*mmotio       
+    MA = np.mod(MA,2*np.pi)
+    # # source of the below equation: http://alpheratz.net/Maple/KeplerSolve/KeplerSolve.pdf
+    EA_lc = MA + np.sin(MA)*ecc + 1./2.*np.sin(2.*MA)*ecc**2 + \
+                (3./8.*np.sin(3.*MA) - 1./8.*np.sin(MA))*ecc**3 + \
+                    (1./3.*np.sin(4.*MA) - 1./6.*np.sin(2*MA))*ecc**4 + \
+                        (1./192*np.sin(MA)-27./128.*np.sin(3.*MA)+125./384.*np.sin(5*MA))*ecc**5 + \
+                            (1./48.*np.sin(2.*MA)+27./80.*np.sin(6.*MA)-4./15.*np.sin(4.*MA))*ecc**6
+    EA_lc = np.mod(EA_lc,2*np.pi)
+    TA_lc = 2.*np.arctan(np.tan(EA_lc/2.) * np.sqrt((1.+ecc)/(1.-ecc)) )
+    TA_lc = np.mod(TA_lc,2*np.pi)  # that's the true anomaly!
+    phase_angle    = TA_lc + omega-np.pi/2
+    phase_angle    = np.mod(phase_angle,2*np.pi)
+
+    return SimpleNamespace(mean_anom=MA,ecc_anom=EA_lc, true_anom=TA_lc,phase_angle=phase_angle)
 
 
 def get_transit_time(t, per, t0):
@@ -53,6 +113,72 @@ def get_transit_time(t, per, t0):
     else: # if neither T01 nor T02 is within the data time range, select closest to data start
         T0  = np.array([T01,T02])
         return T0[np.argmin(abs(T0 - min(t)))]
+    
+# def get_eclipse_time(t, t0, per, ecc,omega):
+#     """Get the eclipse time within a light curve.
+
+#     Parameters
+#     ----------
+#     t : array-like
+#         Time stamps.
+#     per : float
+#         Period.
+#     t0 : float
+#         Time of transit center.
+#     ecc : float
+#         Eccentricity.
+#     omega : float
+#         Argument of periastron in radians
+
+#     Returns
+#     -------
+#     t_ecl : array-like
+#         Eclipse times.
+#     """
+#     if ecc==0: omega = np.pi/2.
+#     tsm      = np.linspace(t.min(),t.max(),max(len(t)*10,20000))
+#     orb_pars = get_orbital_elements(tsm, t0, per, ecc, omega)
+#     ph_angle = orb_pars.phase_angle
+
+#     #mid eclipse is at ph_angle = np.pi, so select time closest to this angle
+#     return tsm[np.argmin(abs(ph_angle-np.pi))]
+
+def get_Tconjunctions(t, t0, per, ecc,omega):
+    """Get the time of conjunctions (transit and eclipse) for the given time array.
+
+    Parameters
+    ----------
+    t : array-like
+        Time stamps.
+    per : float
+        Period.
+    t0 : float
+        Time of transit center.
+    ecc : float
+        Eccentricity.
+    omega : float
+        Argument of periastron in radians
+
+    Returns
+    -------
+    t_conj : SimpleNamespace
+        transit : float
+            Time of transit. if multiple transits, only the time of first transit is returned
+        eclipse : float
+            Time of eclipse. if multiple eclipses, only the time of first eclipse is returned
+    """
+    if ecc==0: omega = np.pi/2.
+    tsm      = np.linspace(t.min(),t.min()+per,max(len(t)*10,20000))  # only need to calculate for one period after start of timeseries
+    orb_pars = get_orbital_elements(tsm, t0, per, ecc, omega)
+    ph_angle = orb_pars.phase_angle
+
+    #mid transit and mid eclipse are at ph_angle of 0 and np.pi respectively
+    #create interpolation function to find the time at these angles, extrapolate if needed
+    intpd  = interp1d(ph_angle,tsm,fill_value="extrapolate")
+    t_conj = intpd([0,np.pi])
+    if ecc==0: assert np.isclose(abs(t_conj[1] - t_conj[0]), per/2), "time between transit and Eclipse not equal to per/2, as required for circular orbit!. Check the code/inputs."
+    return SimpleNamespace(transit=t_conj[0],eclipse=t_conj[1])
+
 
 def bin_data(t,f,err=None,statistic="mean",bins=20):
     """
@@ -176,11 +302,62 @@ def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_c
     
     return x[ok], y[ok], yerr[ok]
 
+def sesinw_secosw_to_ecc_omega(sesinw, secosw):
+    """
+    Convert sesinw and secosw to eccentricity and argument of periastron
 
+    Parameters:
+    -----------
+    sesinw: array-like
+        sqrt(ecc)*sin(omega)
+    secosw: array-like
+        sqrt(ecc)*cos(omega)
+
+    Returns:
+    --------
+    ecc: array-like
+        eccentricity
+    omega: array-like
+        argument of periastron in radians
+    """
+    ecc = sesinw**2 + secosw**2
+    if ecc==0: # if circular orbit, set omega to pi/2
+        omega = np.pi/2
+    else:
+        omega = np.arctan2(sesinw,secosw)
+        if omega < 0: 
+            omega += 2*np.pi
+    return ecc, omega
 
 def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
-    # This function calculates the prior values and limits for the eccentricity and omega parameters
+    """
+    This function calculates the prior values and limits for the eccentricity and omega parameters, sesinw and secosw.
+    It also converts the input values given as tuples to a SimpleNamespace object
 
+    Parameters
+    ----------
+    ecc: float, tuple, SimpleNamespace;
+        eccentricity value or tuple of (mean, width) or SimpleNamespace object with the following attributes:
+        to_fit: str; "y" if to be fit, "n" if not to be fit
+        start_value: float; starting value
+        step_size: float; step size for the MCMC
+        prior: str; "p" if normal prior is set, "n" if not
+        prior_mean: float; prior mean
+        prior_width_lo: float; lower width of the prior
+        prior_width_hi: float; upper width of the prior
+        bounds_lo: float; lower bound
+        bounds_hi: float; upper bound
+    
+    omega: float, tuple, SimpleNamespace;
+        argument of periastron value (in radians) or tuple of (mean, width) or SimpleNamespace object with the  same attributes as ecc
+    
+    conv_2_obj: bool;
+        If True, convert the input values (int/float/tuple) to a SimpleNamespace object with attributes like ecc. Default is False.
+
+    return_tuple: bool;
+        If True, return the values as a int/float or tuple of length 2/3 . Default is False.
+
+    """
     if conv_2_obj:
         if isinstance(ecc, (int,float)):
             ecc = SimpleNamespace(to_fit="n",start_value=ecc, step_size=0, prior="n", prior_mean=ecc,
@@ -207,85 +384,59 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
             if isinstance(val, (float,int)): omega.__dict__[key] *= np.pi/180
             
 
-    sesino=np.sqrt(ecc.start_value)*np.sin(omega.start_value)     # starting value
-    sesinolo = -1.   # lower limit
-    sesinoup = 1.   # upper limit
-    
-    dump1=np.sqrt(ecc.start_value+ecc.step_size)*np.sin(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
-    dump2=np.sqrt(ecc.start_value-ecc.step_size)*np.sin(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
-    dump3=np.sqrt(ecc.start_value+ecc.step_size)*np.sin(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
-    dump4=np.sqrt(ecc.start_value-ecc.step_size)*np.sin(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.sin(omega.start_value)
+    sesinw=np.sqrt(ecc.start_value)*np.sin(omega.start_value)     # starting value
+    secosw=np.sqrt(ecc.start_value)*np.cos(omega.start_value)     # starting value
 
-    sesinostep=np.nanmax(np.abs([dump1,dump2,dump3,dump4])) # the stepsize
+    sinw_bounds = np.sin(np.linspace(omega.bounds_lo,omega.bounds_hi,1000))     #limits
+    sesinw_bounds_lo, sesinw_bounds_hi = np.sqrt(ecc.bounds_hi)*np.nanmin(sinw_bounds), np.sqrt(ecc.bounds_hi)*np.nanmax(sinw_bounds)
 
-    if (ecc.prior_width_lo!=0.):   # if an eccentricity prior is set
-        edump= np.copy(ecc.prior_mean)
-        eup  = np.copy(ecc.prior_width_lo)
-        elo  = np.copy(ecc.prior_width_hi)
-    else:
-        edump= np.copy(ecc.start_value)
-        eup=0.
-        elo=0.
+    cosw_bounds = np.cos(np.linspace(omega.bounds_lo,omega.bounds_hi,1000))     #limits
+    secosw_bounds_lo, secosw_bounds_hi = np.sqrt(ecc.bounds_hi)*np.nanmin(cosw_bounds), np.sqrt(ecc.bounds_hi)*np.nanmax(cosw_bounds)
 
-    if (omega.prior_width_lo!=0.):   # if an omega prior is set
-        odump= np.copy(omega.prior_mean)
-        oup  = np.copy(omega.prior_width_lo)
-        olo  = np.copy(omega.prior_width_hi)
-    else:
-        odump= np.copy(omega.start_value)
-        oup=0.
-        olo=0.
+    if ecc.prior_width_lo!=0. and omega.prior_width_lo!=0.:   # if an eccentricity and omega prior is set
+        sesinw_prior = sqrt(ufloat(ecc.prior_mean,ecc.prior_width_lo)) * sin(ufloat(omega.prior_mean,omega.prior_width_lo))     # the prior value
+        secosw_prior = sqrt(ufloat(ecc.prior_mean,ecc.prior_width_lo)) * cos(ufloat(omega.prior_mean,omega.prior_width_lo))     # the prior value
+        sesinw_prior_mean, sesinw_prior_width = sesinw_prior.n, sesinw_prior.s
+        secosw_prior_mean, secosw_prior_width = secosw_prior.n, secosw_prior.s
 
-    sesinop=np.sqrt(edump)*np.sin(odump)     # the prior value
+    if (ecc.prior_width_lo!=0.) and omega.prior_width==0:   # normal ecc, uniform omega
+        ecc_distr = np.random.normal(ecc.prior_mean,ecc.prior_width_lo,10000)            # generate random normal ecc distr
+        w_distr   = np.random.uniform(omega.bounds_lo,omega.bounds_hi,10000)             # generate random uniform omega distr
+        fc, fs    = np.sqrt(ecc_distr)*np.cos(w_distr), np.sqrt(ecc_distr)*np.sin(w_distr)
+        sesinw_prior_mean, sesinw_prior_width = np.nanmean(fs), np.nanstd(fs)
+        secosw_prior_mean, secosw_prior_width = np.nanmean(fc), np.nanstd(fc)
 
-    dump1=np.sqrt(edump+eup)*np.sin(odump+oup)-np.sqrt(edump)*np.sin(odump)
-    dump2=np.sqrt(edump-elo)*np.sin(odump+oup)-np.sqrt(edump)*np.sin(odump)
-    dump3=np.sqrt(edump+eup)*np.sin(odump-olo)-np.sqrt(edump)*np.sin(odump)
-    dump4=np.sqrt(edump-elo)*np.sin(odump-olo)-np.sqrt(edump)*np.sin(odump)
+    if ecc.prior_width_lo==0 and omega.prior_width_lo!=0:   # uniform ecc, normal omega
+        ecc_distr = np.random.uniform(ecc.bounds_lo,ecc.bounds_hi,10000)
+        w_distr   = np.random.normal(omega.prior_mean,omega.prior_width_lo,10000)
+        fc, fs    = np.sqrt(ecc_distr)*np.cos(w_distr),np.sqrt(ecc_distr)*np.sin(w_distr)
+        sesinw_prior_mean, sesinw_prior_width = np.nanmean(fs), np.nanstd(fs)
+        secosw_prior_mean, secosw_prior_width = np.nanmean(fc), np.nanstd(fc)
 
-    sesinoplo=np.abs(np.nanmin([dump1,dump2,dump3,dump4]))
-    sesinopup=np.abs(np.nanmax([dump1,dump2,dump3,dump4]))
-                                    
-    secoso=np.sqrt(ecc.start_value)*np.cos(omega.start_value)
-    secosolo=-1.   # lower limit
-    secosoup=1.   # upper limit
+    if ecc.prior_width_lo==0 and omega.prior_width_lo==0:   # uniform ecc, uniform omega
+        sesinw_prior_mean, sesinw_prior_width = 0, 0
+        secosw_prior_mean, secosw_prior_width = 0, 0
 
-    dump1=np.sqrt(ecc.start_value+ecc.step_size)*np.cos(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
-    dump2=np.sqrt(ecc.start_value-ecc.step_size)*np.cos(omega.start_value+omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
-    dump3=np.sqrt(ecc.start_value+ecc.step_size)*np.cos(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
-    dump4=np.sqrt(ecc.start_value-ecc.step_size)*np.cos(omega.start_value-omega.step_size)-np.sqrt(ecc.start_value)*np.cos(omega.start_value)
 
-    secosostep=np.nanmax(np.abs([dump1,dump2,dump3,dump4]))
+    sesinw_step = 0.1*sesinw_prior_width if sesinw_prior_width>0 else 0.001 if sesinw_bounds_hi>0 else 0
+    secosw_step = 0.1*secosw_prior_width if secosw_prior_width>0 else 0.001 if secosw_bounds_hi>0 else 0
 
-    dump1=np.sqrt(edump+eup)*np.cos(odump+oup)-np.sqrt(edump)*np.cos(odump)
-    dump2=np.sqrt(edump-elo)*np.cos(odump+oup)-np.sqrt(edump)*np.cos(odump)
-    dump3=np.sqrt(edump+eup)*np.cos(odump-olo)-np.sqrt(edump)*np.cos(odump)
-    dump4=np.sqrt(edump-elo)*np.cos(odump-olo)-np.sqrt(edump)*np.cos(odump)
-                        
-    secosoplo=np.abs(np.nanmin([dump1,dump2,dump3,dump4]))
-    secosopup=np.abs(np.nanmax([dump1,dump2,dump3,dump4]))
-
-    secosop=np.sqrt(edump)*np.cos(odump)     # the prior
 
     to_fit = "y" if ecc.to_fit=="y" or omega.to_fit=="y" else "n"
-    pri    =  ecc.prior
-    sesinw_in=[to_fit,sesino,sesinostep,pri,sesinop,sesinoplo,sesinopup,sesinolo,sesinoup]
-    secosw_in=[to_fit,secoso,secosostep,pri,secosop,secosoplo,secosopup,secosolo,secosoup]
+    pri = "p" if (ecc.prior_width_lo!=0. or omega.prior_width_lo!=0.) else "n"
+    sesinw_in=[to_fit,sesinw,sesinw_step,pri,sesinw_prior_mean,sesinw_prior_width,sesinw_prior_width,sesinw_bounds_lo,sesinw_bounds_hi]
+    secosw_in=[to_fit,secosw,secosw_step,pri,secosw_prior_mean,secosw_prior_width,secosw_prior_width,secosw_bounds_lo,secosw_bounds_hi]
 
     from ._classes import _param_obj
     sesinw_in = _param_obj(*sesinw_in)
     secosw_in = _param_obj(*secosw_in)
 
     if return_tuple:
-        sesinw_mean_prior_width = np.mean([sesinw_in.prior_width_lo,sesinw_in.prior_width_hi])
-        secosw_mean_prior_width = np.mean([secosw_in.prior_width_lo,secosw_in.prior_width_hi])
-
-        sesinw = sesinw_in.start_value if sesinw_in.to_fit=="n" else (sesinw_in.start_value, sesinw_mean_prior_width) if sesinw_mean_prior_width>0 else (sesinw_in.bounds_lo, sesinw_in.start_value,sesinw_in.bounds_hi)
-        secosw = secosw_in.start_value if secosw_in.to_fit=="n" else (secosw_in.start_value, secosw_mean_prior_width) if secosw_mean_prior_width>0 else (secosw_in.bounds_lo, secosw_in.start_value,secosw_in.bounds_hi)
+        sesinw = sesinw_in.start_value if sesinw_in.to_fit=="n" else (sesinw_in.start_value, sesinw_prior_width) if sesinw_prior_width>0 else (sesinw_in.bounds_lo, sesinw_in.start_value,sesinw_in.bounds_hi)
+        secosw = secosw_in.start_value if secosw_in.to_fit=="n" else (secosw_in.start_value, secosw_prior_width) if secosw_prior_width>0 else (secosw_in.bounds_lo, secosw_in.start_value,secosw_in.bounds_hi)
         return sesinw, secosw
 
     return sesinw_in, secosw_in
-
 
 
 def rho_to_aR(rho, P, qm=0):
@@ -549,24 +700,26 @@ def convert_rho(rho, ecc, w, conv="true2obs"):
 
     return rho*phi if conv=="true2obs" else rho/phi
 
-def cosine_atm_variation(phase, Fd=0, A=0, delta_deg=0):
+def cosine_atm_variation(phi, Fd=0, A=0, delta_deg=0,cosine_order=1):
     """
     Calculate the phase curve of a planet approximated by a cosine function with peak-to-peak amplitude  A=F_max-F_min.
     The equation is given as F = Fmin + A(1-cos(phi + delta)) where A is the semi-amplitude of the atmospheric phase variation  = (Fmax-Fmin)/2,
-    phi is the phase angle in radians = 2pi*phase, and delta is the hotspot offset (in radians).
+    phi is the phase angle of the planet (true anomaly+omega-pi/2) in radians, and delta is the hotspot offset (in radians).
     Fday and Fnight are obtained as the value of F at phi=pi and 0 respectively.
 
 
     Parameters
     ----------
-    phase : array-like
-        Phases.
+    phi : array-like
+        phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
     Fd : float
         Dayside flux/occultation depth
     A : float
         semi amplitude of planet phase variation
     delta_deg : float
         hotspot offset in degrees.
+    cosine_order: float/int;
+        order of the cosine function. Default is 1
         
     Returns
     -------
@@ -575,12 +728,22 @@ def cosine_atm_variation(phase, Fd=0, A=0, delta_deg=0):
     """
     res        = SimpleNamespace()
     res.delta  = np.deg2rad(delta_deg)
-    res.phi    = 2*np.pi*phase
 
-    res.Fmin   = Fd - A*(1-np.cos(np.pi+res.delta))
-    res.Fnight = Fd - 2*A * np.cos(res.delta)
-    res.pc     = res.Fmin + A*(1-np.cos(res.phi+res.delta))
-    return res    
+    res.Fmin   = Fd - A*(1-np.cos(np.pi+res.delta)**cosine_order)
+    res.Fnight = Fd - 2*A * np.cos(res.delta)**cosine_order
+    res.pc     = res.Fmin + A*(1-np.cos(phi+res.delta)**cosine_order)
+    res.Fmax   = 2*A + res.Fmin
+    return res 
+
+def gauss_atm_variation(phi,A=0,delta_deg=0,width_deg=90):
+    width = np.deg2rad(width_deg)
+    delta = np.deg2rad(delta_deg)
+    
+    F = np.exp(- ((phi-np.pi)+delta)**2 / (2*(width)**2))
+    # Fmax = np.exp(- ((np.pi-np.pi)+delta)**2 / (2*(width)**2))
+    # Fmin = np.exp(- ((0-np.pi)+delta)**2 / (2*(width)**2))
+    # return A * (F - Fmin)/(Fmax-Fmin)
+    return A * F
     
 def reflection_atm_variation(phase, Fd=0, A=0, delta_deg=0):
     """

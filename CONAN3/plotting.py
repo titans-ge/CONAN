@@ -5,7 +5,7 @@ import matplotlib, os
 from matplotlib.ticker import FormatStrFormatter    
 import matplotlib.pyplot as plt    
 from CONAN3.logprob_multi import logprob_multi
-import pickle
+import dill as pickle
 from os.path import splitext
 
 
@@ -47,8 +47,8 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[0].plot(tt, full_mod, "-r", lw=2,zorder=5,label='Full Model fit')
         ax[0].plot(tt, bfunc, "g--",  zorder=5,label='Baseline')
         ax[0].errorbar(t_bin, f_bin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
-        ax[0].set_ylim([min([min(flux),min(full_mod)])-0.1*np.ptp(min(flux)), 
-                        max([max(flux),max(full_mod)])+0.1*np.ptp(max(flux))])
+        ax[0].set_ylim([min([min(flux),min(full_mod)])-0.1*np.ptp(flux), 
+                        max([max(flux),max(full_mod)])+0.1*np.ptp(flux)])
         ax[0].legend()
 
         ax[1].set_ylabel("Flux - baseline")
@@ -56,7 +56,8 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         # ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
         ax[1].plot(t_sm, lc_sm,'r-',lw=2,zorder=5, label="Best fit")
         ax[1].errorbar(t_bin, det_fbin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
-        ax[1].set_ylim([min(det_flux)-0.1*(1-min(det_flux)), max(det_flux)+0.1*(max(det_flux)-1)])
+        ax[1].set_ylim([min([min(det_flux),min(lc_sm)])-0.1*np.ptp(det_flux), 
+                        max([max(det_flux),max(lc_sm)])+0.1*np.ptp(det_flux)])
         ax[1].legend()
 
         ax[2].set_ylabel("O – C [ppm]")

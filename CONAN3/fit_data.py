@@ -2,13 +2,11 @@ import numpy as np
 from types import SimpleNamespace
 import os
 from multiprocessing import Pool
-import pickle
+import dill as pickle
 import emcee, dynesty
 from dynesty.utils import resample_equal
 import time
 
-from occultquad import *
-from occultnl import *
 from .basecoeff_setup import *
 from .models import *
 from .logprob_multi import logprob_multi
@@ -118,6 +116,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
     if os.path.exists(f'{out_folder}/chains_dict.pkl'):
+        fol = 'myfolder/chains_dict.pkl'
+
+        #get directory of fol
+        
+
+
         if not rerun_result:
             print(f'Fit result already exists in this folder: {out_folder}.\n Loading results...')
             result = load_result(out_folder)
@@ -155,6 +159,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     useSpline_lc  = lc_obj._lcspline                                            # use spline to interpolate the light curve
     input_lcs     = lc_obj._input_lc
     s_samp        = lc_obj._ss
+    custom_LCfunc = lc_obj._custom_LCfunc     # custom light curve function
+    ncustom       = custom_LCfunc.npars 
 
 #============rv_obj========================== 
     # from load_rvs() 
@@ -174,7 +180,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     RVbases_init = rv_obj._RVbases_init
     RVunit       = rv_obj._RVunit
 
-    extinpars= []               # set up array to contain the names of the externally input parameters
+    extinpars= []  # set up array to contain the names of the externally input parameters (parameters always needed to generate a transit/RV model even if not a jumping parameter)
     
     for i in range(nRV):
         if (float(rv_dict["gam_steps"][i]) != 0.) :
@@ -463,6 +469,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     sRs_lo = sRs_hi = DA_stlr["R_st"][1]
     Ms_in  = DA_stlr["M_st"][0]
     sMs_lo = sMs_hi = DA_stlr["M_st"][1]
+    LTT    = SimpleNamespace(flag="y",Rstar=Rs_in) if DA_mc["LTT_corr"]=="y" else SimpleNamespace(flag="n",Rstar=None)
 
     howstellar = DA_stlr["par_input"]
 
@@ -477,17 +484,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     t_arr      = np.array([])  # initializing array with all timestamps (col0)
     f_arr      = np.array([])  # initializing array with all flux values(col1)
     e_arr      = np.array([])  # initializing array with all error values(col2)
-    # col3_arr   = np.array([])  # initializing array with all col4 values (prev xarr)
-    # col4_arr   = np.array([])  # initializing array with all col4 values (prev yarr)
-    # col5_arr   = np.array([])  # initializing array with all col5 values (prev aarr)
-    # col6_arr   = np.array([])  # initializing array with all col6 values (prev warr)
-    # col7_arr   = np.array([])  # initializing array with all col7 values (prev sarr)
-    # col8_arr   = np.array([])  # initializing array with all col8 values (prev darr)
-
     lind       = np.array([])  # initializing array with the lightcurve indices
-    # bis_arr    = np.array([])  # initializing array with all bisector values
-    # contr_arr  = np.array([])  # initializing array with all contrast values
-
     indlist    = []   # the list of the array indices
     bvars      = []   # a list that will contain lists of [0, 1] for each of the baseline parameters, for each of the LCs. 0 means it's fixed. 1 means it's variable
     bvarsRV    = []   # a list that will contain lists of [0, 1] for each of the baseline parameters, for each of the RV curves. 0 means it's fixed. 1 means it's variable
@@ -652,6 +649,19 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             priorup     = np.concatenate((priorup, [0.]), axis=0)
             pnames      = np.concatenate((pnames,  [f"lc{i+1}_logjitter"]), axis=0)
     
+    
+    if custom_LCfunc.func != None: 
+        print('Setting up parameters for custom LC function ...')
+        params     = np.concatenate((params,   [custom_LCfunc.par_dict[key].start_value    for key in custom_LCfunc.par_dict.keys()]))
+        stepsize   = np.concatenate((stepsize, [custom_LCfunc.par_dict[key].step_size      for key in custom_LCfunc.par_dict.keys()]))
+        pmin       = np.concatenate((pmin,     [custom_LCfunc.par_dict[key].bounds_lo      for key in custom_LCfunc.par_dict.keys()]))
+        pmax       = np.concatenate((pmax,     [custom_LCfunc.par_dict[key].bounds_hi      for key in custom_LCfunc.par_dict.keys()]))
+        prior      = np.concatenate((prior,    [custom_LCfunc.par_dict[key].prior_mean     for key in custom_LCfunc.par_dict.keys()]))
+        priorlow   = np.concatenate((priorlow, [custom_LCfunc.par_dict[key].prior_width_lo for key in custom_LCfunc.par_dict.keys()]))
+        priorup    = np.concatenate((priorup,  [custom_LCfunc.par_dict[key].prior_width_hi for key in custom_LCfunc.par_dict.keys()]))
+        pnames     = np.concatenate((pnames,   list(custom_LCfunc.par_dict.keys())) )
+        njumpphot  = njumpphot + custom_LCfunc.npars
+    
     for i in range(nRV):
         params      = np.concatenate((params,  [rv_dict["gammas"][i]]),   axis=0)
         stepsize    = np.concatenate((stepsize,[rv_dict["gam_steps"][i]]), axis=0)
@@ -776,8 +786,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         #   LC_jit                                       (nphot)
         #   Rv_gamma, RV_jit                              (2*nRVs)         
         #   baseline                                       22, ...]
-        #    = 1+7*npl+nttv+nddf+nocc*5+4*n_filt+nphot+2*nRV + 22*nphot
-        #    each lightcurve has 22 possible baseline jump parameters, starting with index  1+7*npl+nttv+nddf+nocc*5+2*n_filt+nphot+2*nRV
+        #    = 1+7*npl+nttv+nddf+nocc*5+4*n_filt+nphot+ncustom +2*nRV + 22*nphot
+        #    each lightcurve has 22 possible baseline jump parameters, starting with index  1+7*npl+nttv+nddf+nocc*5+2*n_filt+nphot+ncustom +2*nRV
 
         # pargp_all = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
 
@@ -1068,12 +1078,19 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (stepsize[q2ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[q2ind]),axis=0)
 
+        #jitter
         LCjitterind = 1+7*npl +nttv+ nddf+nocc*5 + nfilt*2 + i 
         if (stepsize[LCjitterind]!=0.):           
             temp=np.concatenate((temp,[LCjitterind]),axis=0)
+
+        #custom parameters
+        if ncustom>0:
+            customind = 1+7*npl +nttv+ nddf+nocc*5 + nfilt*2 + nphot + np.arange(ncustom) # the index of the custom parameters 
+            cst_step  = customind[np.where(stepsize[customind]!=0.)[0] ]       
+            temp=np.concatenate((temp,cst_step),axis=0)
     
         #baseline
-        bfstart= 1+7*npl+nttv+nddf+nocc*5+nfilt*2 + nphot + nRV*2  # the first index in the param array that refers to a baseline function    
+        bfstart= 1+7*npl+nttv+nddf+nocc*5+nfilt*2 + nphot + ncustom + nRV*2  # the first index in the param array that refers to a baseline function    
         blind = np.asarray(list(range(bfstart+i*22,bfstart+i*22+22)))  # the indices for the coefficients for the base function   
 
         lcstep1 = np.where(stepsize[blind]!=0.)
@@ -1115,7 +1132,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (stepsize[jitterind]!=0.):           
             temp=np.concatenate((temp,[jitterind]),axis=0)
             
-        bfstart= 1+7*npl+nttv+nddf+nocc*5+nfilt*2 + nphot + nRV*2 + nphot*22  # the first index in the param array that refers to an RV baseline function    
+        bfstart= 1+7*npl+nttv+nddf+nocc*5+nfilt*2 + nphot + ncustom + nRV*2 + nphot*22  # the first index in the param array that refers to an RV baseline function    
         blind = np.asarray(list(range(bfstart+i*12,bfstart+i*12+12)))  # the indices for the coefficients for the base function    
 
         rvstep1 = np.where(stepsize[blind]!=0.)
@@ -1219,11 +1236,11 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     print('\nPlotting initial guess\n---------------------------')
 
     inmcmc = 'n'
-    indparams = {   "t_arr": t_arr,"f_arr": f_arr,"col3_arr": _,"col4_arr": _,"col6_arr": _,"col5_arr": _,"col7_arr": _,"bis_arr": _,"contr_arr": _,"nphot": nphot,"nRV": nRV,"indlist": indlist,
+    indparams = {   "t_arr": t_arr,"f_arr": f_arr,"col3_arr": None,"col4_arr": None,"col6_arr": None,"col5_arr": None,"col7_arr": None,"bis_arr": None,"custom_LCfunc": custom_LCfunc,"nphot": nphot,"nRV": nRV,"indlist": indlist,
                     "filters": filters,"nfilt": nfilt,"filnames": filnames,"nddf": nddf,"nocc": nocc,"nttv": nttv,"col8_arr": _,"grprs": grprs,"ttv_conf": ttv_conf,"grnames": grnames,"groups": groups,"ngroup": ngroup,"ewarr": ewarr,
                     "inmcmc": inmcmc,"paraCNM": paraCNM,"baseLSQ": baseLSQ,"bvars": bvars,"bvarsRV": bvarsRV,"cont": cont,"LCnames": LCnames,"RVnames": RVnames,"e_arr": e_arr,"divwhite": divwhite,"dwCNMarr": dwCNMarr,"dwCNMind": dwCNMind,
                     "params": params,"useGPphot": useGPphot,"useGPrv": useGPrv,"GPobjects": GPobjects,"GPparams": GPparams,"GPindex": GPindex,"pindices": pindices,"jumping": jumping,"jnames": jnames,"prior_distr": prior_distr,"pnames_all": pnames_all,
-                    "norm_sigma": norm_sigma,"uni_low": uni_low,"uni_up": uni_up,"pargps": pargps,"jumping_noGP": jumping_noGP,"gpkerns": gpkerns,"jit_apply": jit_apply,"jumping_GP": jumping_GP,"GPstepsizes": GPstepsizes,"sameLCgp": sameLCgp,
+                    "norm_sigma": norm_sigma,"uni_low": uni_low,"uni_up": uni_up,"pargps": pargps,"jumping_noGP": jumping_noGP,"gpkerns": gpkerns,"LTT": LTT,"jumping_GP": jumping_GP,"GPstepsizes": GPstepsizes,"sameLCgp": sameLCgp,
                     "npl": npl,"useSpline_lc": useSpline_lc,"useSpline_rv": useSpline_rv,"s_samp": s_samp,"rvGPobjects": rvGPobjects,"rvGPparams": rvGPparams,"rvGPindex": rvGPindex,"input_lcs": input_lcs,"input_rvs": input_rvs,
                     "RVunit": RVunit,"rv_pargps": rv_pargps,"rv_gpkerns": rv_gpkerns,"sameRVgp": sameRVgp,"fit_sampler": fit_sampler }
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
@@ -1419,7 +1436,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     njnames = pnames_all[[nijnames][0]]  # njnames are the names of the fixed parameters
 
     exti = np.intersect1d(pnames_all,extinpars, return_indices=True)
-    exti[1].sort()
+    exti[1].sort()  #indices of pnames_all elements found in  the extinpars
     extins=np.copy(exti[1])
 
     print("============ Sampling Finished ==============================================\n")
@@ -1445,8 +1462,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     dim=posterior.shape
     # calculate PDFs of the stellar parameters given 
-    Rs_PDF = get_PDF_Gauss(Rs_in,sRs_lo,sRs_hi,dim)
-    Ms_PDF = get_PDF_Gauss(Ms_in,sMs_lo,sMs_hi,dim)
+    Rs_PDF = get_PDF_Gauss(Rs_in,sRs_lo,sRs_hi,dim) if sRs_lo is not None else get_PDF_Gauss(Rs_in,1e-6,1e-6,dim)
+    Ms_PDF = get_PDF_Gauss(Ms_in,sMs_lo,sMs_hi,dim) if Ms_in is not None else None
     extind_PDF = np.zeros((dim[0],len(extins)))
     for i in range(len(extinpars)):
         ind = extins[i]
@@ -1496,23 +1513,24 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],indparams,make_outfile=(statistic=="max"),verbose=False)
     fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
 
-    maxresiduals = f_arr - mval2 if statistic != "median" else f_arr - mval  #Akin allow statistics to be based on median of posterior
-    chisq = np.sum(maxresiduals**2/e_arr**2)
-    ndata = len(t_arr)
+    mod_dev = (f_arr - mval2)/merr2 if statistic != "median" else (f_arr - mval)/merr  #Akin allow statistics to be based on median of posterior
+    chisq   = np.sum(mod_dev**2)
+    ndata   = len(t_arr)
     get_AIC_BIC(npar,ndata,chisq,out_folder)
 
-    rarr=f_arr-mval2  if statistic != "median" else f_arr - mval  # the full residuals
+    rarr = f_arr-mval2  if statistic != "median" else f_arr - mval  # the full residuals
+    earr = merr2 if statistic != "median" else merr  # the full errors
 
     if nphot > 0:
-        bw, br, brt, cf, cfn = corfac(rarr, t_arr, e_arr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
+        bw, br, brt, cf, cfn = corfac(rarr, t_arr, earr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
         of=open(out_folder+"/CF.dat",'w')
         of.write(f"{'beta_w':8s} {'beta_r':8s} {'beta_rtot':8s} {'CF':8s} {'CFerr':10s} \n")
         for i in range(nphot):   #adapt the error values
             of.write('%8.3f %8.3f %8.3f %8.3f %10.6f \n' % (bw[i], br[i], brt[i],cf[i],cfn[i]))
             if (cf_apply == 'cf'):
-                e_arr[indlist[i][0]] = np.multiply(e_arr[indlist[i][0]],cf[i])
+                earr[indlist[i][0]] = np.multiply(earr[indlist[i][0]],cf[i])
             if (cf_apply == 'rchisq'):
-                e_arr[indlist[i][0]] = np.sqrt((e_arr[indlist[i][0]])**2 + (cfn[i])**2)
+                earr[indlist[i][0]] = np.sqrt((earr[indlist[i][0]])**2 + (cfn[i])**2)
         of.close()
 
     

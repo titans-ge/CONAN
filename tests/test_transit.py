@@ -118,3 +118,58 @@
 
 # if __name__ == '__main__':
 #     unittest.main()
+
+
+
+
+#test light travel time
+import numpy as np
+import matplotlib.pyplot as plt
+from CONAN3.funcs import light_travel_time_correction
+from CONAN3.models import Transit_Model
+from CONAN3.utils import get_transit_time, get_orbital_elements, get_Tconjunctions
+from CONAN3.get_files import get_parameters
+sys_params = get_parameters("WASP-121 b")
+
+
+P  = sys_params["planet"]["period"][0]
+aR = sys_params["planet"]["aR"][0]
+t0 = 0
+t14= sys_params['planet']['T14'][0]  
+e  = 0.2
+w  = np.radians(180)
+sesinw, secosw = np.sqrt(e)*np.sin(w), np.sqrt(e)*np.cos(w)
+
+t = np.linspace(-0.25, 0.75*P, 3000)
+
+tcorr = light_travel_time_correction(t,t0,aR,P,89.5,1.46,e,w)
+tconj  = get_Tconjunctions(t,t0,P,e,w)
+
+
+plt.figure()
+plt.plot(t, 24*3600*(t-tcorr))
+plt.axvline(tconj.transit,c="k",ls=":",label="mid-transit")
+plt.axvline(tconj.eclipse,c="r",ls=":",label="mid-eclipse")
+plt.legend()
+
+
+TM = Transit_Model(dur=sys_params["planet"]["T14"][0], T0=0,
+             RpRs=sys_params["planet"]["rprs"][0], b=sys_params["planet"]["b"][0],per=P,
+             sesinw=sesinw,secosw=secosw, occ=4000)
+
+t = np.linspace(P/2-0.07,P/2+0.07,1500)
+flux,_     = TM.get_value(t)
+flux_ltt,_ = TM.get_value(t, Rstar=1.46)
+
+
+fig,ax =plt.subplots(2,1,figsize=(15,3),sharex=True,  gridspec_kw={"height_ratios":(2,1)})
+ax[0].plot(t,flux,label="no LTT")
+ax[0].plot(t,flux_ltt,"--",label="LTT delay included")
+ax[0].legend()
+ax[0].set_title("LTT allows to move the occultation to later time to account for the delay")
+
+ax[1].plot(t, 1e6*(flux_ltt-flux))
+ax[1].set_ylabel("res [ppm]")
+_=[ax[0].axvline(tt,c="k",ls=":") for tt in [tconj.eclipse]]
+
+plt.subplots_adjust(hspace=0)

@@ -1,3 +1,14 @@
+12-July-2024: version 3.2.2dev
+~~~~~~~~~~~~~
+* added light travel time correction to the lightcurve model, user only required to set the stellar radius
+* phase curve model properly account for orbital eccentricity.
+* users can define a custom function which can be used to modify or replace the native CONAN lightcurve model. lc_obj.add_custom_LC_function()
+* changed `import pickle` to `import dill as pickle` which allows to pickle more complex objects like functions.
+* allow masking data points with user-defined condition. e.g. `lc_obj.mask_data(lc_list="all", condition="lc['col0']<lc['col0'][10]")` to mask first 10 data points.
+* allow saving of modified injested data. e.g. `lc_obj.save_LCs(save_path="data_preproc/")` 
+* calculation of AIC,BIC and chisqr now take into account the jitter if added to the errorbars
+* allow installation of CONAN when fortran compiler is not available, in which case python implementation of the transit model is used.
+
 3-Jun-2024: version 3.2.1
 ~~~~~~~~~~~~~
 * added function to read the parameters values and errors from the result_**.dat file --> result.get_all_params_dict()

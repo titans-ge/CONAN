@@ -5,8 +5,17 @@ import os
 with open('CONAN3/VERSION.dat') as version_file:
       __version__ = version_file.read().strip()
 
-extOccultnl   = Extension('occultnl',  sources=['occultnl.f'])
-extOccultquad = Extension('occultquad',sources=['occultquad.f'])
+# Check if the NO_FORTRAN environment variable is set
+no_fortran = os.getenv('NO_FORTRAN', 'False').lower() in ('true', '1', 't')  
+
+if no_fortran:
+      print("Skipping compilation of fortran code, python equivalent of transit model will be used")
+      ext_modules = []
+else:
+      print("Compiling fortran code")     
+      extOccultnl   = Extension('occultnl',  sources=['occultnl.f'])
+      extOccultquad = Extension('occultquad',sources=['occultquad.f'])
+      ext_modules   = [extOccultnl, extOccultquad]
 
 setup(name='CONAN3',
       version=__version__,
@@ -19,9 +28,9 @@ setup(name='CONAN3',
       license='MIT',
       packages=['CONAN3'],
       install_requires=['numpy', 'scipy','pandas','lmfit','dynesty', 'astropy','astroquery',
-                        'batman-package','celerite','corner','lightkurve',
+                        'batman-package','celerite','corner','lightkurve','dill',
                         'matplotlib','emcee','george','ldtk==1.7.0','tqdm'],
-      ext_modules=[extOccultnl,extOccultquad]
+      ext_modules=ext_modules
       )
 
 #copy command line script to home directory

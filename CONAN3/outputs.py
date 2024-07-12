@@ -697,17 +697,17 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     rhoJup   = 3. / (4. * np.pi) * Mjup / Rjup**3 
     rhoEarth = 3. / (4. * np.pi) * Mearth / Rearth**3 
     
-    Rp_PDF  = RpRs_PDF * (Rs_PDF * Rsolar) / Rjup  
-    dF_PDF  = RpRs_PDF**2
     ecc_PDF = ecosw_PDF**2 + esinw_PDF**2
-    ome_PDF = np.arctan(np.abs(esinw_PDF / ecosw_PDF))
+    ome_PDF = np.arctan2(esinw_PDF, ecosw_PDF)
+    ome_PDF[ome_PDF<0] = ome_PDF[ome_PDF<0] + 2*np.pi
+    ome_PDF[ecc_PDF<1e-15] = np.pi/2.
     
-    ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] = ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] + np.pi
-    ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)] = 2. * np.pi - ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)]
-    ome_PDF[(esinw_PDF>0) & (ecosw_PDF<0)] = np.pi - ome_PDF[(esinw_PDF>0) & (ecosw_PDF<0)]
+    # ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] = ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] + np.pi
+    # ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)] = 2. * np.pi - ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)]
+    # ome_PDF[(esinw_PDF>0) & (ecosw_PDF<0)] = np.pi - ome_PDF[(esinw_PDF>0) & (ecosw_PDF<0)]
 
-    e0ind = np.where(ecc_PDF<1e-15)   # avoid NaNs for very small eccentricity
-    ome_PDF[e0ind] = 0.               # by defining omeaga == 0
+    # e0ind = np.where(ecc_PDF<1e-15)   # avoid NaNs for very small eccentricity
+    # ome_PDF[e0ind] = 0.               # by defining omeaga == 0
     
     efac1_PDF = np.sqrt(1.-ecc_PDF**2)/(1.+ ecc_PDF*np.sin(ome_PDF))
     efac2_PDF = b_PDF*(1.-ecc_PDF**2)/(1.+ecc_PDF*np.sin(ome_PDF))
@@ -723,6 +723,8 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
         Rs_PDF = ((3. * Ms_PDF * Msolar*1000) / (4. * np.pi * rhoS_PDF))**(1./3.) / (Rsolar*100)
         starstring = 'stellar Radius from M+rho'
     
+    Rp_PDF  = RpRs_PDF * (Rs_PDF * Rsolar) / Rjup  
+    dF_PDF  = RpRs_PDF**2
     # else:
     #     rhoS_PDF = Ms_PDF / Rs_PDF**3 * rhoSolar
     #     starstring = 'rho_s from stellar parameter input'

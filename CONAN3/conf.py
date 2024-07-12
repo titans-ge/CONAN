@@ -1,6 +1,8 @@
 from ._classes import load_lightcurves, load_rvs, fit_setup,_print_output
 from .utils import ecc_om_par
 import numpy as np 
+import inspect
+import os
 
 
 
@@ -41,7 +43,10 @@ def _skip_lines(file, n):
 
 def _prior_value(str_prior): 
     "convert string prior into float/tuple"
+    str_prior = str_prior.replace(" ","")   #remove spaces
     str_prior = str_prior[str_prior.find("(")+1:str_prior.find(")")].split(",")
+    if "None" in str_prior: 
+        return None
     tuple_prior = [float(v) for v in str_prior]
     tuple_prior = [(int(v) if v.is_integer() else float(v)) for v in tuple_prior]
     len_tup = len(tuple_prior)
@@ -74,15 +79,17 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
         rv_obj = load_rvs()
     if fit_obj is None:
         fit_obj = fit_setup()
+    dirname = os.path.dirname(filename)
+    dirname = "." if dirname == "" else dirname
     f = open(filename,"w")
     f.write("# ========================================== CONAN configuration file ============================================= \n")
-    f.write("#             *********** KEYS *****************************************************************************************\n")
-    f.write("#             PRIORS: *Fixed - F(val), *Normal - N(mu,std), *Uniform - U(min,start,max), *LogUniform - LU(min,start,max)\n")
-    f.write("#             s_samp: supersampling - x{exp_time(mins)}\n")
-    f.write("#             clip:   clip outliers - W{window_width}C{clip_sigma}\n")
-    f.write("#             scl_col: scale data columns – ['med_sub','rs0to1','rs-1to1','None']\n")
-    f.write("#             spline_config: spline - c{column_no}:d{degree}K{knot_spacing}\n")
-    f.write("#             ***********************************************************************************************************\n")
+    f.write("#      *********** KEYS *****************************************************************************************\n")
+    f.write("#      PRIORS: *Fixed - F(val), *Normal - N(mu,std), *Uniform - U(min,start,max), *LogUniform - LU(min,start,max)\n")
+    f.write("#      s_samp       : supersampling - x{exp_time(mins)} e.g. x30\n")
+    f.write("#      clip_outliers: c{column_no}:W{window_width}C{clip_sigma} e.g. c1:W11C5. column_no='a' to clip in all valid columns\n")
+    f.write("#      scl_col      : scale data columns – ['med_sub','rs0to1','rs-1to1','None']\n")
+    f.write("#      spline_config: spline - c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 \n")
+    f.write("#      ***********************************************************************************************************\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
     f.write(f"\tLC_filepath: {lc_obj._fpath}\n")
     f.write(f"\tRV_filepath: {rv_obj._fpath}\n")
@@ -105,6 +112,13 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     _print_output(lc_obj,"depth_variation",file=f)
     _print_output(lc_obj,"timing_variation",file=f)
     _print_output(lc_obj,"phasecurve",file=f)
+    _print_output(lc_obj,"custom_function",file=f)
+    if lc_obj._custom_LCfunc.func is not None:
+        cust_func_str = inspect.getsource(lc_obj._custom_LCfunc.func)
+        op_func_str   = inspect.getsource(lc_obj._custom_LCfunc.op_func) if lc_obj._custom_LCfunc.op_func is not None else 'None'
+        with open(f"{dirname}/custom_LCfunc.py","w") as fxn:
+            fxn.write(cust_func_str)
+            if op_func_str!='None': fxn.write(op_func_str)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
     _print_output(lc_obj,"contamination",file=f)
     _print_output(fit_obj,"stellar_pars",file=f)
@@ -185,7 +199,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     _useGPphot=[]
     
     _ss_lclist,_ss_exp = [],[]
-    _clip_lclist, _clip, _clip_width  = [],[],[]
+    _clip_cols, _clip_lclist, _clip, _clip_width  = [],[],[],[]
     _sclcol= []
     _spl_lclist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
     
@@ -210,7 +224,12 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             clip_v = float(_adump[4].split("C")[1]) 
             _clip.append(int(clip_v) if clip_v.is_integer() else clip_v)                   # outlier clip value
             _clip_width.append(int(_adump[4].split("C")[0].split("W")[1])) # windown width
-        
+            if ":" in _adump[4]:
+                col_nos = _adump[4].split(":")[0][1:]
+                if col_nos == "a": col_nos = "135678"
+                _clip_cols.append(col_nos)
+            else: _clip_cols.append("1")
+
         #scale columns
         _sclcol.append(_adump[5])
 
@@ -243,6 +262,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         #move to next LC
         dump =_file.readline() 
     
+    #check that the elements of _clip_cols are the same
+    if len(_clip_cols) > 1:
+        assert len(set(_clip_cols)) == 1, f"all columns to clip must be the same for all files but {_clip_cols} given"
+    _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
 
     nphot = len(_names)
     _skip_lines(_file,1)                                      #remove 1 comment lines
@@ -275,7 +298,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     # instantiate light curve object
     lc_obj = load_lightcurves(_names, fpath, _filters, _wl, nplanet)
     lc_obj.lc_baseline(*np.array(_bases).T, grp_id=None, gp=_useGPphot,verbose=False )
-    lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,show_plot=False,verbose=False )
+    lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,show_plot=False,verbose=False )
     lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
     lc_obj.supersample(lc_list=_ss_lclist, exp_time=_ss_exp, verbose=False)
     lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
@@ -395,7 +418,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             dump =_file.readline()
             _adump = dump.split()
             pl_pars[par_names[i]].append(_prior_value(_adump[2]))
-        sesinw_, secosw_ = ecc_om_par(pl_pars["Eccentricity"][-1],pl_pars["omega"][-1],
+        print(f'omega fed into conf.py={pl_pars["omega"][-1]}')
+        omega_rad = tuple(np.radians(pl_pars["omega"][-1])) if isinstance(pl_pars["omega"][-1],tuple) else np.radians(pl_pars["omega"][-1])
+        sesinw_, secosw_ = ecc_om_par(pl_pars["Eccentricity"][-1],omega_rad,
                                 conv_2_obj=True,return_tuple=True)
         sesinw.append(sesinw_)
         secosw.append(secosw_)
@@ -436,7 +461,42 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         A_db.append(_prior_value(_adump[5]))
         dump = _file.readline()
     assert len(D_occ) == len(lc_obj._filnames), f"number of D_occ values must be equal to number of unique filters({len(lc_obj._filnames)}) but len(D_occ)={len(D_occ)}"
-    _skip_lines(_file,2)                                      #remove 3 comment lines
+    dump   = _file.readline()
+    _adump = dump.split()
+
+    #custom function
+    if _adump[0] == "function":   #custom function lines
+        func_name = _adump[2]
+        if func_name!='None':
+            # directly import function named func_name from custom_LCfunc.py
+            import custom_LCfunc
+            custom_func = getattr(custom_LCfunc, func_name)
+
+            func_x    = _file.readline().split()[2]
+            _adump    = _file.readline().split()
+            str_pars  = _adump[2].split("),")
+            str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
+            func_args = {}
+            for p in str_pars:
+                p_name, p_prior = p.split(":")
+                func_args[p_name] = _prior_value(p_prior)
+            dump   = _file.readline()
+            _adump = dump.split()
+            opfunc_name = _adump[2]
+            if opfunc_name!='None':
+                op_func = getattr(custom_LCfunc, opfunc_name)
+            else: op_func = None
+            dump   = _file.readline()
+            _adump = dump.split()
+            replace_LCmodel = True if _adump[2] == "True" else False
+        else:   #skip remaining custom function lines (4) since func_name is None
+            _skip_lines(_file,4)
+            custom_func,func_x,func_args,op_func,replace_LCmodel = None,None,{},None,False
+        
+        _skip_lines(_file,3)                                      #remove 3 comment lines
+    else:
+        custom_func,func_x,func_args,op_func,replace_LCmodel = None,None,{},None,False
+        _skip_lines(_file,1)                                      #remove 3 comment lines
 
     #contamination factors
     cont_fac = []
@@ -453,6 +513,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
     lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,verbose=verbose)
     lc_obj.setup_phasecurve(D_occ, A_atm, ph_off, A_ev, A_db, verbose=verbose)
+    lc_obj.add_custom_LC_function(func=custom_func,x=func_x,func_args=func_args,op_func=op_func,replace_LCmodel=replace_LCmodel,verbose=verbose)
     lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
 
     if nphot > 0:
@@ -555,12 +616,13 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
         rvbaselim = [baselo, basehi]
 
+    ltt   = _file.readline().split()[1]
 
     fit_obj = fit_setup(R_st = st_rad, M_st = st_mass, par_input=par_in,
                         apply_LCjitter=lcjitt, apply_RVjitter=rvjitt,
                         leastsq_for_basepar=lsq_base, 
                         LCbasecoeff_lims=lcbaselim, RVbasecoeff_lims=rvbaselim,
-                        LCjitter_loglims=lcjittlim, RVjitter_lims=rvjittlim, 
+                        LCjitter_loglims=lcjittlim, RVjitter_lims=rvjittlim, LTT_corr=ltt,
                         verbose=verbose)
     
     fit_obj.sampling(sampler=sampler,n_cpus=ncpus, emcee_move=mc_move,

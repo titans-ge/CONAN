@@ -3,6 +3,7 @@ from scipy.stats import binned_statistic
 import scipy 
 import scipy.stats as stats
 import scipy.interpolate as si
+from .utils import get_orbital_elements
 
 
 def corfac(rarr, tarr, earr, indlist, nphot, njumpphot):
@@ -241,3 +242,37 @@ def grtest_emcee(chains_out):
     GR = VV/WV                             # GR should be an (ndim) array
     
     return GR
+
+def light_travel_time_correction(t,t0,aR,P,inc,Rstar,ecc=0,w=1.57079):
+    '''
+    Corrects the time array for light travel time effects i.e subtracts the light travel time at each time point
+
+    Args:
+        t: time array
+        t0: time of transit center
+        aR: semi-major axis over stellar radius
+        P: orbital period
+        inc: inclination in radians
+        Rstar: stellar radius in solar radii
+        ecc: eccentricity. default is 0
+        w: argument of periastron in radians. default is pi/2
+
+    Returns:
+        tcorr: time array corrected for light travel time effects
+    '''
+    if ecc==0:
+        # circular orbit
+        ph_angle = 2*np.pi*(t-t0)/P
+        d = aR*np.ones_like(t)    # distance to the planet same at all times
+    else:
+        orb = get_orbital_elements(t,t0,P,ecc,w)
+        ph_angle = orb.phase_angle
+        d   = aR * (1-ecc**2)/(1+ecc*np.cos(orb.true_anom))    # distance to the planet at each time/true anomaly
+
+    c    = 299792.458 *(60*60*24)   # speed of light in km/day
+    Rsun = 695700.0                 # solar radius in km
+    c_R = c/(Rstar*Rsun)
+    tcorr = t - d/c_R * np.sin(inc) * (1-np.cos(ph_angle))
+
+    return tcorr
+
