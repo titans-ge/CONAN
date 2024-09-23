@@ -43,6 +43,7 @@ class get_TESS_data(object):
     def __init__(self, planet_name):
         self.planet_name = planet_name
         self.lc          = {}
+        self.contam      = {}
 
     def search(self,sectors=None,author=None,exptime=None):
         """
@@ -65,7 +66,7 @@ class get_TESS_data(object):
         print(lk.search_lightcurve(self.planet_name,author=self.author,sector=self.sectors,
                                     exptime=self.exptime, mission="TESS"))
         
-    def download(self,sectors=None,author=None,exptime=None, select_flux="pdcsap_flux",quality_bitmask="hard"):
+    def download(self,sectors=None,author=None,exptime=None, select_flux="pdcsap_flux",quality_bitmask="default"):
         """  
         Download TESS light curves from MAST using the lightkurve package
 
@@ -78,7 +79,7 @@ class get_TESS_data(object):
         exptime : float
             Exposure time of the light curve.
         quality_bitmask : str
-            Quality bitmask to use for the lightkurve package. Default is "hard".
+            Quality bitmask to use for the lightkurve package. options are ["none","default","hard","hardest"]. Default is "default".
         """
         if sectors is not None: self.sectors = sectors
         if author  is not None: self.author  = author
@@ -95,12 +96,16 @@ class get_TESS_data(object):
             except:
                 print(f"{select_flux} is not available. Using 'sap_flux' instead. other options include ['kspsap_flux','det_flux'] ")
                 self.lc[s] = self.lc[s].select_flux("sap_flux")
+                
 
             self.lc[s]= self.lc[s].remove_nans().normalize()
             print(f"downloaded lightcurve for sector {s}")
 
+            self.contam[s] = 1 - self.lc[s].hdu[1].header["CROWDSAP"]
+
         if hasattr(self,"_ok_mask"): del self._ok_mask
         self.data_splitted = False
+        
 
     def discard_ramp(self,length=0.25, gap_size=1, start=True, end=True):
         """
@@ -142,13 +147,15 @@ class get_TESS_data(object):
             for st_ind,end_ind in zip(chunk_start_ind, chunk_end_ind):
                 if start: start_mask.append((tt >= tt[st_ind]) & (tt < tt[st_ind]+length[i]))
                 if end: end_mask.append((tt <= tt[end_ind]) & (tt > tt[end_ind]-length[i]))
-
-            start_mask = np.logical_or(*start_mask) if start else np.array([False]*len(tt))
-            end_mask   = np.logical_or(*end_mask) if end else np.array([False]*len(tt))
-            self._nok_mask = np.logical_or(start_mask, end_mask)
-            self._ok_mask  = ~np.logical_or(start_mask, end_mask)
-            self.lc[s] = self.lc[s][self._ok_mask]
-            print(f"discarded {sum(self._nok_mask)} points")
+            try:
+                start_mask = np.logical_or(*start_mask) if start else np.array([False]*len(tt))
+                end_mask   = np.logical_or(*end_mask) if end else np.array([False]*len(tt))
+                self._nok_mask = np.logical_or(start_mask, end_mask)
+                self._ok_mask  = ~np.logical_or(start_mask, end_mask)
+                self.lc[s] = self.lc[s][self._ok_mask]
+                print(f"discarded {sum(self._nok_mask)} points")
+            except:
+                print("could not discard points")
 
 
     def scatter(self):
@@ -638,6 +645,8 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         Database to use. Default is "exoplanetarchive". Options are "exoplanetarchive" or "exoplanet.eu".
     table : str
         Table to use. Default is "pscomppars". Options are "pscomppars" or "ps".
+    ps_select_index : int
+        Index of the parameter set to use. Default is None.
 
     overwrite_cache : bool
         Overwrite the cached parameters. Default is True.
@@ -694,6 +703,14 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         params["planet"]["aR"]     = (df["pl_ratdor"][0],df["pl_ratdorerr1"][0])
         params["planet"]["K[m/s]"] = (df["pl_rvamp"][0],df["pl_rvamperr1"][0])
     else:
+        exo_eu = pd.read_csv("http://exoplanet.eu/catalog/csv",
+                            usecols=["name",'star_teff', 'star_teff_error_max',
+                                        'log_g','star_metallicity', 'star_metallicity_error_max', 'star_mass',
+                                        'star_mass_error_max', 'star_radius', 'star_radius_error_max',
+                                        'mass', 'mass_error_max','orbital_period', 'orbital_period_error_max',
+                                        'semi_major_axis','semi_major_axis_error_max', 'eccentricity','eccentricity_error_max', 
+                                        'inclination','inclination_error_max','omega', 'omega_error_max','tzero_tr','tzero_tr_error_max'
+                                    ])
         raise NotImplemented
 
     pd.to_pickle(params, f"{planet_name.replace(' ','')}_sysparams.pkl")

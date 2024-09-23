@@ -97,8 +97,8 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
 
     q1_PDF, q2_PDF = np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt))
     q1_bp,  q2_bp  = np.zeros(nfilt), np.zeros(nfilt)
-    Aatm_PDF, DFocc_PDF, phoff_PDF,dRpRs_PDF = np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt))
-    Aatm_bp,  DFocc_bp,  phoff_bp, dRpRs_bp  = np.zeros(nfilt),np.zeros(nfilt),np.zeros(nfilt),np.zeros(nfilt)
+    Fn_PDF, DFocc_PDF, phoff_PDF,contam_PDF,dRpRs_PDF = np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt)),np.zeros((npoint,nfilt))
+    Fn_bp,  DFocc_bp,  phoff_bp, contam_bp,dRpRs_bp  = np.zeros(nfilt),np.zeros(nfilt),np.zeros(nfilt),np.zeros(nfilt),np.zeros(nfilt)
 
     for i,fil in enumerate(filnames):
         #q1
@@ -120,15 +120,15 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
             q2_PDF[:,i] = bp[nijnames[0][indn]]
             q2_bp[i] = bp[nijnames[0][indn]]   
 
-        #Aatm
-        ind = np.where(np.char.find(jnames, fil+'_Aatm')==0)[0]
-        indn = np.where(np.char.find(njnames, fil+'_Aatm')==0)[0]
+        #Fn
+        ind = np.where(np.char.find(jnames, fil+'_Fn')==0)[0]
+        indn = np.where(np.char.find(njnames, fil+'_Fn')==0)[0]
         if (len(ind) > 0):
-            Aatm_PDF[:,i] = posterior[:,ind[0]]
-            Aatm_bp[i] = bp[ijnames[0][ind]]
+            Fn_PDF[:,i] = posterior[:,ind[0]]
+            Fn_bp[i] = bp[ijnames[0][ind]]
         else:
-            Aatm_PDF[:,i] = bp[nijnames[0][indn]]
-            Aatm_bp[i] = bp[nijnames[0][indn]]
+            Fn_PDF[:,i] = bp[nijnames[0][indn]]
+            Fn_bp[i] = bp[nijnames[0][indn]]
 
         #DFocc
         ind = np.where(np.char.find(jnames, fil+'_DFocc')==0)[0]
@@ -149,6 +149,16 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         else:
             phoff_PDF[:,i] = bp[nijnames[0][indn]]
             phoff_bp[i] = bp[nijnames[0][indn]]
+
+        #contam
+        ind  = np.where(np.char.find(jnames,  fil+'_cont')==0)[0]
+        indn = np.where(np.char.find(njnames, fil+'_cont')==0)[0]
+        if (len(ind) > 0):
+            contam_PDF[:,i] = posterior[:,ind[0]]
+            contam_bp[i] = bp[ijnames[0][ind]]
+        else:
+            contam_PDF[:,i] = bp[nijnames[0][indn]]
+            contam_bp[i] = bp[nijnames[0][indn]]
 
         #dRpRs
         if f"{fil}_dRpRs" in jnames:
@@ -285,9 +295,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
 
         
         pnames, PDFs, starstring = derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF+mean_RpRs_PDF, Period_PDF, b_PDF, dur_PDF,rho_PDF, ecosw_PDF, esinw_PDF, K_PDF, 
-                                                        q1_PDF, q2_PDF,Aatm_PDF, DFocc_PDF,phoff_PDF,howstellar) 
+                                                        q1_PDF, q2_PDF,Fn_PDF, DFocc_PDF,phoff_PDF,howstellar) 
         _,   bp_PDFs, _          = derive_parameters(filnames, nm, Rs_in,  Ms_in,  RpRs_bp+mean_RpRs_bp,  Period_bp,  b_bp,  dur_bp, rho_bp,  ecosw_bp,  esinw_bp,  K_bp,  
-                                                        q1_bp,  q2_bp, Aatm_bp, DFocc_bp,phoff_bp, howstellar)
+                                                        q1_bp,  q2_bp, Fn_bp, DFocc_bp,phoff_bp, howstellar)
 
         derived_pnames.extend(pnames)
         derived_PDFs.extend(PDFs)
@@ -673,7 +683,7 @@ def get_PDF_Gauss(cen,sig1,sig2,dim):
     return val_PDF
 
 def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, rhoS_PDF, ecosw_PDF, esinw_PDF, K_PDF, 
-                        q1_PDF, q2_PDF, Aatm_PDF, DFocc_PDF, phoff_PDF, howstellar):
+                        q1_PDF, q2_PDF, Fn_PDF, DFocc_PDF, phoff_PDF, howstellar):
     
     import scipy.constants as cn
 
@@ -729,7 +739,7 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     #     rhoS_PDF = Ms_PDF / Rs_PDF**3 * rhoSolar
     #     starstring = 'rho_s from stellar parameter input'
         
-    aRs_PDF = rho_to_aR(rhoS_PDF,Period_PDF)
+    aRs_PDF = rho_to_aR(rhoS_PDF,Period_PDF,ecc_PDF,np.degrees(ome_PDF))
     a_PDF = aRs_PDF * Rs_PDF * Rsolar / au
     Rsa_PDF = 1./aRs_PDF
 
@@ -779,32 +789,31 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
             LD_PDFs.append(u1)
             LD_PDFs.append(u2)
 
-    if len(Aatm_PDF.shape)<2:
-        nfil = Aatm_PDF.shape
-        pnames_Fn = []
-        Fn_PDFs = []
+    if len(Fn_PDF.shape)<2:
+        nfil = Fn_PDF.shape
+        pnames_Aatm = []
+        Aatm_PDFs = []
         for i in range(nfil[0]):
-            Fn = DFocc_PDF[i] - 2*Aatm_PDF[i] * np.cos(np.deg2rad(phoff_PDF[i]))
-            pnames_Fn += [filnames[i]+'_Fn']
-            Fn_PDFs.append(Fn)
+            Aatm = (DFocc_PDF[i] - Fn_PDF[i])/(2* np.cos(np.deg2rad(phoff_PDF[i])))
+            pnames_Aatm += [filnames[i]+'_Aatm']
+            Aatm_PDFs.append(Aatm)
     else:
-        npo, nfil = Aatm_PDF.shape
-        pnames_Fn = []
-        Fn_PDFs = []
+        npo, nfil = Fn_PDF.shape
+        pnames_Aatm = []
+        Aatm_PDFs = []
     
         for i in range(nfil):
-            Fn = DFocc_PDF[:,i] - 2*Aatm_PDF[:,i] * np.cos(np.deg2rad(phoff_PDF[:,i]))
-            pnames_Fn += [filnames[i]+'_Fn']
-            Fn_PDFs.append(Fn)
-
+            Aatm = (DFocc_PDF[:,i] - Fn_PDF[:,i])/(2* np.cos(np.deg2rad(phoff_PDF[:,i])))
+            pnames_Aatm += [filnames[i]+'_Aatm']
+            Aatm_PDFs.append(Aatm)
 
     derived_pnames = [f"Rp{nm}_[Rjup]",f"Mp{nm}_[Mjup]", f"rho{nm}_p_[rhoJup]", f"g_p{nm}_[SI]", f"dF{nm}", f"aRs{nm}", f"a{nm}_[au]", f"rho_star{nm}_[g_cm3]", "Ms_[Msun]", "Rs_[Rsun]",
                         f"inclination{nm}_[deg]", f"eccentricity{nm}", f"omega{nm}_[deg]", f"Occult_dur{nm}", f"Rs_a{nm}", "MF_PDF_[Msun]",f"Dur{nm}_[d]"]
     
-    derived_pnames =  derived_pnames + pnames_LD + pnames_Fn
+    derived_pnames =  derived_pnames + pnames_LD + pnames_Aatm
         
     derived_PDFs = [Rp_PDF, Mp_PDF, rhoP_PDF, gP_PDF, dF_PDF, aRs_PDF, a_PDF, rhoS_PDF, Ms_PDF, Rs_PDF, inc_PDF, ecc_PDF, ome_PDF, durocc_PDF, Rsa_PDF, MF_PDF,dur_PDF]
-    derived_PDFs = derived_PDFs + LD_PDFs + Fn_PDFs
+    derived_PDFs = derived_PDFs + LD_PDFs + Aatm_PDFs
         
     return derived_pnames, derived_PDFs, starstring
 

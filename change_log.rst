@@ -8,6 +8,15 @@
 * allow saving of modified injested data. e.g. `lc_obj.save_LCs(save_path="data_preproc/")` 
 * calculation of AIC,BIC and chisqr now take into account the jitter if added to the errorbars
 * allow installation of CONAN when fortran compiler is not available, in which case python implementation of the transit model is used.
+* extra fixed arguments can be passed to custom function
+* accounted better for eccentricity in different parameter conversions (rho_to_aR, aR_to_rho, Tdur_to_aR, aR_to_Tdur, etc)
+* fixed bug in lc_out.dat file where the gp baseline was not properly subtracted to create the detrended LC
+* new lc_obj.add_sinusoid() function to fit a sinusoidal model to the lc baseline 
+* added gp component to get_decorr function
+* contamination factors can now be setup as fitting parameters. 
+* minor correction for TTV model of multiplanet sysyem when transits overlap
+* new CONAN3.compare_results() class with methods that allows to compare results from different fits.
+* implemented cosine kernel in celerite
 
 3-Jun-2024: version 3.2.1
 ~~~~~~~~~~~~~

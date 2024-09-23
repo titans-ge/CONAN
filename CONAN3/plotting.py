@@ -22,15 +22,15 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
     #model plot for each LC
     for j in range(nphot):
         infile=out_folder + "/" + splitext(names[j])[0]+'_lcout.dat'
-        tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9), unpack = True)  # reading in the lightcurve data
+        tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,8,9,10), unpack = True)  # reading in the lightcurve data
         
-        #evaluate rv model on smooth time grid
+        #evaluate lc model on smooth time grid
         t_sm  = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
         lc_sm = logprob_multi(params,_ind_para,t=t_sm,get_model=True).lc[names[j]][0]
 
         # bin the lightcurve data
-        binsize_min=15.
-        binsize    = binsize_min/(24.*60.)
+        binsize_min = 15.
+        binsize     = min(Dur)/10 #binsize_min/(24.*60.)
         nbin = int(np.ptp(tt)/binsize)  # number of bins
 
         t_bin, f_bin, err_bin = bin_data_with_gaps(tt, flux, err, binsize=binsize)    #original data
@@ -82,17 +82,17 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
                 for j in range(nphot):
                     infile = out_folder + "/" + names[j][:-4] + '_lcout.dat'
-                    tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 7, 8, 9), unpack=True)
+                    tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 8, 9, 10), unpack=True)
                     flux_resid = flux - full_mod
 
                     if filters[j] == filt:
                         # calculations for each planet (n) in the system
-                        phase = phase_fold(tt, period[n], T0[n], -0.25)
+                        phase    = phase_fold(tt, period[n], T0[n], -0.25)
                         lc_comps = all_models.lc[names[j]][1]  # lc components for each planet in the system
 
                         # evaluate lc model on smooth time grid
-                        t_sm = np.linspace(tt.min(), tt.max(), max(2000, len(tt)))
-                        ph_sm = phase_fold(t_sm, period[n], T0[n], -0.25)
+                        t_sm       = np.linspace(tt.min(), tt.max(), max(2000, len(tt)))
+                        ph_sm      = phase_fold(t_sm, period[n], T0[n], -0.25)
                         lc_sm_comp = logprob_multi(params, _ind_para, t=t_sm, get_model=True).lc[names[j]][1]
 
                         # remove other planet's LC signal from det_flux
@@ -107,7 +107,8 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
                         lcsm_filter.append(lc_sm_comp[f"pl_{n + 1}"])
 
                 # Bin the data
-                binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
+                # binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
+                binsize = Dur[n] / 10 / period[n]  # 10 bins in transit
                 nbin = int(np.ptp(np.concatenate(phase_filter)) / binsize)
 
                 srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
@@ -223,7 +224,8 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
             ax[0].legend()
             plt.subplots_adjust(hspace=0.04,wspace=0.04)
             fig.savefig(out_folder+prefix+f'Phasefolded_RV_[planet{n+1}].png',bbox_inches="tight") 
-
+    
+    plt.close('all')
     matplotlib.use(__default_backend__)
 
 def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
@@ -256,7 +258,7 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
     if not os.path.exists(out_folder+"/histograms"): os.mkdir(out_folder+"/histograms")
     outname=out_folder+"/histograms/hist_"+pname+".png"
     plt.savefig(outname)
-
+    plt.close()
     matplotlib.use(__default_backend__)
 
 

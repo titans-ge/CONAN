@@ -8,16 +8,19 @@ import matplotlib
 import pandas as pd
 from lmfit import minimize, Parameters, Parameter
 import batman
-from warnings import warn
+
+from os.path import splitext
 from ldtk import SVOFilter
 from CONAN3.models import RadialVelocity_Model, Transit_Model
 from .utils import outlier_clipping, rho_to_aR, Tdur_to_aR, rho_to_tdur, rescale0_1
-from .utils import rescale_minus1_1, cosine_atm_variation, split_transits 
+from .utils import rescale_minus1_1, cosine_atm_variation, split_transits,sinusoid,gp_params_convert 
 from .utils import phase_fold, supersampling, convert_LD, get_transit_time, bin_data_with_gaps
 from copy import deepcopy
 from scipy.interpolate import LSQUnivariateSpline,LSQBivariateSpline
 from uncertainties import ufloat
 import inspect
+import celerite
+import warnings
 
 __all__ = ["load_lightcurves", "load_rvs", "fit_setup", "load_result", "__default_backend__"]
 
@@ -108,7 +111,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
             srt = np.argsort(p1)
             ax[i].plot(p1[srt],np.polyval(pfit,p1[srt]),"r",zorder=3)
     plt.subplots_adjust(hspace=0.3 if hspace is None else hspace , wspace = wspace if wspace!=None else None)
-    for i in range(len(fnames),np.product(nrow_ncols)): ax[i].axis("off")   #remove unused subplots
+    for i in range(len(fnames),np.prod(nrow_ncols)): ax[i].axis("off")   #remove unused subplots
 
     fig.suptitle(f"{col_labels[0]} against {col_labels[1]}", y=0.99, fontsize=18)
     plt.tight_layout()
@@ -120,10 +123,12 @@ def _raise(exception_type, msg):
     raise exception_type(msg)
 
 def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para=0, RpRs=None, 
-                Eccentricity=0, omega=90, D_occ=0, A_atm=0, ph_off=0, A_ev=0, A_db=0,q1=0, q2=0,
-                mask=False, decorr_bound=(-1,1), spline=None,ss_exp=None,
+                Eccentricity=0, omega=90, D_occ=0, Fn=None, ph_off=None, A_ev=0, A_db=0,q1=0, q2=0,
+                mask=False, decorr_bound=(-1,1), spline=None,sinus=None,gp=None,ss_exp=None,
                 offset=None, A0=None, B0=None, A3=None, B3=None,A4=None, B4=None, 
                 A5=None, B5=None,A6=None, B6=None, A7=None, B7=None, A8=None, B8=None,
+                sin_Amp=0, sin2_Amp=0, sin3_Amp=0, cos_Amp=0, cos2_Amp=0, cos3_Amp=0, sin_P=0,  sin_x0=0,
+                log_GP_amp1=0, log_GP_amp2=0, log_GP_len1=0, log_GP_len2=0,
                 npl=1,jitter=0,Rstar=None,custom_LCfunc=None,return_models=False):
     """
     linear decorrelation with different columns of data file. It performs a linear model fit to the columns of the file.
@@ -134,7 +139,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     df : dataframe/dict;
         data file with columns 0 to 8 (col0-col8).
 
-    T_0, Period, rho_star, D_occ, Impact_para, RpRs, Eccentricity, omega,A_atm,ph_off,A_ev,A_db : floats, None;
+    T_0, Period, rho_star, D_occ, Impact_para, RpRs, Eccentricity, omega,Fn,ph_off,A_ev,A_db : floats, None;
         transit/eclipse parameters of the planet. T_0 and P must be in same units as the time axis (cols0) in the data file. rho_star is the stellar density in g/cm^3.
         if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
         
@@ -153,6 +158,8 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         the config is given as a dict with keys "col", "knot_spacing", "degree" specifying the column, the knot spacing and the degree of the spline.
         e.g. spline = {"col":0, "knot_spacing":0.1, "degree":3} will fit a spline the flux as a function of column 0 with knot spacing of 0.1 and degree 3.
 
+    sinus : dict;
+        sinusoid configuration to use in decorrelation. Default is None which implies no sinusoid is used.
     npl : int; 
         number of planets in the system. default is 1.
 
@@ -175,15 +182,19 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         if return_models = True, returns (trend_model, transit/eclipse model)
     """
     DA = locals().copy()
-    assert isinstance(spline, dict) or spline is None, "spline must be a dictionary"
+    if Fn!=None and ph_off!=None: model_phasevar=True
+    else:                         model_phasevar=False
     
+    assert isinstance(spline, dict) or spline is None, "spline must be a dictionary"
+    flux_err = (np.array(df["col2"])**2 + jitter**2)**0.5
+
     #transit variables
-    pl_vars = ["T_0", "Period", "rho_star" if rho_star!=None else "Duration", "D_occ", "Impact_para","RpRs", "Eccentricity", "omega", "A_atm", "ph_off", "A_ev","A_db","q1","q2"]
+    pl_vars = ["T_0", "Period", "rho_star" if rho_star!=None else "Duration", "D_occ", "Impact_para","RpRs", "Eccentricity", "omega", "Fn", "ph_off", "A_ev","A_db","q1","q2"]
     tr_pars = {}
     for p in pl_vars:
         for n in range(npl):
             lbl = f"_{n+1}" if npl>1 else ""                      # numbering to add to parameter names of each planet
-            if p not in ["q1","q2","rho_star","Duration","A_atm","ph_off","A_ev","A_db","D_occ"]:   # parameters common to all planets or not used in multi-planet fit
+            if p not in ["q1","q2","rho_star","Duration","Fn","ph_off","A_ev","A_db","D_occ"]:   # parameters common to all planets or not used in multi-planet fit
                 tr_pars[p+lbl]= DA[p][n]  #transit/eclipse pars
             else:
                 tr_pars[p] = DA[p]   #common parameters
@@ -192,11 +203,6 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     if custom_LCfunc is not None: 
         for p in custom_LCfunc.func_args.keys():
             tr_pars[p] = custom_LCfunc.func_args[p] 
-
-    #decorr variables    
-    decorr_vars = [f"{L}{i}" for i in [0,3,4,5,6,7,8] for L in ["A","B"]]  + ["offset"] # creates list: ['A0','B0','A3','B3','A4','B4','A5','B5','A6','B6','A7','B7','A8','B8','offset']
-    in_pars     = {k:v for k,v in DA.items() if k in decorr_vars}
-
 
     df       = pd.DataFrame(df)  #pandas dataframe
     col0_med = np.median(df["col0"])
@@ -217,7 +223,11 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         df = df[mask]
 
 
-    #decorr params
+    #PARAMETRIC DECORRELATION PARAMETERS
+    #decorr variables    
+    decorr_vars = [f"{L}{i}" for i in [0,3,4,5,6,7,8] for L in ["A","B"]]  + ["offset"] # creates list: ['A0','B0','A3','B3','A4','B4','A5','B5','A6','B6','A7','B7','A8','B8','offset']
+    in_pars     = {k:v for k,v in DA.items() if k in decorr_vars}
+
     params = Parameters()
     for key in in_pars.keys():
         val  = in_pars[key] if in_pars[key] != None else 0    #val is set to 0 or the value of the parameter
@@ -226,16 +236,58 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
             params.add(key, value=val, min=df["col1"].min()-1, max=df["col1"].max()-1, vary=vary)
         else: params.add(key, value=val, min=decorr_bound[0], max=decorr_bound[1], vary=vary)
     
+    #SINUSOIDAL DECORRELATION PARAMS
+    if sinus is not None:
+        sin_decorr_vars = ['sin_Amp','sin2_Amp','sin3_Amp','cos_Amp','cos2_Amp','cos3_Amp','sin_P', 'sin_x0']
+        sin_pars        = {k:v  for k,v in DA.items() if k in sin_decorr_vars}   #input values/priors for sinusoid parameters
+
+        sin_params = Parameters()
+        for key in sin_pars.keys():
+            if isinstance(sin_pars[key], (float,int)):
+                sin_params.add(key, value=sin_pars[key], vary=False)
+            if isinstance(sin_pars[key], tuple):
+                assert len(sin_pars[key]) in [2,3,4],f"{key} must be float/int or tuple of length 2/3"
+                if len(sin_pars[key])==2:
+                    sin_params[key] = Parameter(key, value=sin_pars[key][0], vary=True, user_data = sin_pars[key] )
+                if len(sin_pars[key])==3:
+                    sin_params.add(key, value=sin_pars[key][1], min=sin_pars[key][0], max=sin_pars[key][2], vary=True)
+                if len(sin_pars[key])==4:
+                    sin_params[key] = Parameter(key, value=sin_pars[key][2], vary=True, min=sin_pars[key][0],max=sin_pars[key][1], user_data = sin_pars[key][-2:] )
+
+        params = params+sin_params 
+
+    #GP DECORRELATION PARAMETERS
+    if gp is not None:
+        gp_decorr_vars = list(gp.params.keys())
+        gp_pars        = {k:v  for k,v in DA.items() if k in gp_decorr_vars}   #input values/priors for GP parameters
+
+        gp_params = Parameters()
+        for key in gp_pars.keys():
+            if isinstance(gp_pars[key], (float,int)):
+                gp_params.add(key, value=gp_pars[key], vary=False)
+            if isinstance(gp_pars[key], tuple):
+                assert len(gp_pars[key]) in [2,3,4],f"{key} must be float/int or tuple of length 2/3"
+                if len(gp_pars[key])==2:
+                    gp_params[key] = Parameter(key, value=gp_pars[key][0], vary=True, user_data = gp_pars[key] )
+                if len(gp_pars[key])==3:
+                    gp_params.add(key, value=gp_pars[key][1], min=gp_pars[key][0], max=gp_pars[key][2], vary=True)
+                if len(gp_pars[key])==4:
+                    gp_params[key] = Parameter(key, value=gp_pars[key][2], vary=True, min=gp_pars[key][0],max=gp_pars[key][1], user_data = gp_pars[key][-2:] )
+    
+        params = params+gp_params
+
     #transit/eclipseparameters
     tr_params = Parameters()
     for key in tr_pars.keys():
         if isinstance(tr_pars[key], (list,tuple)):
-            assert len(tr_pars[key]) in [2,3],f"{key} must be float/int or tuple of length 2/3"
+            assert len(tr_pars[key]) in [2,3,4],f"{key} must be float/int or tuple of length 2/3"
             if len(tr_pars[key])==3:  #uniform prior (min, start, max)
                 val = tr_pars[key]
                 tr_params.add(key, value=val[1], min=val[0], max=val[2], vary=True)
-            if len(tr_pars[key])==2: #normal prior (mean, std)
+            if len(tr_pars[key])==2: #normal prior (mean, std)  #TODO min/max of normal prior of each transit par should also be added min=min_max[key][0], max=min_max[key][1]
                 tr_params[key] = Parameter(key, value=tr_pars[key][0], vary=True, user_data = tr_pars[key] )
+            if len(tr_pars[key])==4: #trunc normal prior (min,max, mean, std) 
+                tr_params[key] = Parameter(key, value=tr_pars[key][2], vary=True, min=tr_pars[key][0],max=tr_pars[key][1], user_data = tr_pars[key][-2:] )
         if isinstance(tr_pars[key], (float,int)):
             tr_params.add(key, value=tr_pars[key], vary=False)
         if tr_pars[key] == None:
@@ -244,34 +296,35 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
             val = 1e-10 if key in vs else 0 #allows to obtain transit/eclipse with zero depth
             tr_params.add(key, value=val, vary=False)
 
+    
     #transit model based on TransitModel       
     def transit_occ_model(tr_params,t=None,ss_exp=ss_exp,Rstar=None,custom_LCfunc=custom_LCfunc,npl=1):
         if t is None: t = df["col0"].values
         ss = supersampling(ss_exp/(60*24),int(ss_exp)) if ss_exp is not None else None
         pl_ind = [(f"_{n}" if npl>1 else "") for n in range(1,npl+1)]
 
-        per = [tr_params["Period"+lbl] for lbl in pl_ind]
-        t0  = [tr_params["T_0"+lbl] for lbl in pl_ind]
-        rp  = [tr_params["RpRs"+lbl] for lbl in pl_ind]
-        b   = [tr_params["Impact_para"+lbl] for lbl in pl_ind]
-        ecc = [tr_params["Eccentricity"+lbl] for lbl in pl_ind]
-        w   = [tr_params["omega"+lbl] for lbl in pl_ind]
+        per = [tr_params["Period"+lbl].value for lbl in pl_ind]
+        t0  = [tr_params["T_0"+lbl].value for lbl in pl_ind]
+        rp  = [tr_params["RpRs"+lbl].value for lbl in pl_ind]
+        b   = [tr_params["Impact_para"+lbl].value for lbl in pl_ind]
+        ecc = [tr_params["Eccentricity"+lbl].value for lbl in pl_ind]
+        w   = [tr_params["omega"+lbl].value for lbl in pl_ind]
         sesinw = [np.sqrt(e)*np.sin(np.deg2rad(om)) for e,om in zip(ecc,w)]
         secosw = [np.sqrt(e)*np.cos(np.deg2rad(om)) for e,om in zip(ecc,w)]
 
-        rho_star = tr_params["rho_star"] if "rho_star" in tr_params.keys() else None
-        dur      = tr_params["Duration"] if "Duration" in tr_params.keys() else None 
+        rho_star = tr_params["rho_star"].value if "rho_star" in tr_params.keys() else None
+        dur      = tr_params["Duration"].value if "Duration" in tr_params.keys() else None 
 
-        cst_pars = {p:tr_params[p] for p in custom_LCfunc.func_args.keys()} if custom_LCfunc is not None else {}
+        cst_pars = {p:tr_params[p].value for p in custom_LCfunc.func_args.keys()} if custom_LCfunc is not None else {}
 
-        TM  = Transit_Model(rho_star, dur, t0, rp, b, per, sesinw, secosw,ddf=0,q1=tr_params["q1"],q2=tr_params["q2"],occ=tr_params["D_occ"],
-                            A_atm=tr_params["A_atm"],delta=tr_params["ph_off"],A_ev=tr_params["A_ev"],A_db=tr_params["A_db"],cst_pars=cst_pars,npl=npl)
-        model_flux,_ = TM.get_value(t,ss=ss,Rstar=Rstar, custom_LCfunc=custom_LCfunc)
+        TM  = Transit_Model(rho_star, dur, t0, rp, b, per, sesinw, secosw,ddf=0,q1=tr_params["q1"].value,q2=tr_params["q2"].value,occ=tr_params["D_occ"].value,
+                            Fn=tr_params["Fn"].value,delta=tr_params["ph_off"].value,A_ev=tr_params["A_ev"].value,A_db=tr_params["A_db"].value,cst_pars=cst_pars,npl=npl)
+        model_flux,_ = TM.get_value(t,ss=ss,Rstar=Rstar, model_phasevar=model_phasevar,custom_LCfunc=custom_LCfunc)
 
         return model_flux
 
 
-    def trend_model(params):
+    def trend_model(params):    #parametric + sinusoid
         trend = 1 + params["offset"]       #offset
         trend += params["A0"]*(df["col0"]-col0_med)  + params["B0"]*(df["col0"]-col0_med)**2 #time trend
         trend += params["A3"]*df["col3"]  + params["B3"]*df["col3"]**2 #x
@@ -280,8 +333,24 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         trend += params["A6"]*df["col6"]  + params["B6"]*df["col6"]**2 #bg
         trend += params["A7"]*df["col7"]  + params["B7"]*df["col7"]**2 #conta
         trend += params["A8"]*df["col8"]  + params["B8"]*df["col8"]**2
+        if sinus is not None:
+            amps = [params[k] for k in sin_pars.keys() if "Amp" in k]
+            sin_model = sinusoid(df[sinus.par],A=amps,x0=params['sin_x0'],P=params['sin_P'],n=3, trig="sincos")
+            trend += sin_model
         return np.array(trend)
     
+    def gp_model(params,resid,ll=False):
+        gp_x     = df[gp.column[0]]
+        srt_gp   = np.argsort(gp_x)
+        unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
+        
+        gppars  = [params[p].value for p in gp_decorr_vars]
+        gp_conv = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
+        gppars  = gp_conv.get_values(kernels=gp.kern, data="lc", pars=np.exp(gppars))
+        gp.GPobj.set_parameter_vector(gppars)
+        gp.GPobj.compute(gp_x[srt_gp], yerr=flux_err[srt_gp])
+        return gp.GPobj.log_likelihood(resid[srt_gp],quiet=True) if ll==True else gp.GPobj.predict(resid[srt_gp],t=gp_x[srt_gp],return_cov=False,return_var=False)[unsrt_gp]
+
 
     if spline is not None:
         spl_col = spline["col"]
@@ -319,15 +388,18 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                 splfunc = LSQBivariateSpline(spl_x[0], spl_x[1], df["col1"]-fl_mod,
                                                 knots1, knots2, kx=spl_deg[0], ky=spl_deg[1])
                 spl_mod = splfunc(spl_x[0],spl_x[1],grid=False)
-
         else: spl_mod  = 0
+
+        if gp is not None:
+            gp_mod = gp_model(params,df["col1"]-fl_mod-spl_mod)
+        else: gp_mod = 0
         
         tsm = np.linspace(min(df["col0"]),max(df["col0"]),len(df["col0"])*3)
-        mods = SimpleNamespace(tot_trnd_mod       = trnd_mod+spl_mod, 
+        mods = SimpleNamespace(tot_trnd_mod       = trnd_mod+spl_mod+gp_mod, 
                                 planet_mod        = tra_occ_mod, 
                                 time_smooth       = tsm, 
                                 planet_mod_smooth = transit_occ_model(tr_params,tsm,npl=npl), 
-                                residual          = df["col1"] - fl_mod - spl_mod
+                                residual          = df["col1"] - fl_mod - spl_mod - gp_mod
                                 ) 
         return mods
     
@@ -344,17 +416,24 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                 spl     = splfunc(spl_x[0],spl_x[1],grid=False)
         else:
             spl = 0
+        resid = resid - spl
 
-        res = (resid-spl)/(df["col2"]**2 + jitter**2)**0.5
+        if gp is not None:
+            gp_ll = gp_model(fit_params,resid,True)
+            res   = -2*gp_ll - np.sum(np.log(2*np.pi*flux_err**2)) #gp chi2 from LL
+        else:
+            res = resid/flux_err
+
         for p in fit_params:
             u = fit_params[p].user_data  #obtain tuple specifying the normal prior if defined
             if u:  #modify residual to account for how far the value is from mean of prior
-                res = np.append(res, (u[0]-fit_params[p].value)/u[1] )
-        # print(f"chi-square:{np.sum(res**2)}")
+                res_mod = (u[0]-fit_params[p].value)/u[1]
+                res = np.append(res, res_mod ) if gp==None else res+res_mod**2
+            # print(f"chi-square:{np.sum(res**2)}")
         return res
     
     fit_params = params+tr_params
-    out = minimize(chisqr, fit_params, nan_policy='propagate')
+    out = minimize(chisqr, fit_params, nan_policy='propagate', method='lbfgsb' if gp!=None else 'leastsq')  #lbfgsb does not give uncertainties on the parameters
     
     #modify output object
     tra_occ_mod = transit_occ_model(out.params,npl=npl)
@@ -365,22 +444,24 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
             spl_mod = LSQUnivariateSpline(spl_x[srt],(df["col1"]-tra_occ_mod*trnd_mod)[srt],t=knots,k=spl_deg)(spl_x)
         else: #2D spline
             spl_mod = LSQBivariateSpline(spl_x[0], spl_x[1], df["col1"]-tra_occ_mod*trnd_mod, knots1, knots2, kx=spl_deg[0], ky=spl_deg[1])(spl_x[0],spl_x[1],grid=False)
-
-    out.bestfit    = tra_occ_mod*trnd_mod + spl_mod
+    if gp is not None: gp_mod = gp_model(out.params,df["col1"]-tra_occ_mod*trnd_mod-spl_mod)
+    else: gp_mod = 0
+    out.bestfit    = tra_occ_mod*trnd_mod + spl_mod + gp_mod
     out.poly_trend = trnd_mod   
-    out.trend      = trnd_mod+spl_mod
+    out.trend      = trnd_mod+spl_mod+gp_mod
     out.transit    = tra_occ_mod
     out.spl_mod    = spl_mod
     out.spl_x      = 0 if spline is None else spl_x
     
     out.time       = np.array(df["col0"])
     out.flux       = np.array(df["col1"])
-    out.flux_err   = (np.array(df["col2"])**2 + jitter**2)**0.5
+    out.flux_err   = flux_err
     out.data       = df
 
     out.rms        = np.std(out.flux - out.bestfit)
     out.ndata      = len(out.time)
-    out.residual   = out.residual[:out.ndata]    #note that residual = (y-mod)/err
+    if gp!=None: out.residual = (out.flux - out.bestfit)/flux_err
+    else:        out.residual   = out.residual[:out.ndata]    #note that residual = (y-mod)/err
     out.nfree      = out.ndata - out.nvarys
     out.chisqr     = np.sum(out.residual**2)
     out.redchi     = out.chisqr/out.nfree
@@ -529,10 +610,12 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
 
 def _print_output(self, section: str, file=None):
     """function to print to screen/file the different sections of CONAN setup"""
+    
+    prior_str = lambda v: 'None' if v==None else f'F({v})' if isinstance(v,(int,float)) else f"N({v[0]},{v[1]})" if len(v)==2 else f"U({v[0]},{v[1]},{v[2]})" if len(v)==3 else f"TN({v[0]},{v[1]},{v[2]},{v[3]})"
 
-    lc_possible_sections = ["lc_baseline", "gp", "planet_parameters", "custom_function","depth_variation","timing_variation",
-                            "phasecurve", "limb_darkening", "contamination"]
-    rv_possible_sections = ["rv_baseline", "rv_gp"]
+    lc_possible_sections = ["lc_baseline", "sinusoid", "gp", "planet_parameters", "custom_LCfunction","depth_variation","timing_variation",
+                            "phasecurve", "limb_darkening", "contamination","sinusoid"]
+    rv_possible_sections = ["rv_baseline", "rv_gp", "custom_RVfunction"]
     fit_possible_sections = ["fit", "stellar_pars"]
     spacing = "" if file is None else "\t"
 
@@ -550,13 +633,31 @@ def _print_output(self, section: str, file=None):
         _print_lc_baseline = """# ============ Input lightcurves, filters baseline function =======================================================""" +\
                             f"""\n{spacing}{"name":{max_name_len}s} {"filt":{max_filt_len}s} {"𝜆_𝜇m":5s}|{"s_samp ":7s} {"clip_outliers":13s} {"scl_col":8s}|{"col0":4s} {"col3":4s} {"col4":4s} {"col5":4s} {"col6":4s} {"col7":4s} {"col8":4s}|{"sin":3s} {"id":2s} {"GP":2s} {"spline_config  ":15s}"""
         #define print out format
-        txtfmt = f"\n{spacing}{{0:{max_name_len}s}} {{1:{max_filt_len}s}}"+" {2:5s}|{3:7s} {4:13s} {5:8s}|{6:4d} {7:4d} {8:4d} {9:4d} {10:4d} {11:4d} {12:4d}|{13:3d} {14:2d} {15:2s} {16:15s}"        
+        txtfmt = f"\n{spacing}{{0:{max_name_len}s}} {{1:{max_filt_len}s}}"+" {2:5s}|{3:7s} {4:13s} {5:8s}|{6:4d} {7:4d} {8:4d} {9:4d} {10:4d} {11:4d} {12:4d}|{13:3s} {14:2d} {15:2s} {16:15s}"        
         for i in range(len(self._names)):
             t = txtfmt.format(self._names[i], self._filters[i], str(self._wl[i]), self._ss[i].config,self._clipped_data.config[i], self._rescaled_data.config[i],
                               *self._bases[i][:-1], self._groups[i], self._useGPphot[i],self._lcspline[i].conf, 
                                 )
             _print_lc_baseline += t
-        print(_print_lc_baseline, file=file)   
+        print(_print_lc_baseline, file=file)
+
+    if section == "sinusoid":
+        DA = self._sine_dict
+        _print_sinusoid = f"""# ============ Sinusoidal signals: Amp*trig(2𝜋/P*(x-x0)) - trig=sin or cos or both added==========================""" +\
+                            f"""\n{spacing}{"name/filt":{max_name_len}s} {"trig":7s}  {"n_harmonics":11s}  {"x":4s}  {"Amp[ppm]":18s}  {"P":18s}  {"x0":18s}"""
+        #define print out format
+        max_namefilt_len = max([len(n) for n in self._names+self._filters]+[9])      #max length of lcname/filtname
+        txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:7s}  {2:11d}  {3:4s}  {4:18s}  {5:18s}  {6:18s}"
+
+        for k,v in DA.items():
+            if v.trig is not None:
+                amp_pri = f"F({v.Amp.user_input})" if isinstance(v.Amp.user_input, (float,int)) else f"N({v.Amp.user_input[0]},{v.Amp.user_input[1]})" if len(v.Amp.user_input)==2 else f"U({v.Amp.user_input[0]},{v.Amp.user_input[1]},{v.Amp.user_input[2]})"
+                P_pri   = "None" if v.P.user_input==None else f"F({v.P.user_input})" if isinstance(v.P.user_input, (float,int)) else f"N({v.P.user_input[0]},{v.P.user_input[1]})" if len(v.P.user_input)==2 else f"U({v.P.user_input[0]},{v.P.user_input[1]},{v.P.user_input[2]})"
+                x0_pri  = "None" if v.x0.user_input==None else f"F({v.x0.user_input})" if isinstance(v.x0.user_input, (float,int)) else f"N({v.x0.user_input[0]},{v.x0.user_input[1]})" if len(v.x0.user_input)==2 else f"U({v.x0.user_input[0]},{v.x0.user_input[1]},{v.x0.user_input[2]})"
+                t = txtfmt.format(v.name, v.trig, v.n, v.par, amp_pri, P_pri, x0_pri)
+                _print_sinusoid += t
+        print(_print_sinusoid, file=file)
+
 
     if section == "gp":
         DA = self._GP_dict
@@ -607,7 +708,7 @@ def _print_output(self, section: str, file=None):
         popt = "[rho_star]/Duration" if "rho_star" in DA[f'pl{1}'].keys() else "rho_star/[Duration]"
         pri_par = f"N({DA[f'pl{1}'][p].prior_mean},{DA[f'pl{1}'][p].prior_width_lo})" if DA[f'pl{1}'][p].prior == "p" else f"LU({DA[f'pl{1}'][p].bounds_lo},{DA[f'pl{1}'][p].start_value},{DA[f'pl{1}'][p].bounds_hi})" if DA[f'pl{1}'][p].bounds_hi else f"F({DA[f'pl{1}'][p].start_value})"
         _print_planet_parameters +=  txtfmt.format( popt, DA[f'pl{1}'][p].to_fit, pri_par, "#choice in []|unit(gcm^-3/days)")
-        _print_planet_parameters +=  f"\n{spacing}------------"
+        _print_planet_parameters +=  f"\n{spacing}--------repeat this line & params below for multisystem, adding planet number to the names e.g RpRs_1 for planet 1, ..."
         #then cycle through parameters for each planet       
         for n in range(1,self._nplanet+1):        
             for i,p in enumerate(self._TR_RV_parnames):
@@ -618,7 +719,7 @@ def _print_output(self, section: str, file=None):
             if n!=self._nplanet: _print_planet_parameters += f"\n{spacing}------------"
         print(_print_planet_parameters, file=file)
 
-    if section == "custom_function":
+    if section == "custom_LCfunction":
         DA = self._custom_LCfunc
         flag = False if DA.func is None else True
         _print_custom_function = f"""#============ Custom LC function (read from custom_LCfunc.py file)================================================"""
@@ -633,14 +734,43 @@ def _print_output(self, section: str, file=None):
                 if isinstance(fa[k],(int,float)):
                     fa_str.append(f'{k}:F({fa[k]})')
                 if isinstance(fa[k],tuple):
-                    fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N'}{str(fa[k]).replace(' ','')}" )
+                    fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
             fa_str  = ",".join(fa_str)
         else: fa_str = 'None'
         _print_custom_function += txtfmt.format("func_pars",fa_str,"#param names&priors e.g. A:U(0,1,2),P:N(2,1)")
-        # _print_custom_function += txtfmt.format("op_func",DA.op_func.__code__.co_name  if not DA.replace_LCmodel else 'None',"#function to combine the transit and custom models")
-        _print_custom_function += txtfmt.format("op_func",'None' if (DA.replace_LCmodel or not flag) else DA.op_func.__code__.co_name ,"#function to combine the transit and custom models")
-        _print_custom_function += txtfmt.format("replace_LCmodel",str(DA.replace_LCmodel) if flag else 'False',"#if the custom function replaces the transit model")
+        exa_str = [f"{k}:{v}" for k,v in DA.extra_args.items()]
+        exa_str = ",".join(exa_str) if exa_str!=[] else 'None'
+        _print_custom_function += txtfmt.format("extra_args",exa_str,"#extra args to func as a dict e.g ld_law:quad")
+        _print_custom_function += txtfmt.format("op_func",'None' if (DA.replace_LCmodel or not flag) else DA.op_func.__code__.co_name ,"#function to combine the LC and custom models")
+        _print_custom_function += txtfmt.format("replace_LCmodel",str(DA.replace_LCmodel) if flag else 'False',"#if the custom function replaces the LC model")
         print(_print_custom_function, file=file)
+
+    if section == "custom_RVfunction":
+        DA = self._custom_RVfunc
+        flag = False if DA.func is None else True
+        _print_custom_function = f"""#============ Custom RV function (read from custom_RVfunc.py file)================================================"""
+        #define print out format
+        txtfmt = f"\n{spacing}{{0:16s}}: {{1:40s}}\t{{2}}"
+        _print_custom_function += txtfmt.format("function", DA.func.__code__.co_name if flag else 'None', "#custom function name to combine with RVmodel")
+        _print_custom_function += txtfmt.format("x",DA.x if flag else 'None',"#independent variable [time, true_anomaly]")
+        if flag:
+            fa      = DA.func_args
+            fa_str  = []
+            for k in fa.keys():
+                if isinstance(fa[k],(int,float)):
+                    fa_str.append(f'{k}:F({fa[k]})')
+                if isinstance(fa[k],tuple):
+                    fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
+            fa_str  = ",".join(fa_str)
+        else: fa_str = 'None'
+        _print_custom_function += txtfmt.format("func_pars",fa_str,"#param names&priors e.g. A:U(0,1,2),P:N(2,1)")
+        exa_str = [f"{k}:{v}" for k,v in DA.extra_args.items()]
+        exa_str = ",".join(exa_str) if exa_str!=[] else 'None'
+        _print_custom_function += txtfmt.format("extra_args",exa_str,"#extra args to func as a dict")
+        _print_custom_function += txtfmt.format("op_func",'None' if (DA.replace_RVmodel or not flag) else DA.op_func.__code__.co_name ,"#function to combine the RV and custom models")
+        _print_custom_function += txtfmt.format("replace_RVmodel",str(DA.replace_RVmodel) if flag else 'False',"#if the custom function replaces the RV model")
+        print(_print_custom_function, file=file)
+
 
     if section == "depth_variation":
         grnames    = np.array(list(sorted(set(self._groups))))
@@ -650,7 +780,8 @@ def _print_output(self, section: str, file=None):
 
         #define print out format
         txtfmt = f"\n{spacing}"+"{0:8s}\t{1:16s}\t{2:3s}"        
-        pri_ddf = f"N({self._ddfs.drprs_op[4]},{self._ddfs.drprs_op[5]})" if self._ddfs.drprs_op[5] else f"U({self._ddfs.drprs_op[2]},{self._ddfs.drprs_op[0]},{self._ddfs.drprs_op[3]})"
+        # pri_ddf = f"N({self._ddfs.drprs.prior_mean},{self._ddfs.drprs.prior_width_lo})" if self._ddfs.drprs.prior=="p" else f"U({self._ddfs.drprs.bounds_lo},{self._ddfs.drprs.start_value},{self._ddfs.drprs.bounds_hi})"
+        pri_ddf = prior_str(self._ddfs.drprs.user_input)
         t = txtfmt.format(self._ddfs.ddfYN, pri_ddf, self._ddfs.divwhite)
         _print_depth_variation += t
 
@@ -658,30 +789,31 @@ def _print_output(self, section: str, file=None):
 
     if section == "timing_variation":
         _print_timing_variation = f"""# ============ TTV setup ========================================================================================"""+\
-                                    f"""\n{spacing}{"Fit_TTVs":8s}\t{"dt_priors(deviation from linear T0)":35s}\t{"transit_baseline[P]":20s}"""
+                                    f"""\n{spacing}{"Fit_TTVs":8s}\t{"dt_priors(deviation from linear T0)":35s}\t\t{"transit_baseline[P]":19s}\t\tper_LC_T0"""
         #define print out format
-        txtfmt = f"\n{spacing}"+"{0:8s}\t{1:35s}\t{2:.4f}"
+        txtfmt = f"\n{spacing}"+"{0:8s}\t{1:35s}\t\t{2:19.4f}\t\t{3}"
         pri_ttv = f"N{self._ttvs.dt}" if len(self._ttvs.dt)==2 else f"U{self._ttvs.dt}"
-        t = txtfmt.format(self._ttvs.to_fit, pri_ttv.replace(" ",""),self._ttvs.baseline)
+        t = txtfmt.format(self._ttvs.to_fit, pri_ttv.replace(" ",""),self._ttvs.baseline, self._ttvs.per_LC_T0)
         _print_timing_variation += t
         print(_print_timing_variation, file=file)
 
     if section == "phasecurve":
-        pars  = ["D_occ", "A_atm", "ph_off","A_ev","A_db"]
+        pars  = ["D_occ", "Fn", "ph_off","A_ev","A_db"]
         # descr = ["occultation depth", "atmospheric amplitude", "phase offset in degrees","ellipsoidal variation"]
         _print_phasecurve = f"""# ============ Phase curve setup ================================================================================ """+\
-                                f"""\n{spacing}{'filt':{max_filt_len}s}  {'D_occ[ppm]':20s} {'A_atm[ppm]':20s} {'ph_off[deg]':20s} {'A_ev[ppm]':20s} {'A_db[ppm]':20s}"""
+                                f"""\n{spacing}{'filt':{max_filt_len}s}  {'D_occ[ppm]':20s} {'Fn[ppm]':20s} {'ph_off[deg]':20s} {'A_ev[ppm]':20s} {'A_db[ppm]':20s}"""
         #define print out format
         txtfmt = f"\n{spacing}{{0:{max_filt_len}s}}"+"  {1:20s} {2:20s} {3:20s} {4:20s} {5:20s}"       
         
         DA = self._PC_dict
         for i,f in enumerate(self._filnames):
-            pri_Docc = f"N({DA['D_occ'][f].prior_mean},{DA['D_occ'][f].prior_width_lo})" if DA['D_occ'][f].prior == "p" else f"U({DA['D_occ'][f].bounds_lo},{DA['D_occ'][f].start_value},{DA['D_occ'][f].bounds_hi})" if DA['D_occ'][f].bounds_hi else f"F({DA['D_occ'][f].start_value})"
-            pri_Aatm = f"N({DA['A_atm'][f].prior_mean},{DA['A_atm'][f].prior_width_lo})" if DA['A_atm'][f].prior == "p" else f"U({DA['A_atm'][f].bounds_lo},{DA['A_atm'][f].start_value},{DA['A_atm'][f].bounds_hi})" if DA['A_atm'][f].bounds_hi else f"F({DA['A_atm'][f].start_value})"
-            pri_phoff = f"N({DA['ph_off'][f].prior_mean},{DA['ph_off'][f].prior_width_lo})" if DA['ph_off'][f].prior == "p" else f"U({DA['ph_off'][f].bounds_lo},{DA['ph_off'][f].start_value},{DA['ph_off'][f].bounds_hi})" if DA['ph_off'][f].bounds_hi else f"F({DA['ph_off'][f].start_value})"
-            pri_Aev = f"N({DA['A_ev'][f].prior_mean},{DA['A_ev'][f].prior_width_lo})" if DA['A_ev'][f].prior == "p" else f"U({DA['A_ev'][f].bounds_lo},{DA['A_ev'][f].start_value},{DA['A_ev'][f].bounds_hi})" if DA['A_ev'][f].bounds_hi else f"F({DA['A_ev'][f].start_value})"
-            pri_Adb = f"N({DA['A_db'][f].prior_mean},{DA['A_db'][f].prior_width_lo})" if DA['A_db'][f].prior == "p" else f"U({DA['A_db'][f].bounds_lo},{DA['A_db'][f].start_value},{DA['A_db'][f].bounds_hi})" if DA['A_db'][f].bounds_hi else f"F({DA['A_db'][f].start_value})"
-            t = txtfmt.format(f, pri_Docc, pri_Aatm, pri_phoff, pri_Aev, pri_Adb)
+            pri_Docc  = prior_str(DA['D_occ'][f].user_input)
+            pri_Fn    = prior_str(DA['Fn'][f].user_input)
+            pri_phoff = prior_str(DA['ph_off'][f].user_input)
+            pri_Aev   = prior_str(DA['A_ev'][f].user_input)
+            pri_Adb   = prior_str(DA['A_db'][f].user_input)
+            
+            t = txtfmt.format(f, pri_Docc, pri_Fn, pri_phoff, pri_Aev, pri_Adb)
             _print_phasecurve += t
         print(_print_phasecurve, file=file)
 
@@ -705,9 +837,9 @@ def _print_output(self, section: str, file=None):
         _print_contamination = f"""# ============ contamination setup (give contamination as flux ratio) ======================================== """+\
                                 f"""\n{spacing}{'filters':7s}\tcontam_factor"""
         #define print out format
-        txtfmt = f"\n{spacing}"+"{0:7s}\t{1}"       
-        for i in range(len(self._filnames)):
-            t = txtfmt.format(self._filnames[i],f'F({DA["cont_ratio"][i][0]})')
+        txtfmt = f"\n{spacing}{{0:{max_filt_len}s}}"+"\t{1:20s}"       
+        for i,f in enumerate(self._filnames):
+            t = txtfmt.format(f,prior_str(DA[f].user_input))
             _print_contamination += t
         print(_print_contamination, file=file)
 
@@ -742,7 +874,8 @@ def _print_output(self, section: str, file=None):
             DA = self._rvdict
             txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:6s} {2:7s} |{3:4d} {4:4d} {5:4d} {6:4d}| {7:3d} {8:2s} {9:15s} | {10:14s}"         
             for i in range(self._nRV):
-                gam_pri_ = f'N({DA["gammas"][i]},{DA["sig_lo"][i]})' if DA["sig_lo"][i] else f'U({DA["bound_lo"][i]},{DA["gammas"][i]},{DA["bound_hi"][i]})' if DA["bound_hi"][i] else f"F({DA['gammas'][i]})"
+                # gam_pri_ = f'N({DA["gammas"][i]},{DA["sig_lo"][i]})' if DA["sig_lo"][i] else f'U({DA["bound_lo"][i]},{DA["gammas"][i]},{DA["bound_hi"][i]})' if DA["bound_hi"][i] else f"F({DA['gammas'][i]})"
+                gam_pri_ = prior_str(DA["gamma"][i].user_input)
                 t = txtfmt.format(self._names[i],self._RVunit,self._rescaled_data.config[i], *self._RVbases[i],
                                     self._useGPrv[i],self._rvspline[i].conf,gam_pri_)
                 _print_rv_baseline += t
@@ -787,8 +920,10 @@ def _print_output(self, section: str, file=None):
 class _param_obj():
     def __init__(self,to_fit,start_value,step_size,
                     prior, prior_mean, prior_width_lo, prior_width_hi,
-                    bounds_lo, bounds_hi,user_data=None):
+                    bounds_lo, bounds_hi,user_input=None,user_data=None):
         """  
+        convenience class to create a parameter object with the following attributes:
+
         Parameters:
         -----------
         to_fit : str;
@@ -811,6 +946,8 @@ class _param_obj():
             upper bound for the parameter.
         user_data : any;
             any data to be stored in the parameter object.
+        user_info: tuple, int, float:
+            stores prior input given by the user
 
         Returns:
         --------
@@ -827,8 +964,72 @@ class _param_obj():
         self.prior_width_hi = prior_width_hi
         self.bounds_lo      = bounds_lo
         self.bounds_hi      = bounds_hi
+        self.user_input     = user_input
         self.user_data      = user_data
+
+    @classmethod
+    def from_tuple(cls, param_in, step=None,lo=None, hi=None, user_input=None,func_call=""):
+        """
+        alternative method to initialize _param_obj using from a tuple.
+        * if int/float is given returns: (to_fit="n",start_value=param_in,step_size=0,prior="n",prior_mean=param_in,prior_width_lo=0,prior_width_hi=0,bounds_lo=0,bounds_hi=0,user_input=None)
+        * if tuple of len 2 it returns:  (to_fit="y",start_value=param_in[0],step_size=0.1*param_in[1],prior="p",prior_mean=param_in[0],prior_width_lo=param_in[1],prior_width_hi=param_in[1],bounds_lo=param_in[0]-10*param_in[1],bounds_hi=param_in[0]+10*param_in[1],user_input=None)
+        * if tuple of len 3 it returns:  (to_fit="y",start_value=param_in[0],step_size=0.001*np.ptp(param_in),prior="n",prior_mean=param_in[0],prior_width_lo=0,prior_width_hi=0,bounds_lo=param_in[0],bounds_hi=param_in[2],user_input=None)
+        * if tuple of len 4 it returns:  (to_fit="y",start_value=param_in[2],step_size=0.1*param_in[3],prior="p",prior_mean=param_in[2],prior_width_lo=param_in[3],prior_width_hi=param_in[3],bounds_lo=param_in[0],bounds_hi=param_in[1],user_input=None)
+
+        Parameters:
+        -----------
+        param_in : int, float,tuple,None;
+            input float/tuple with the parameters for the object.
+        step : float,None;
+            step size for the parameter to override the default value derived from param
+        lo : float,None;
+            lower bound for the parameter to override the default value derived from param_in
+        hi : float;
+            upper bound for the parameter to override the default value derived from param_in
+        user_input; tuple, int, float:
+            stores prior input given by the user
+        func_call : str;
+            name of the function calling this method, to be used in error messages.
+    
+        Returns:
+        --------
+        param_obj : object;
+            object with the parameters.
+
+        Example:
+        --------
+        >>> RpRs = (0.1,0.002)
+        >>> param_obj = _param_obj.from_tuple(RpRs,func_call="planet_parameters():") 
+        """
+        assert isinstance(func_call,str),f"_param_obj.from_tuple() func_call must be a string but {func_call} given."
         
+        v = param_in
+        if isinstance(v, (int, float)): #fixed parameter
+            params = ["n",v,0,"n",v,0,0,0,0,user_input]
+        elif isinstance(v, tuple):
+            if len(v)==2:  #normal prior
+                step   = 0.1*v[1] if step==None else step
+                lo_lim = v[0]-10*v[1] if lo==None else lo
+                hi_lim = v[0]+10*v[1] if hi==None else hi
+                params = ["y",v[0],step,"p",v[0],v[1],v[1],lo_lim,hi_lim,user_input]
+            elif len(v)==3: #uniform prior
+                assert v[0]<=v[1]<=v[2],f"{func_call} wrongly defined uniform prior. must be of form (min,start,max) with min<=start<=max but {v} given."
+                step = min(0.001,0.001*np.ptp(v)) if step==None else step
+                lo_lim = v[0] if lo==None else lo
+                hi_lim = v[2] if hi==None else hi
+                params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,user_input]
+            elif len(v)==4: #truncated normal prior
+                assert v[0]<v[1],f"{func_call} wrongly defined trucated normal prior. must be of form (min,max,mean,std) with min<max but {v} given. "
+                step = 0.1*v[3] if step==None else step
+                params = ["y",v[2],step,"p",v[2],v[3],v[3],v[0],v[1],user_input]
+            else:
+                raise TypeError(f"{func_call} tuple must have 2,3 or 4 elements")
+        elif v==None:
+            params = ["n",None,0,"n",None,0,0,0,0,user_input]
+        else:
+            raise TypeError(f"{func_call} input must be an int, float, tuple or None")
+        return cls(*params)
+
     def _set(self, par_list):
         return self.__init__(*par_list)
     
@@ -876,20 +1077,21 @@ class load_lightcurves:
         
         Parameters:
         -----------
-        data_filepath : str;
-            Filepath where lightcurves files are located. Default is None which implies the data is in the current working directory.
-            
         file_list : list;
             List of filenames for the lightcurves. Files must have 9 columns: time,flux,err,xc,xc,xc,xc,xc,xc. 
             where xc are columns that can be used in decorrelating the flux. Arrays of zeroes are put in xc if file contains less than 9 columns.
-            
+        data_filepath : str;
+            Filepath where lightcurves files are located. Default is None which implies the data is in the current working directory.
         filter : list, str, None;
             filter for each lightcurve in file_list. if a str is given, it is used for all lightcurves,
             if None, the default of "V" is used for all.
-            
         wl : list, int, float, None;
-            central wavelength in microns for each lightcurve in file_list. if a int or float is given, it is used for all lightcurves,
+            central wavelength in microns for each lightcurve in file_list. if int or float is given, it is used for all lightcurves,
             if None, the default of 0.6 is used for all.
+        nplanet : int;
+            number of planets in the system. Default is 1.
+        verbose : bool;
+            if True, prints out information about the lightcurves. Default is True.
         
         Returns:
         --------
@@ -904,12 +1106,12 @@ class load_lightcurves:
                     verbose=True, show_guide=False,lamdas=None):
         self._obj_type = "lc_obj"
         self._nplanet  = nplanet
-        self._fpath = os.getcwd()+'/' if data_filepath is None else data_filepath
-        self._names = [file_list] if isinstance(file_list, str) else [] if file_list is None else file_list
+        self._fpath    = os.getcwd()+'/' if data_filepath is None else data_filepath
+        self._names    = [file_list] if isinstance(file_list, str) else [] if file_list is None else file_list
         for lc in self._names: assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
         
         if lamdas is not None:
-            warn("The 'lamdas' parameter is deprecated, use 'wl' instead.", DeprecationWarning)
+            warnings.warn("The 'lamdas' parameter  in `load_lightcurves()` is deprecated and will be discontinued in future versions. Use 'wl' instead.", DeprecationWarning)
             if wl is None: wl = lamdas
         
         assert filters is None or isinstance(filters, (list, str)), f"filters is of type {type(filters)}, it should be a list, a string or None."
@@ -920,14 +1122,14 @@ class load_lightcurves:
 
         self._nphot = len(self._names)
         if filters is not None and len(filters) == 1: filters = filters*self._nphot
-        if wl is  not None and len(wl)  == 1: wl  = wl *self._nphot
+        if wl is not None and len(wl)==1: wl  = wl *self._nphot
 
         self._filters = ["V"]*self._nphot if filters is None else [f for f in filters]
-        self._wl  = [0.6]*self._nphot if wl is None else [l for l in wl]
+        self._wl      = [0.6]*self._nphot if wl is None else [l for l in wl]
         self._filter_shortcuts = filter_shortcuts
         
         assert self._nphot == len(self._filters) == len(self._wl), f"filters and wl must be a list with same length as file_list (={self._nphot})"
-        self._filnames   = np.array(list(sorted(set(self._filters),key=self._filters.index)))
+        self._filnames  = np.array(list(sorted(set(self._filters),key=self._filters.index))) #unique filters
 
         #modify input files to have 9 columns as CONAN expects then save as attribute of self
         self._input_lc = {}     #dictionary to hold input lightcurves
@@ -936,10 +1138,10 @@ class load_lightcurves:
             fdata = np.loadtxt(self._fpath+f)
             nrow,ncol = fdata.shape
             if ncol < 9:
-                print(f"writing ones to the missing columns of file: {f}")
+                # if verbose: print(f"writing ones to the missing columns of file: {f}")
                 new_cols = np.ones((nrow,9-ncol))
                 fdata = np.hstack((fdata,new_cols))
-                # np.savetxt(self._fpath+f,fdata,fmt='%.8f')   # no need to replace the file since its stored in lc_obj
+
             #remove nan rows from fdata and print number of removed rows
             n_nan = np.sum(np.isnan(fdata).any(axis=1))
             if n_nan > 0: print(f"removed {n_nan} row(s) with NaN values from file: {f}")            
@@ -957,7 +1159,7 @@ class load_lightcurves:
                                     A6=0, B6=0,A7=0, B7=0, A8=0, B8=0, amp=0,freq=0,phi=0,ACNM=1,BCNM=0) 
                                 for _ in range(self._nphot)]
 
-        self._show_guide = show_guide
+        self._show_guide    = show_guide
         self._masked_points = False
         self._clipped_data  = SimpleNamespace(flag=False, lc_list=self._names, config=["None"]*self._nphot)
         self._rescaled_data = SimpleNamespace(flag=False, config=["None"]*self._nphot)
@@ -967,7 +1169,7 @@ class load_lightcurves:
         if self._show_guide: print("\nNext: use method `lc_baseline` to define baseline model for each lc or method " + \
             "`get_decorr` to obtain best best baseline model parameters according bayes factor comparison")
 
-    def rescale_data_columns(self,method="med_sub", verbose=True):
+    def rescale_data_columns(self, method="med_sub", verbose=True):
 
         """
             Function to rescale the data columns of the lightcurves. This can be important when decorrelating the data with polynomials.
@@ -987,6 +1189,9 @@ class load_lightcurves:
             assert len(method)==1 or len(method)==self._nphot, f'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})'
         else: _raise(TypeError,'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})')
 
+        if method == ["None"]*self._nphot:
+            self._rescaled_data.flag = False
+            return None
 
         for j,lc in enumerate(self._names):
             assert method[j] in ["med_sub", "rs0to1", "rs-1to1","None"], f"method must be one of ['med_sub','rs0to1','rs-1to1','None'] but {method[j]} given"
@@ -1005,77 +1210,57 @@ class load_lightcurves:
         self._rescaled_data = SimpleNamespace(flag=True, config=method)
 
     def get_decorr(self, T_0=None, Period=None, rho_star=None, Duration=None, D_occ=0, Impact_para=0, RpRs=1e-5,
-                    Eccentricity=0, omega=90, A_atm=0, ph_off=0, A_ev=0, A_db=0, K=0, q1=0, q2=0, 
-                    mask=False, spline=None,ss_exp =None,Rstar=None,delta_BIC=-5, decorr_bound =(-10,10),
+                    Eccentricity=0, omega=90, Fn=None, ph_off=None, A_ev=0, A_db=0, K=0, q1=0, q2=0, 
+                    mask=False, ss_exp=None,Rstar=None,delta_BIC=-5, decorr_bound =(-10,10),
                     exclude_cols=[], enforce_pars=[],show_steps=False, plot_model=True, use_jitter_est=False,
                     setup_baseline=True, setup_planet=False, custom_LCfunc=None, verbose=True):
         """
             Function to obtain best decorrelation parameters for each light-curve file using the forward selection method.
             It compares a model with only an offset to a polynomial model constructed with the other columns of the data.
             It uses columns 0,3,4,5,6,7,8 to construct the polynomial trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order coefficients in column i.
-            A spline can also be included to decorrelate against any column.
+            if a spline, sinusoid or gp has been setup for the LC object, it is varied also during the decorrelation process.
             
             Decorrelation parameters that reduce the BIC by 5(i.e delta_BIC = -5) are iteratively selected. This implies bayes_factor=exp(-0.5*-5) = 12 or more is required for a parameter to be selected.
             The result can then be used to populate the `lc_baseline` method, if use_result is set to True. The transit, limb darkening and phase curve parameters can also be setup from the inputs to this function.
 
             Parameters:
             -----------
-            T_0, Period, rho_star/Duration, D_occ, Impact_para, RpRs, Eccentricity, omega, A_atm, ph_off,A_ev, A_db: floats,tuple, None;
+            T_0, Period, rho_star/Duration, D_occ, Impact_para, RpRs, Eccentricity, omega, Fn, ph_off,A_ev, A_db: floats,tuple, None;
                 transit/eclipse parameters of the planet. T_0 and Period must be in same units as the time axis (col0) in the data file.
-                D_occ, A_atm, A_ev and A_db are in ppm
+                D_occ, Fn, A_ev and A_db are in ppm
                 if float/int, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
-                
             q1,q2 : float,tuple, list  (optional);
                 Kipping quadratic limb darkening parameters. if float, the values are held fixed. if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
                 Give list of values to assign value to each unique filter in the data, or one value to be used for all filtets. Default is 0 for all filters.
-    
             delta_BIC : float (negative);
                 BIC improvement a parameter needs to provide in order to be considered relevant for decorrelation. + \
                     Default is conservative and set to -5 i.e, parameters needs to lower the BIC by 5 to be included as decorrelation parameter.
-
             mask : bool ;
                 If True, transits and eclipses are masked using T_0, P and rho_star (duration).
-        
             decorr_bound: tuple of size 2;
                 bounds when fitting decorrelation parameters. Default is (-1,1)
-
-            spline : list of dict;
-                spline configuration to use in decorrelation an axis of the data. Default is None which implies no spline is used.
-                the config is given as a dict with keys "col", "knot_spacing", "degree" specifying the column, the knot spacing and the degree of the spline.
-                e.g. spline = {"col":0, "knot_spacing":0.1, "degree":3} will fit a spline to the flux as a function ofcolumn 0 with knot spacing of 0.1 and degree 3.
-
             ss_exp : list, None;
                 exposure time of the lcs to configure supersampline. Default is None which implies no supersampling.
-            
             Rstar : float, None;
                 Stellar radius in solar radii, required for performing light travel time correction. Default is None
-
             exclude_cols : list of int;
-                list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is [].
-
+                list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is []. Can also specify "all" to only fit an offset
             enforce_pars : list of int;
                 list of decorr params (e.g. ['B3', 'A5']) to enforce in decorrelation. Default is [].
-
             show_steps : Bool, optional;
                 Whether to show the steps of the forward selection of decorr parameters. Default is False
-            
             plot_model : Bool, optional;
                 Whether to overplot suggested trend model on the data. Defaults to True.
-
             use_jitter_est : Bool, optional;
                 Whether to use the estimated jitter from the data in the decorrelation model. Defaults to False.
-
             setup_baseline : Bool, optional;
                 whether to use result to setup the baseline model and transit/eclipse models. Default is True.
-
             setup_planet : Bool, optional;
                 whether to use input to setup the transit model(planet_parameters/phasecurve/LD functions). Default is False.
-
             custom_LCfunc : object, optional;
                 namespace object created from `lc_obj.add_custom_LC_function()`. 
                 It contains a custom function with a parameter dictionary and an operation function defining how to combine the output with the LC model.
                 It can also specify if the custom function replaces the native CONAN LC model.
-
             verbose : Bool, optional;
                 Whether to show the table of baseline model obtained. Defaults to True.
         
@@ -1084,8 +1269,11 @@ class load_lightcurves:
             decorr_result: list of result object
                 list containing result object for each lc.
         """
-        assert isinstance(exclude_cols, list), f"get_decorr(): exclude_cols must be a list of column numbers to exclude from decorrelation but {exclude_cols} given."
-        for c in exclude_cols: assert isinstance(c, int), f"get_decorr(): column number to exclude from decorrelation must be an integer but {c} given in exclude_cols."
+        if exclude_cols=="all": exclude_cols = [0,3,4,5,6,7,8]
+        elif isinstance(exclude_cols, list):
+            for c in exclude_cols: assert isinstance(c, int), f"get_decorr(): column number to exclude from decorrelation must be an integer but {c} given in exclude_cols."
+        else: _raise(TypeError, "get_decorr(): exclude_cols must be a list of column numbers to exclude from decorrelation or 'all' to only fit an offset.")
+
         if custom_LCfunc is not None: assert callable(custom_LCfunc.func), "get_decorr(): custom_LCfunc must be a callable function"
         
         nfilt = len(self._filnames)
@@ -1101,7 +1289,7 @@ class load_lightcurves:
         
         if self._nplanet > 1:
             assert rho_star is not None, f"get_decorr(): rho_star must be given for multiplanet system but {rho_star} given."
-            assert  Duration==None, "get_decorr(): Duration must be None for multiplanet systems, since transit model uses rho_star."
+            assert  Duration==None, f"get_decorr(): Duration must be None for multiplanet systems, since transit model uses rho_star but {Duration=} given."
         else:
             #check that rho_star and Duration are not both given
             if rho_star is not None: assert Duration is None, "get_decorr(): Duration must be None if rho_star is given."
@@ -1109,19 +1297,19 @@ class load_lightcurves:
 
         input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
         self._tra_occ_pars = dict(T_0=T_0, Period=Period, D_occ=D_occ, Impact_para=Impact_para, RpRs=RpRs, Eccentricity=Eccentricity,\
-                                    omega=omega, A_atm=A_atm, ph_off=ph_off,A_ev=A_ev,A_db=A_db) #transit/occultation parameters
+                                    omega=omega, Fn=Fn, ph_off=ph_off,A_ev=A_ev,A_db=A_db) #transit/occultation parameters
         # add rho_star/Duration to input_pars and self._tra_occ_pars if given
         if rho_star is not None: input_pars["rho_star"] = rho_star; self._tra_occ_pars["rho_star"] = rho_star
         if Duration is not None: input_pars["Duration"] = Duration; self._tra_occ_pars["Duration"] = Duration
 
         
         for p in self._tra_occ_pars:
-            if p not in ["rho_star","Duration","A_atm","ph_off","D_occ","A_ev","A_db"]:
+            if p not in ["rho_star","Duration","Fn","ph_off","D_occ","A_ev","A_db"]:
                 if isinstance(self._tra_occ_pars[p], (int,float,tuple)): self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
                 if isinstance(self._tra_occ_pars[p], (list)): assert len(self._tra_occ_pars[p]) == self._nplanet, \
                     f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
             else:
-                assert isinstance(self._tra_occ_pars[p],(int,float,tuple)),f"get_decorr(): {p} must be one of int/float/tuple but {self._tra_occ_pars[p]} given "
+                assert isinstance(self._tra_occ_pars[p],(int,float,tuple,type(None))),f"get_decorr(): {p} must be one of int/float/tuple/None but {self._tra_occ_pars[p]} given "
 
         ld_q1, ld_q2 = {},{}
         for i,fil in enumerate(self._filnames):
@@ -1130,104 +1318,167 @@ class load_lightcurves:
         
         assert delta_BIC<0,f'get_decorr(): delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
         
-        #check spline input
-        if spline is None:   #if spline is None, check if it is already defined in lc_obj
-            if [self._lcspline[i].conf for i in range(self._nphot)] == ["None"]*self._nphot: #if no input spline in lc_obj, set to None
-                spline = [None]*self._nphot
-            else:
-                spline = [self._lcspline[i].conf for i in range(self._nphot)]
-                for i,sp in enumerate(spline):
-                    if sp != "None":
-                        if "|" not in sp:   #1D spline
-                            ks = sp.split("k")[-1]
-                            spline[i]= dict(col= int(sp.split("d")[0][1]) , 
-                                            knot_spacing=float(ks) if  ks!='r' else ks, 
-                                            degree = int(sp.split("k")[0].split("d")[-1])) 
-                        else:  #2D spline
-                            sp = sp.split("|")
-                            ks = [sp[0].split("k")[-1], sp[1].split("k")[-1] ]
-                            spline[i]= dict(col= (int(sp[0].split("d")[0][1]),int(sp[1].split("d")[0][1])), 
-                                            knot_spacing=(float(ks[0]) if ks[0]!='r' else ks[0], float(ks[1]) if ks[1]!='r' else ks[1]), 
-                                            degree = (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
-                    else:
-                        spline[i] = None
-        elif isinstance(spline, dict): spline = [spline]*self._nphot
-        elif isinstance(spline, list): 
-            if len(spline) == 1: spline = spline*self._nphot
-            assert len(spline) == self._nphot,f"get_decorr(): list given for spline must have same length as number of input lcs but {len(spline)} given."
-        else: _raise(TypeError, f"get_decorr(): `spline` must be dict or list of dict with same length as number of input files but {type(spline)} given.")
+        #check spline setup
+        if [self._lcspline[i].conf for i in range(self._nphot)] == ["None"]*self._nphot: #if no input spline in lc_obj, set to None
+            spline = [None]*self._nphot
+        else:
+            spline = [self._lcspline[i].conf for i in range(self._nphot)]
+            for i,sp in enumerate(spline):
+                if sp != "None":
+                    if "|" not in sp:   #1D spline
+                        ks = sp.split("k")[-1]
+                        spline[i]= dict(col          = int(sp.split("d")[0][1]) , 
+                                        knot_spacing = float(ks) if  ks!='r' else ks, 
+                                        degree       = int(sp.split("k")[0].split("d")[-1])) 
+                    else:  #2D spline
+                        sp = sp.split("|")
+                        ks = [sp[0].split("k")[-1], sp[1].split("k")[-1] ]
+                        spline[i]= dict(col          = (int(sp[0].split("d")[0][1]),int(sp[1].split("d")[0][1])), 
+                                        knot_spacing = (float(ks[0]) if ks[0]!='r' else ks[0], float(ks[1]) if ks[1]!='r' else ks[1]), 
+                                        degree       = (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
+                else:
+                    spline[i] = None
 
-        for sp in spline:
-            if isinstance(sp, dict): 
-                assert "col" in sp.keys(), f"get_decorr(): spline dict must have key 'col' "
-                assert "knot_spacing" in sp.keys(), f"get_decorr(): spline dict must have key 'knot_spacing' "
-                assert "degree" in sp.keys(), f"get_decorr(): spline dict must have key 'degree' "
-            elif sp is None: pass
-            else: _raise(TypeError, f"get_decorr(): all elements in spline list must be dict or None but {sp} given")
+        #check sinusoid model
+        if any([v.trig!= None for v in self._sine_dict.values()]):    #if any sinusoid model is defined
+            sine_dict = deepcopy(self._sine_dict)
+            fit_type   = [v.fit for v in sine_dict.values()][0]
+            if fit_type=="same": 
+                temp = {k:sine_dict["same"] for k in self._names}
+            if fit_type=="filt": 
+                temp = {k:sine_dict[f] for k,f in zip(self._names,self._filters)}
+            if fit_type in ["slct","all"]:
+                temp = {k:sine_dict[k] for k in self._names }
 
+            sinusoid = {k:(v if v.trig else None) for k,v in temp.items() }
+            
+            # get sinus parameters for each each lc
+            for k in self._names:
+                sinus = sinusoid[k]
+                if sinus!=None:
+                    sinus.params = {}
+                    trig_funcs = ["sin","cos"] if sinus.trig=="sincos" else [sinus.trig]
+                    for p in ["Amp","P","x0"]:
+                        for trig in trig_funcs:
+                            for n in range(1,sinus.n+1):
+                                pnm = f"{trig}{f'{n}' if n>1 else ''}_{p}"   #sinus parameter name
+                                sinus.params[pnm] = sinus.__dict__[p].user_input  #update with user-defined priors
+                                if p!="Amp": break
+                            if p!="Amp": break
+        else:
+            sinusoid = {k:None for k in self._names}
+        
+        #check gp
+        if self._GP_dict != {}:
+            celerite_kernel = dict(mat32=celerite.terms.Matern32Term, sho=celerite.terms.SHOTerm,real=celerite.terms.RealTerm)
+            GP = deepcopy(self._GP_dict)
+            for k in self._names:
+                if k not in GP.keys(): GP[k] = None
+            
+            for k in self._names:
+                if GP[k]!=None:
+                    geepee = GP[k] = SimpleNamespace(**GP[k])
+                    geepee.params  = {  "log_GP_amp1":tuple(np.log(geepee.amplitude0.user_input)),    #difficult to set loguniform priors for a least-square fit, so we fit the log of the amplitude and lengthscale 
+                                        "log_GP_len1":tuple(np.log(geepee.lengthscale0.user_input))}
+                    geepee.kern    = [geepee.amplitude0.user_data[0]]
+                    geepee.column  = [geepee.amplitude0.user_data[1]]
+                    del geepee.amplitude0, geepee.lengthscale0            #remove extracted attributes
+                    if geepee.ngp==2:   # if 2nd GP kernel is defined
+                        geepee.params["log_GP_amp2"]=np.log(geepee.amplitude1.user_input)
+                        geepee.params["log_GP_len2"]=np.log(geepee.lengthscale1.user_input)
+                        geepee.kern.append(geepee.amplitude1.user_data[0])
+                        geepee.column.append(geepee.amplitude1.user_data[1])
+                        del geepee.amplitude1, geepee.lengthscale1        # remove extracted attributes
+                
+                    #instantiate kernels with dummy parameters
+                    kernels = []
+                    gp_conv = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
+                    for i in range(geepee.ngp):
+                        gpkern = geepee.kern[i]
+                        if gpkern=='sho':
+                            kernels.append(celerite_kernel[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1)) #dummy initialization
+                            kernels[i].freeze_parameter("log_Q")
+                        else:
+                            kernels.append(celerite_kernel[gpkern](-10, 1)) #dummy initialization
+
+                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="lc", pars=[10,0.1])
+                        kernels[i].set_parameter_vector([gppar1, gppar2])
+                    
+                    if geepee.ngp==1:
+                        kernel = kernels[0]
+                    else: 
+                        kernel = kernels[0]+kernels[1] if geepee.op=="+" else kernels[0]*kernels[1]
+
+                    geepee.GPobj = celerite.GP(kernel, mean=0, fit_mean = False)
+
+        else:
+            GP = {k:None for k in self._names}
+            
         #check supersampling input. If no input check if already defined in .supersample() method
-        if ss_exp is None: 
-            if [self._ss[i].config for i in range(self._nphot)] == ["None"]*self._nphot: 
-                ss_exp = [None]*self._nphot
-            else: 
-                ss_exp = [self._ss[i].config for i in range(self._nphot)]
-                ss_exp = [(float(exp[1:]) if exp!="None" else None) for exp in ss_exp]
-        elif isinstance(ss_exp, (int,float)): ss_exp = [ss_exp]*self._nphot
-        elif isinstance(ss_exp, list): 
-            if len(ss_exp) == 1: ss_exp= ss_exp*self._nphot
-            assert len(ss_exp) == self._nphot,f"get_decorr(): list given for spline must have same length as number of input lcs but {len(spline)} given."
-        else: _raise(TypeError, f"get_decorr(): `spline` must be dict or list of dict with same length as number of input files but {type(spline)} given.")
+        if [self._ss[i].config for i in range(self._nphot)] == ["None"]*self._nphot: 
+            ss_exp = [None]*self._nphot
+        else: 
+            ss_exp = [self._ss[i].config for i in range(self._nphot)]
+            ss_exp = [(float(exp[1:]) if exp!="None" else None) for exp in ss_exp]
 
-
-        self._tmodel = []  #list to hold determined trendmodel for each lc
-        decorr_cols = [0,3,4,5,6,7,8]
+        ### begin computation
+        self._tmodel = []              #list to hold determined trendmodel for each lc
+        decorr_cols = [0,3,4,5,6,7,8]  #decorrelation columns
         for c in exclude_cols: assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude_cols." 
         _ = [decorr_cols.remove(c) for c in exclude_cols]  #remove excluded columns from decorr_cols
 
         for j,file in enumerate(self._names):
             df = self._input_lc[file]
-            if verbose: print(_text_format.BOLD + f"\ngetting decorrelation parameters for lc: {file} (spline={spline[j] is not None}, s_samp={ss_exp[j] is not None}, jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.2f}ppm)" + _text_format.END)
-            all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
-
-            out = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]], mask=mask,
-                            offset=0, decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], 
+            if verbose: 
+                print(_text_format.BOLD + f"\ngetting decorr params for lc: {file} (spline={spline[j]!=None}, sine={sinusoid[file]!=None}, gp={GP[file]!=None}, s_samp={ss_exp[j]!=None}, jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.1f}ppm)" + _text_format.END)
+            
+            all_par  = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]]     #A0,B0,A3,B3,...
+            sin_pars = sinusoid[file].params if sinusoid[file]!=None else {}   #sin(C5)_Amp, sin(C5)_P,...
+            gp_pars  = GP[file].params if GP[file]!=None else {}               #log_GP_Amp, log_GP_len,...
+    
+            #perform first fit of all jump parameters(astro,gp,sine,spline) with offset as only decorr par
+            out = _decorr(df, **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]], mask=mask,
+                            offset=0 if spline[j]==None else None, decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                             jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
-                            custom_LCfunc=custom_LCfunc, npl=self._nplanet)    #no trend, only offset
-            best_bic  = out.bic
-            best_pars = {"offset":0} if spline[j] is None else {}          #parameter always included
-            for cp in enforce_pars: best_pars[cp]=0                             #add enforced parameters
-            _ = [all_par.remove(cp) for cp in enforce_pars if cp in all_par]    #remove enforced parameters from all_par to test
+                            custom_LCfunc=custom_LCfunc, npl=self._nplanet)    #no trend, only offset if no spline
+            if set(exclude_cols) == set([0,3,4,5,6,7,8]):
+                best_pars ={"offset":0} if spline[j] is None else {}        #setting to 0 means it will be varied in the fit
+            else:
+                best_bic  = out.bic                                         #best bic from first fit
+                best_pars = {"offset":0} if spline[j] is None else {}               #offset always included if no spline
+                for cp in enforce_pars: best_pars[cp]=0                             #add enforced parameters
+                _ = [all_par.remove(cp) for cp in enforce_pars if cp in all_par]    #remove enforced parameters from all_par to test
 
-            if show_steps: print(f"{'Param':7s} : {'BIC':18s} N_pars \n---------------------------")
+                if show_steps: print(f"{'Param':7s} : {'BIC':18s} N_pars \n---------------------------")
 
-            del_BIC = -np.inf # bic_ratio = 0 # bf = np.inf
-            while del_BIC < delta_BIC:#while  bf > 1:
-                if show_steps: print(f"{'Best':7s} : {best_bic:<18.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
-                pars_bic = {}
-                for p in all_par:
-                    dtmp = best_pars.copy()   #always include offset if no spline
-                    dtmp[p] = 0
-                    out = _decorr(self._input_lc[file], **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
-                                    decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], 
-                                    jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
-                                    custom_LCfunc=custom_LCfunc, npl=self._nplanet)
-                    if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
-                    pars_bic[p] = out.bic
+                del_BIC = -np.inf  #initialize del_BIC to -inf to start the while loop
+                while del_BIC < delta_BIC:
+                    if show_steps: print(f"{'Best':7s} : {best_bic:<18.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
+                    pars_bic = {}
+                    for p in all_par:
+                        dtmp = best_pars.copy()   #always include offset if no spline
+                        dtmp[p] = 0               #setting the par p to 0 means it will be varied in the fit
+                        out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
+                                        decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
+                                        jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
+                                        custom_LCfunc=custom_LCfunc, npl=self._nplanet)
+                        if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
+                        pars_bic[p] = out.bic
 
-                par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
-                par_in_bic = pars_bic[par_in]
-                del_BIC = par_in_bic - best_bic
-                bf = np.exp(-0.5*(del_BIC))
-                if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
+                    par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
+                    par_in_bic = pars_bic[par_in]
+                    del_BIC = par_in_bic - best_bic
+                    bf = np.exp(-0.5*(del_BIC))
+                    if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
 
-                if del_BIC < delta_BIC:# if bf>1:
-                    if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
-                    best_pars[par_in]=0
-                    best_bic = par_in_bic
-                    all_par.remove(par_in)            
+                    if del_BIC < delta_BIC:# if bf>1:
+                        if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
+                        best_pars[par_in]=0
+                        best_bic = par_in_bic
+                        all_par.remove(par_in)            
 
-            result = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
-                                **best_pars, decorr_bound=decorr_bound,spline=spline[j],ss_exp=ss_exp[j], 
+            result = _decorr(df, **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
+                                **best_pars, decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                                 jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
                                 custom_LCfunc=custom_LCfunc, npl=self._nplanet)
 
@@ -1249,7 +1500,7 @@ class load_lightcurves:
                 _ = [pps.pop(p) for p in custom_LCfunc.func_args.keys()] # remove custom_LCfunc parameters from pps
                 
     
-            self._tmodel.append(_decorr(df,**pps, spline=spline[j],ss_exp=ss_exp[j], Rstar=Rstar, custom_LCfunc=custom_LCfunc,npl=self._nplanet, return_models=True))
+            self._tmodel.append(_decorr(df,**pps, spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], Rstar=Rstar, custom_LCfunc=custom_LCfunc,npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -1260,49 +1511,33 @@ class load_lightcurves:
             blpars["dcol7"].append( 2 if pps["B7"]!=0 else 1 if  pps["A7"]!=0 else 0)
             blpars["dcol8"].append( 2 if pps["B8"]!=0 else 1 if  pps["A8"]!=0 else 0)
 
+            if setup_baseline:
+                # store baseline model coefficients for each lc, to used as start values of mcmc
+                self._bases_init[j] = dict(off=1+pps["offset"], 
+                                            A0=pps["A0"], B0=pps["B0"], C0=0, D0=0,
+                                            A3=pps["A3"], B3=pps["B3"], 
+                                            A4=pps["A4"], B4=pps["B4"],
+                                            A5=pps["A5"], B5=pps["B5"], 
+                                            A6=pps["A6"], B6=pps["B6"],
+                                            A7=pps["A7"], B7=pps["B7"],
+                                            A8=pps["A8"], B8=pps["B8"], 
+                                            amp=0,freq=0,phi=0,ACNM=1,BCNM=0)
+                
+                # if fit_type in ["slct","all"] and sinusoid[file]!=None:
+                #     sin_decorr_vars = ['sin_Amp','sin2_Amp','sin3_Amp','cos_Amp','cos2_Amp','cos3_Amp','sin_P', 'sin_x0']
+                #     self._sine_dict[file].init_pars = {}
+                #     for p in sin_decorr_vars: 
+                #         self._sine_dict[file].init_pars[p] = pps[p]
+
 
         if plot_model:
             _plot_data(self,plot_cols=(0,1,2),col_labels=("time","flux"),model_overplot=self._tmodel)
 
         #prefill other light curve setup from the results here or inputs given here.
-        if setup_baseline:
-            # store baseline model coefficients for each lc, to used as start values of mcmc
-            self._bases_init[j] = dict(off=1+pps["offset"], 
-                                        A0=pps["A0"], B0=pps["B0"], C0=0, D0=0,
-                                        A3=pps["A3"], B3=pps["B3"], 
-                                        A4=pps["A4"], B4=pps["B4"],
-                                        A5=pps["A5"], B5=pps["B5"], 
-                                        A6=pps["A6"], B6=pps["B6"],
-                                        A7=pps["A7"], B7=pps["B7"],
-                                        A8=pps["A8"], B8=pps["B8"], 
-                                        amp=0,freq=0,phi=0,ACNM=1,BCNM=0)
-            # spline
-            if spline != [None]*self._nphot: 
-                print(_text_format.BOLD + f"\nSetting-up spline for decorrelation."+ _text_format.END +\
-                        " Use `.add_spline(None)` method to remove/modify")
-                spl_lcs,spl_par,spl_knots,spl_deg = [],[],[],[]
-                for j,file in enumerate(self._names):
-                    if spline[j] is not None: 
-                        spl_lcs.append(file)
-                        if not isinstance(spline[j]['col'],tuple): spl_par.append(f"col{spline[j]['col']}")
-                        else: spl_par.append( (f"col{spline[j]['col'][0]}",f"col{spline[j]['col'][1]}"))
-                        spl_knots.append(spline[j]['knot_spacing'])
-                        spl_deg.append(spline[j]['degree'])
-                self.add_spline(lc_list=spl_lcs, par = spl_par, knot_spacing=spl_knots, degree=spl_deg,verbose=False)
-            
-            # supersampling
-            if ss_exp != [None]*self._nphot:
-                print(_text_format.BOLD + f"\nSetting-up supersampling."+ _text_format.END + " Use `.supersample(None)` method to remove/modify")
-                ss_lcs,ss_exp_list = [],[]
-                for j,file in enumerate(self._names):
-                    if ss_exp[j] is not None: 
-                        ss_lcs.append(file)
-                        ss_exp_list.append(ss_exp[j])
-                self.supersample(lc_list=ss_lcs, exp_time = ss_exp_list,verbose=False)
-
+        if setup_baseline:       
             # baseline
-            if verbose: print(_text_format.BOLD + "\nSetting-up baseline model from result" +_text_format.END)
-            self.lc_baseline(**blpars, gp=self._useGPphot, verbose=verbose)
+            if verbose: print(_text_format.BOLD + "\nSetting-up parametric baseline model from decorr result" +_text_format.END)
+            self.lc_baseline(**blpars, sin=[self._bases[i][7] for i in range(self._nphot)],gp=self._useGPphot, verbose=verbose)
             if verbose: print(_text_format.RED + f"\nNote: GP flag for the lcs has been set to {self._useGPphot}. "+\
                     "Use `._useGPphot` attribute to modify this list with 'y','ce' or 'n' for each loaded lc\n" + _text_format.END)
 
@@ -1312,9 +1547,9 @@ class load_lightcurves:
             self.planet_parameters(**input_pars, verbose=verbose)
 
             # phasecurve
-            if np.any([self._tra_occ_pars["D_occ"],self._tra_occ_pars["A_atm"],self._tra_occ_pars["ph_off"],self._tra_occ_pars["A_ev"],self._tra_occ_pars["A_db"]] != 0): 
+            if np.any([self._tra_occ_pars["D_occ"],self._tra_occ_pars["Fn"],self._tra_occ_pars["ph_off"],self._tra_occ_pars["A_ev"],self._tra_occ_pars["A_db"]] != 0): 
                 if verbose: print(_text_format.BOLD + "\nSetting-up Phasecurve pars from input values" +_text_format.END)
-                self.setup_phasecurve(D_occ=self._tra_occ_pars["D_occ"], A_atm=self._tra_occ_pars["A_atm"],
+                self.setup_phasecurve(D_occ=self._tra_occ_pars["D_occ"], Fn=self._tra_occ_pars["Fn"],
                                         ph_off=self._tra_occ_pars["ph_off"], A_ev=self._tra_occ_pars["A_ev"], 
                                         A_db=self._tra_occ_pars["A_db"], verbose=verbose)
             else:
@@ -1403,7 +1638,7 @@ class load_lightcurves:
         select_column: list of str, str;
             list of column names on which to perform clipping. Default is only ["col1"] which is the flux column. 
             possible columns are: ["col1","col3","col4","col5","col6","col7","col8"]. "all" can be used to clip all columns. 
-        niter: int;
+        niter: int,list;
             Number of iterations to perform clipping. Default is 1
         show_plot: bool;
             set True to plot the data and show clipped points.
@@ -1416,7 +1651,7 @@ class load_lightcurves:
             return None
 
         if lc_list == None or lc_list == []: 
-            print("lc_list is None: No lightcurve to clip outliers.")
+            print("lc_list is None: No outlier clipping.")
             return None
         
         if isinstance(select_column,str):
@@ -1433,14 +1668,22 @@ class load_lightcurves:
         if isinstance(width, int): width = [width]*len(lc_list)
         elif isinstance(width, list): 
             if len(width)==1: width = width*len(lc_list)
-        else: _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {clip} given.")
+            for wid in width: assert isinstance(wid, int), f"clip_outliers(): width must be an int or list of int but {width=} given."
+        else: _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {clip=} given.")
             
         if isinstance(clip, (int,float)): clip = [clip]*len(lc_list)
         elif isinstance(clip, list): 
             if len(clip)==1: clip = clip*len(lc_list)
-        else: _raise(TypeError, f"clip_outliers(): width must be an int/float or list of int/float but {clip} given.")
+        else: _raise(TypeError, f"clip_outliers(): width must be an int/float or list of int/float but {clip=} given.")
             
-        assert len(width) == len(clip) == len(lc_list), f"clip_outliers(): width, clip and lc_list must have same length but {len(width)}, {len(clip)} and {len(lc_list)} given."
+        if isinstance(niter, (int)): niter = [niter]*len(lc_list)
+        elif isinstance(niter, list): 
+            if len(niter)==1: niter = niter*len(lc_list)
+            for ni in niter: assert isinstance(ni, int), f"clip_outliers(): niter must be an int or list of int but {niter=} given."
+        else: _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {niter=} given.")
+            
+
+        assert len(width) == len(clip) == len(niter) == len(lc_list), f"clip_outliers(): width, clip, niter and lc_list must have same length but {len(width)=}, {len(clip)=} and {len(lc_list)=} given."
 
         if show_plot:
             n_data = len(lc_list)
@@ -1458,7 +1701,7 @@ class load_lightcurves:
             
             sel_cols = "c"+"".join([col[-1] for col in select_column])+":"  #get last index of select_column to get e.g. c135:
             if sel_cols == "c1345678:" : sel_cols = "ca:"
-            self._clipped_data.config[self._names.index(file)] = f"{sel_cols}W{width[i]}C{clip[i]}"
+            self._clipped_data.config[self._names.index(file)] = f"{sel_cols}W{width[i]}C{clip[i]}n{niter[i]}"
             #join all last index of select_column to get e.g. c135
 
 
@@ -1468,7 +1711,7 @@ class load_lightcurves:
 
             for col in select_column:
                 if np.ptp(thisLCdata[col])==0.0: continue  #skip column if all values are the same (nothing to clip)
-                for _ in range(niter):
+                for _ in range(niter[i]):
                     thisLCdata  = {k:v[ok_iter] for k,v in thisLCdata.items()}   #remove clipped points from previous iteration
                     _,_,clpd_mask = outlier_clipping(x=thisLCdata["col0"],y=thisLCdata[col],clip=clip[i],width=width[i],
                                                         verbose=False, return_clipped_indices=True)   #returns mask of the clipped points
@@ -1494,7 +1737,7 @@ class load_lightcurves:
         if show_plot: plt.tight_layout; plt.show()
 
     def lc_baseline(self, dcol0=None, dcol3=None, dcol4=None,  dcol5=None, dcol6=None, dcol7=None, 
-                    dcol8=None, dsin=None, grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
+                    dcol8=None, sin="n",grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
         """
             Define baseline model parameters to fit for each light curve using the columns of the input data. `dcol0` refers to decorrelation setup for column 0, `dcol3` for column 3 and so on.
             Each baseline decorrelation parameter (dcolx) should be a list of integers specifying the polynomial order for column x for each light curve.
@@ -1508,14 +1751,11 @@ class load_lightcurves:
             -----------
             dcol0, dcol3,dcol4,dcol5,dcol6,dcol7,dcol8 : list of ints;
                 polynomial order to fit to each column. Default is 0 for all columns.
-
             grp_id : list (same length as file_list);
                 group the different input lightcurves by id so that different transit depths can be fitted for each group.
-
             gp : list (same length as file_list); 
                 list containing 'y', 'n', or 'ce' to specify if a gp will be fitted to a light curve. +\
                     'y' indicates that the george gp package will be used while 'ce' uses the celerite package.
-            
             re_init : bool;
                 if True, re-initialize all other methods to empty. Default is False.
 
@@ -1535,12 +1775,13 @@ class load_lightcurves:
 
             for p in DA[par]:
                 if par=="gp": assert p in ["y","n","ce"], f"lc_baseline(): gp must be a list of 'y', 'n', or 'ce' for each lc but {p} given."
+                elif par=="sin": assert p in ["y","n"], f"lc_baseline(): sin must be a list of 'y' or 'n' for each lc but {p} given."
                 else: assert isinstance(p, (int,np.int64)) and p<3, f"lc_baseline(): decorrelation parameters must be a list of integers (max int value = 2) but {type(p)} {p} given for {par}."
 
         DA["grp_id"] = list(np.arange(1,self._nphot+1)) if grp_id is None else grp_id
 
         self._bases = [ [DA["dcol0"][i], DA["dcol3"][i], DA["dcol4"][i], DA["dcol5"][i],
-                        DA["dcol6"][i], DA["dcol7"][i], DA["dcol8"][i], DA["dsin"][i], 
+                        DA["dcol6"][i], DA["dcol7"][i], DA["dcol8"][i], DA["sin"][i], 
                         DA["grp"][i]] for i in range(self._nphot) ]
 
         self._groups    = DA["grp_id"]
@@ -1554,6 +1795,7 @@ class load_lightcurves:
 
         #initialize other methods to empty incase they are not called/have not been called
         if not hasattr(self,"_lcspline") or re_init:      self.add_spline(None, verbose=False)
+        if not hasattr(self,"_sine_dict") or re_init:     self.add_sinusoid(None, verbose=False)
         if not hasattr(self,"_ss") or re_init:            self.supersample(None, verbose=False)
         if not hasattr(self,"_config_par") or re_init:    self.planet_parameters(verbose=False)
         if not hasattr(self,"_ddfs") or re_init:          self.transit_depth_variation(verbose=False)
@@ -1729,6 +1971,145 @@ class load_lightcurves:
             _print_output(self,"lc_baseline")
 
 
+    def add_sinusoid(self, lc_list=None, trig='sin', n=1, par="col0", Amp=0,  P=2*np.pi, x0=0, verbose=True):
+        """
+        Add sinusoid to fit correlation along a column of the data. This fits a sinusoid to the column data using the given period, amplitude and zero phase.
+        sinusoid = ∑[n=1,2,3] Amp*sin(n*2𝜋/P*(x-x0)) for trig='sin'. similar for 'cos' while 'sincos' is sinusoid = ∑  Amp*sin(n*2𝜋/P*(x-x0)) + Amp*cos(n*2𝜋/P*(x-x0))
+        All arguments can be given as a list to specify config for each lc file in lc_list.
+        To directly fit the trig function to the column array i.e sin(colx), set x0=0, and P=2*np.pi.
+
+        Parameters
+        ----------
+        lc_list : list, str, optional
+            list of lc files to fit a sinusoid to. set to "all" to use sinusoid for all lc files. Default is None for no sinusoid.
+        trig : str, list, optional
+            trigonometric function to fit. must be one of ['sin','cos','sincos']. Default is 'sin'. Give list of trig functions if different for each lc file. e.g. ["sin","cos"] for sin(x) for lc1.dat and cos(x) for lc2.dat.
+        n : int, tuple, list, optional
+            number of harmonics of the sinusoid to fit. Default is 1 for only sin(x) term, 2 for sin(2x), .... max value is 3
+        par : str, list, optional
+            column of input data representing the independent variable x of the sinusoid. must be one of ["col0","col3","col4","col5","col6","col7","col8"]. Default is "col0".
+            Give list of columns if different for each lc file. e.g. ["col0","col3"] for sinusoid in col0 for lc1.dat and col3 for lc2.dat.
+        P : float, tuple, list, optional
+            period of the sinusoid in the same units as the column array specified in `par`. Default is 2𝜋.
+        amp : float, tuple, list, optional
+            amplitude of the sinusoid function in ppm. Default is None.
+        x0: float, tuple, list, optional
+            zero phase of the sinusoid in units of column array specified in `par`. Default is 0.
+        verbose : bool, optional
+            print output. Default is True.
+
+        Examples
+        --------
+        To use different sinusoid configuration for 2 lc files
+        >>> lc_obj.add_sinusoid(lc_list=["lc1.dat","lc2.dat"], par=["col0","col4"], P=[1,2], amp=[0.1,0.2], phase=[0,1])
+        """
+        DA = locals().copy()
+        # function to set default sinusoid config -- None
+        init_sine = lambda name,fit : SimpleNamespace(name=name, fit=fit, trig=None, n=1, par="col0", npars=3, nfree=0, 
+                                                        Amp=_param_obj.from_tuple(0), P=_param_obj.from_tuple(0), 
+                                                        x0=_param_obj.from_tuple(0))
+        for i in range(self._nphot): self._bases[i][7]="n"
+
+        if lc_list is None or lc_list==[]:
+            self._sine_dict = {"same":init_sine("same","same")}#{k:None for k in self._names}
+            if verbose: print("No sinusoid\n")
+            return
+
+        elif isinstance(lc_list, str):
+            if lc_list in ["all","same","filt"]:
+                for i in range(self._nphot): self._bases[i][7]="y"
+
+            if lc_list == "all": 
+                sin_names = self._names
+                if verbose: print("fitting individual sinusoids to each LC.")
+            elif lc_list == "same": 
+                sin_names = ["same"]
+                if verbose: print("fitting same sinusoid to all LCs.")
+            elif lc_list == "filt": 
+                sin_names = list(self._filnames) 
+                if verbose: print("fitting same sinusoids to each filter.")
+            else:
+                if lc_list in self._names:
+                    self._bases[self._names.index(lc_list)][7]="y"
+                    sin_names = [lc_list] 
+                    lc_list = "slct"  # one selected lc 
+                elif lc_list in self._filnames:
+                    for i in np.where(np.array(self._filters)==lc_list)[0]: self._bases[i][7]="y"
+                    sin_names = [lc_list]
+                    lc_list = "filt"
+                else:
+                    _raise(ValueError, f"add_sinusoid(): {lc_list} not in loaded lc files: {self._names} or filters: {self._filnames}.")
+        
+        elif isinstance(lc_list, list):
+            for lc in lc_list: 
+                assert lc in self._names or lc in self._filnames, f"add_sinusoid(): {lc} not in loaded lc files: {self._names} or filters: {self._filnames}." 
+            if all([lc in self._names for lc in lc_list]): 
+                for i in [self._names.index(lc) for lc in lc_list]: self._bases[i][7]="y"
+                sin_names = lc_list
+                lc_list = "slct"    #list of selected lcs
+            elif all([lc in self._filnames for lc in lc_list]):
+                for i in np.where(np.array(self._filters)==lc_list)[0]: self._bases[i][7]="y"
+                sin_names = lc_list
+                lc_list = "filt"
+            else:
+                _raise(ValueError, f"add_sinusoid(): elements of lc_list must be either all LC filenames or all filter names but {lc_list=} given.")
+
+        else:
+            raise TypeError(f"add_sinusoid(): lc_list must be either a str or list but {lc_list} given")
+
+        nLC_sin = len(sin_names)
+        #check that inputs are valid
+        for p in ["trig","n","par","Amp","P","x0"]:
+            if DA[p] is None: DA[p] = [None]*nLC_sin
+            if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]*nLC_sin
+            if isinstance(DA[p], list): assert len(DA[p])==nLC_sin, f"add_sinusoid(): {p} must be a list of length {nLC_sin} to specify value for each lc/filter or length 1 to use same value for all lcs/filters)."
+        
+            for list_item in DA[p]:
+                if p=="trig": assert list_item in ["sin","cos","sincos"], f"add_sinusoid(): {p} must be in ['sin','cos','sincos'] but {list_item} given."
+                if p=="n": assert list_item in [1,2,3], f"add_sinusoid(): {p} must be an integer (<= 3) but {list_item} given."
+                if p=="par": assert list_item in ["col0","col3","col4","col5","col6","col7","col8"], f"add_sinusoid(): {p} must be in ['col0','col3','col4','col5','col6','col7','col8'] but {list_item} given."
+                if p=="Amp": 
+                    if isinstance(list_item, (int,float)): assert list_item >= 0, f"add_sinusoid(): {p} must be a positive float/int/tuple but {list_item} given."
+                    if isinstance(list_item, tuple): 
+                        assert len(list_item) in [2,3], f"add_sinusoid(): {p} must be a tuple of length 2/3 but {list_item} given."
+                        if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2], f"add_sinusoid(): uniform prior for {p} must be in increasing order but {list_item} given."
+                if p in ["P", "x0"]: 
+                    assert isinstance(list_item, (int,float,tuple)) or list_item is None, f"add_sinusoid(): {p} must be a float/int/tuple or None but {list_item} given."
+                    if p=="P":
+                        if isinstance(list_item, (int,float)): assert list_item > 0, f"add_sinusoid(): {p} must be a positive float/int/tuple but {list_item} given."
+                    if isinstance(list_item, tuple):
+                        assert len(list_item) in [2,3], f"add_sinusoid(): {p} must be a tuple of length 2/3 but {list_item} given."
+                        if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2], f"add_sinusoid(): uniform prior for {p} must be in increasing order but {list_item} given."
+        
+        #initialize sinusoid to None for all lcs or all filters
+        # self._sine_dict = {k:None for k in self._names} if lc_list=="slct" else {k:None for k in self._filnames} if lc_list=="filt" else {k:None for k in sin_names}
+        self._sine_dict = {lc:init_sine(lc,"slct") for lc in self._names} if lc_list=="slct" else {lc:init_sine(lc,"filt") for lc in self._filnames} if lc_list=="filt" else {lc:init_sine(lc,"same") for lc in sin_names}
+        
+        for i,lc in enumerate(sin_names):
+            self._sine_dict[lc]        = SimpleNamespace()
+            self._sine_dict[lc].name   = lc
+            self._sine_dict[lc].fit    = lc_list
+            self._sine_dict[lc].trig   = DA["trig"][i]
+            self._sine_dict[lc].n      = DA["n"][i]
+            self._sine_dict[lc].par    = DA["par"][i]
+            self._sine_dict[lc].Amp    = _param_obj.from_tuple(DA["Amp"][i],user_input=DA["Amp"][i],func_call="add_sinusoid():")
+            self._sine_dict[lc].P      = _param_obj.from_tuple(DA["P"][i],lo=1e-5,user_input=DA["P"][i],func_call="add_sinusoid():")
+            self._sine_dict[lc].x0     = _param_obj.from_tuple(DA["x0"][i],user_input=DA["x0"][i],func_call="add_sinusoid():")
+            self._sine_dict[lc].npars  = 0     #number of total parameters for this sinusoid
+            self._sine_dict[lc].nfree  = 0     #number of free parameters for this sinusoid
+            for p in ["Amp","P","x0"]:
+                if p=="Amp":   # first count number of amplitudes for the trigs
+                    self._sine_dict[lc].npars += 1  if DA["trig"][i] in ["sin","cos"] else 2
+                    self._sine_dict[lc].npars *= self._sine_dict[lc].n
+                    if isinstance(DA[p][i], tuple): self._sine_dict[lc].nfree = self._sine_dict[lc].npars
+                else: 
+                    self._sine_dict[lc].npars += 1
+                    if isinstance(DA[p][i], tuple): self._sine_dict[lc].nfree += 1
+
+        if verbose: 
+            _print_output(self,"lc_baseline")
+            _print_output(self,"sinusoid")
+
     def add_GP(self ,lc_list=None, par=["col0"], kernel=["mat32"], operation=[""],
                  amplitude=[], lengthscale=[], verbose=True):
         """  
@@ -1755,22 +2136,22 @@ class load_lightcurves:
                 to use 2 different kernels on a single lc file, give column name for each kernel as a tuple of length 2. 
                 e.g. lc_list=["lc1.dat","lc2.dat"], par = [("col0","col0"),"col3"] to use col0 for both kernels of lc1, and col3 for lc2.
             kernel : str, tuple, list;
-                kernel to use for the GP. Must be one of ["mat32","mat52","exp","expsq","cos"] if George package is selected  and one of ["real","mat32","sho"] if using Celerite package
+                kernel to use for the GP. Must be one of ["mat32","mat52","exp","expsq","cos"] if George package is selected  and one of ["real","mat32","sho","cos"] if using Celerite package
                 A list is expected if different kernels are to be used for the lc files given in lc_list.
                 to use 2 different kernels on a single lc file, give kernel name for each kernel as a tuple of length 2.
                 e.g. lc_list=["lc1.dat","lc2.dat"], kernel = [("mat32","expsq"),"exp"] to use mat32 and expsq for lc1, and exp for lc2.
             operation : str, tuple, list;
                 operation to combine 2 kernels. Must be one of ["+","*"]. Default is "" for no combination.
             amplitude : float, tuple, list;
-                amplitude of the GP kernel. Must be list containing int/float or tuple of length 2 or 3
+                amplitude of the GP kernel in ppm. Must be list containing int/float or tuple of length 2 or 3
             lengthscale : float, tuple, list;
-                lengthscale of the GP kernel. Must be list containing int/float or tuple of length 2 or 3
+                lengthscale of the GP kernel in units of the column array specified in `par`. Must be list containing int/float or tuple of length 2 or 3
             verbose : bool;
                 print output. Default is True.        
         """
         # supported 2-hyperparameter kernels
         george_allowed   = dict(kernels = ["mat32","mat52","exp","expsq","cos"],columns= ["col0","col3","col4","col5","col6","col7","col8"])
-        celerite_allowed = dict(kernels = ["real","mat32","sho"], columns= ["col0","col3","col4","col5","col6","col7","col8"])
+        celerite_allowed = dict(kernels = ["real","mat32","sho","cos"], columns= ["col0","col3","col4","col5","col6","col7","col8"])
 
         self._GP_dict  = {}
         self._sameLCgp  = SimpleNamespace(flag = False, first_index =None) #flag to indicate if same GP is to be used for all lcs
@@ -1792,8 +2173,11 @@ class load_lightcurves:
         for lc in self._gp_lcs(): assert lc in lc_list,f"add_GP(): GP was expected for {lc} but was not given in lc_list."
         for lc in lc_list: 
             assert lc in self._names,f"add_GP(): {lc} not in loaded lc files."
-            assert lc in self._gp_lcs(),f"add_GP(): GP was not expected for {lc} but was given in lc_list. Use `._useGPphot` attribute to modify this list with 'y','ce' or 'n' for each loaded lc"
-        
+            # assert lc in self._gp_lcs(),f"add_GP(): GP was not expected for {lc} but was given in lc_list. Use `._useGPphot` attribute to modify this list with 'y','ce' or 'n' for each loaded lc"
+            if lc not in self._gp_lcs():
+                self._useGPphot[self._names.index(lc)] = "ce"
+                print(f"add_GP(): GP was not expected for {lc} but was given in lc_list, but now adding 'ce' GP for this lc.")
+
         lc_ind = [self._names.index(lc) for lc in lc_list]
         gp_pck = [self._useGPphot[i] for i in lc_ind]   #gp_pck is a list of "y" or "ce" for each lc in lc_list
 
@@ -1850,11 +2234,11 @@ class load_lightcurves:
                             for tup in list_item:
                                 if isinstance(tup, (int,float)): pass
                                 elif isinstance(tup, tuple): 
-                                    assert len(tup) in [2,3],f'add_GP(): {p} must be a float/int or tuple of length 2/3 but {tup} given.'
+                                    assert len(tup) in [2,3,4],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
                                     if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
-                                else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 23 or float/int but {tup} given.")
+                                else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {tup} given.")
                         else:
-                            assert len(list_item) in [2,3],f'add_GP(): {p} must be a float/int or tuple of length 2/3 but {tup} given.'
+                            assert len(list_item) in [2,3],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
                             if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
                     else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {list_item} given.")
 
@@ -1865,6 +2249,9 @@ class load_lightcurves:
             ngp = 2 if isinstance(DA["kernel"][i],tuple) else 1
             self._GP_dict[lc]["ngp"] = ngp
             self._GP_dict[lc]["op"]  = DA["operation"][i]
+
+            if self._GP_dict[lc]["op"] == "*" and self._GP_dict[lc]["ngp"] == 2:
+                assert DA["amplitude"][i][1] == 1, f"add_GP(): for multiplication of 2 kernels, the second amplitude must be fixed to 1 but {DA['amplitude'][i][1]} given."
 
             for p in ["amplitude", "lengthscale"]:
                 for j in range(ngp):
@@ -1879,21 +2266,27 @@ class load_lightcurves:
                         self._GP_dict[lc][p+str(j)]     = _param_obj(to_fit="n", start_value=v,step_size=0,
                                                                         prior="n", prior_mean=v, prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=0.01, bounds_hi=0,
-                                                                        user_data = [this_kern, this_par])
+                                                                        user_input=v, user_data = [this_kern, this_par])
                     elif isinstance(v, tuple):
                         if len(v)==2:
                             steps = 0 if (self._sameLCgp.flag and i!=0) else 0.1*v[1]   #if sameLCgp is set, only first pars will jump and be used for all rvs
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[0],step_size=steps,prior="p", 
                                                                         prior_mean=v[0], prior_width_lo=v[1], prior_width_hi=v[1], 
                                                                         bounds_lo=v[0]-10*v[1], bounds_hi=v[0]+10*v[1],     #10sigma cutoff
-                                                                        user_data=[this_kern, this_par])
+                                                                        user_input=v, user_data=[this_kern, this_par])
                         elif len(v)==3:
                             steps = 0 if (self._sameLCgp.flag and i!=0) else min(0.001,0.001*np.ptp(v))
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=v[0] if v[0]>0 else 0.007, bounds_hi=v[2],
-                                                                        user_data=[this_kern, this_par])
-                    else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {v} given.")
+                                                                        user_input=v, user_data=[this_kern, this_par])
+                        elif len(v)==4:
+                            steps = 0 if (self._sameLCgp.flag and i!=0) else 0.1*v[3]   #if sameLCgp is set, only first pars will jump and be used for all rvs
+                            self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[2],step_size=steps,prior="p", 
+                                                                        prior_mean=v[2], prior_width_lo=v[3], prior_width_hi=v[3], 
+                                                                        bounds_lo=v[0], bounds_hi=v[1], 
+                                                                        user_input=v, user_data=[this_kern, this_par])
+                    else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {v} given.")
 
         if verbose: _print_output(self,"gp")
     
@@ -1913,31 +2306,22 @@ class load_lightcurves:
             -----------
             RpRs : float, tuple;
                 Ratio of planet to stellar radius. Default is 0.
-
             Impact_para : float, tuple;
                 Impact parameter of the transit. Default is 0.
-
             rho_star : float, tuple;
                 density of the star in g/cm^3. Default is None.
-
             Duration : float, tuple;
                 Duration of the transit in days. Default is None.
-
             T_0 : float, tuple;
                 Mid-transit time in days. Default is 0.
-
             Period : float, tuple;
                 Orbital period of the planet in days. Default is 0.
-
             Eccentricity : float, tuple;
                 Eccentricity of the orbit. Default is 0.
-
             omega : float, tuple;
                 Argument of periastron om degrees. Default is 90.
-
             K : float, tuple;
                 Radial velocity semi-amplitude in same unit as the data. Default is 0.
-
             verbose : bool;
                 print output. Default is True.
         """
@@ -1984,16 +2368,22 @@ class load_lightcurves:
                         DA[par][n] = _param_obj(to_fit="y", start_value=DA[par][n][0], step_size=0.1*DA[par][n][1],
                                                 prior="p", prior_mean=DA[par][n][0],  
                                                 prior_width_lo=DA[par][n][1], prior_width_hi=DA[par][n][1], 
-                                                bounds_lo=lo_lim, bounds_hi=up_lim)
+                                                bounds_lo=lo_lim, bounds_hi=up_lim,user_input=DA[par][n])
                     #uniform
                     elif len(DA[par][n]) == 3: 
                         DA[par][n] = _param_obj(*["y", DA[par][n][1], min(0.001,0.001*np.ptp(DA[par][n])), "n", DA[par][n][1],
-                                                        0, 0, DA[par][n][0], DA[par][n][2]])
+                                                        0, 0, DA[par][n][0], DA[par][n][2],DA[par][n]])
+                    #trunc gaussian       
+                    elif len(DA[par][n]) == 4:  
+                        DA[par][n] = _param_obj(to_fit="y", start_value=DA[par][n][2], step_size=0.1*DA[par][n][3],
+                                                prior="p", prior_mean=DA[par][n][2],  
+                                                prior_width_lo=DA[par][n][3], prior_width_hi=DA[par][n][3], 
+                                                bounds_lo=DA[par][n][0], bounds_hi=DA[par][n][1],user_input=DA[par][n])
                     
                     else: _raise(ValueError, f"planet_parameters: length of tuple {par} is {len(DA[par][n])} but it must be 2 for gaussian or 3 for uniform priors")
                 #fixing parameter
                 elif isinstance(DA[par][n], (int, float)):
-                    DA[par][n] = _param_obj(*["n", DA[par][n], 0.00, "n", DA[par][n], 0, 0, 0, 0])
+                    DA[par][n] = _param_obj(*["n", DA[par][n], 0.00, "n", DA[par][n], 0, 0, 0, 0,DA[par][n]])
 
                 else: _raise(TypeError, f"planet_parameters(): {par} for planet{n} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par][n])}")
 
@@ -2018,31 +2408,22 @@ class load_lightcurves:
             -----------
             RpRs : float, tuple;
                 Ratio of planet to stellar radius.
-
             Impact_para : float, tuple;
                 Impact parameter of the transit.
-
             rho_star : float, tuple;
                 density of the star in g/cm^3.
-
             Duration : float, tuple;
                 Duration of the transit in days. Default is None.
-
             T_0 : float, tuple;
                 Mid-transit time in days.
-
             Period : float, tuple;
                 Orbital period of the planet in days.
-
             Eccentricity : float, tuple;
                 Eccentricity of the orbit.
-
             omega : float, tuple;
                 Argument of periastron.
-
             K : float, tuple;
                 Radial velocity semi-amplitude in data unit.
-
             verbose : bool;
                 print output. Default is True.
         """
@@ -2086,18 +2467,23 @@ class load_lightcurves:
                         DA[par][n] = _param_obj(to_fit="y", start_value=DA[par][n][0], step_size=0.1*DA[par][n][1],
                                                 prior="p", prior_mean=DA[par][n][0],  
                                                 prior_width_lo=DA[par][n][1], prior_width_hi=DA[par][n][1], 
-                                                bounds_lo=lo_lim, bounds_hi=up_lim)
+                                                bounds_lo=lo_lim, bounds_hi=up_lim, user_input=DA[par][n])
                     #uniform
                     elif len(DA[par][n]) == 3: 
                         DA[par][n] = _param_obj(*["y", DA[par][n][1], min(0.001,0.001*np.ptp(DA[par][n])), "n", DA[par][n][1],
-                                                        0, 0, DA[par][n][0], DA[par][n][2]])
-                    
+                                                        0, 0, DA[par][n][0], DA[par][n][2],DA[par][n]])
+                    #trunc gaussian       
+                    elif len(DA[par][n]) == 4:  
+                        DA[par][n] = _param_obj(to_fit="y", start_value=DA[par][n][2], step_size=0.1*DA[par][n][3],
+                                                prior="p", prior_mean=DA[par][n][2],  
+                                                prior_width_lo=DA[par][n][3], prior_width_hi=DA[par][n][3], 
+                                                bounds_lo=DA[par][n][0], bounds_hi=DA[par][n][1])
                     else: _raise(ValueError, f"update_planet_parameters(): length of tuple {par} is {len(DA[par][n])} but it must be 2 for gaussian or 3 for uniform priors")
                 #fixing parameter
                 elif isinstance(DA[par][n], (int, float)):
-                    DA[par][n] = _param_obj(*["n", DA[par][n], 0.00, "n", DA[par][n], 0, 0, 0, 0])
+                    DA[par][n] = _param_obj(*["n", DA[par][n], 0.00, "n", DA[par][n], 0, 0, 0, 0,DA[par][n]])
 
-                else: _raise(TypeError, f"update_planet_parameters(): {par} for planet{n} must be one of [tuple(of len 2 or 3), int, float] but is {type(DA[par][n])}")
+                else: _raise(TypeError, f"update_planet_parameters(): {par} for planet{n} must be one of [tuple(of len 2,3,or 4), int, float] but is {type(DA[par][n])}")
 
                 self._config_par[f"pl{n+1}"][par] = DA[par][n]      #add to object
         
@@ -2113,16 +2499,12 @@ class load_lightcurves:
             
             Parameters:
             -----------
-
             ddFs : str ("y" or "n");
                 specify if to fit depth variation or not. default is "n"
-
             dRpRs : tuple of len 2 or 3;
                 deviation of depth in each group from the reference values. Must be tuple of len 2/3 specifying (mu,std)/(min,start,max) 
-
             divwhite : str ("y" or "n");
                 flag to divide each light-curve by the white lightcurve. Default is "n"
-
             verbose: bool;
                 print output
 
@@ -2135,37 +2517,26 @@ class load_lightcurves:
 
         grnames    = np.array(list(sorted(set(self._groups))))
         ngroup     = len(grnames)
-        transit_depth_per_group = [(self._config_par["pl1"]["RpRs"].start_value,0)]
-        depth_per_group     = [d[0] for d in transit_depth_per_group] * ngroup  # depth for each group
-        depth_err_per_group = [d[1] for d in transit_depth_per_group] * ngroup 
+
+        transit_depth_per_group = [(self._config_par["pl1"]["RpRs"].start_value,0)] if ddFs=="y" else [(0,0)]
+        depth_per_group         = [d[0] for d in transit_depth_per_group] * ngroup  # depth for each group
+        depth_err_per_group     = [d[1] for d in transit_depth_per_group] * ngroup 
         step = 0.001
 
-        if len(dRpRs)==3: 
-            start_val = dRpRs[1]
-            bounds_lo,bounds_hi = dRpRs[0],dRpRs[2]
-            prior_width_lo = prior_width_hi = 0
-        else: 
-            start_val = dRpRs[0]
-            bounds_lo, bounds_hi = -0.5, 0.5
-            prior_width_lo = prior_width_hi = dRpRs[1]
-
         self._ddfs= SimpleNamespace()
-        self._ddfs.drprs_op=[start_val, step, bounds_lo, bounds_hi, start_val, prior_width_lo, prior_width_hi]  # the dRpRs options
-
+        self._ddfs.drprs = _param_obj.from_tuple(dRpRs, user_input=dRpRs,func_call="transit_depth_variation():")
 
         self._ddfs.depth_per_group     = depth_per_group
         self._ddfs.depth_err_per_group = depth_err_per_group
         self._ddfs.divwhite            = divwhite
-        # self._ddfs.prior               = prior
         self._ddfs.ddfYN               = ddFs
-        self._ddfs.prior_width_lo      = prior_width_lo
-        self._ddfs.prior_width_hi      = prior_width_hi
+
         if divwhite=="y":
             assert ddFs=='n', 'transit_depth_variation(): you can not do divide-white and not fit ddfs!'
             
-            for i in range(self._nphot):
-                if (self._bases[i][6]>0):
-                    _raise(ValueError, 'transit_depth_variation(): you can not have CNMs active and do divide-white')
+            # for i in range(self._nphot):
+            #     if (self._bases[i][6]>0):
+            #         _raise(ValueError, 'transit_depth_variation(): you can not have CNMs active and do divide-white')
         
         if self._nphot>0: 
             if (ddFs=='n' and np.max(self._grbases)>0): _raise(ValueError,'no ddFs but groups? Not a good idea!')
@@ -2173,7 +2544,7 @@ class load_lightcurves:
         if verbose: _print_output(self,"depth_variation")
                 
     
-    def transit_timing_variation(self, ttvs="n", dt=(-0.125,0,0.125), baseline_amount=0.25, 
+    def transit_timing_variation(self, ttvs="n", dt=(-0.125,0,0.125), baseline_amount=0.25,per_LC_T0=False, 
                                     show_plot=False, print_linear_eph=False, verbose=True):
         """
         include transit timing variation between the transit. Note: "T_0" and "P" must be fixed to reference values  in `.planet_parameters()` and not jump parameters.
@@ -2183,28 +2554,27 @@ class load_lightcurves:
         -----------
         ttvs : str ("y" or "n");
             specify if to fit transit timing variation or not. default is "n"
-
         dt : tuple of len 2 or 3;
             deviation of transit times from the expected values. Must be tuple of len 2/3 specifying (mu,std)/(min,start,max)
             this deviation is added to the expected linear ephemeris time, where n is the transit number. Default is 180mins around expected T0 i.e (-0.125,0,0.125)
             e.g T0_linear = 1406, dt=(-0.125,0,0.125) --> T0_prior = U(1406-0.125, 1406, 1406+0.125)
             dt = (0,0.125) --> T0_prior = N(1406, 0.125)
-
         baseline_amount : float;
-            amount of baseline around each transit to use in extracting the transit. Default is 0.25 times the planet period
-
+            amount of baseline around each transit to use in extracting the transit. Default is 0.25 times the planet period.
+            Only used to split transits when `per_LC_T0`=False.
+        per_LC_T0: bool;
+            whether to fit a single T0 per LC file as opposed to a T0 per transit.
         show_plot : bool;
             show plot of the extracted transits. Default is False.
-
         print_linear_eph : bool;
             print linear ephemeris. Default is False.
         """
         T0s, Ps = [], []
         assert isinstance(dt, tuple) and (len(dt) in [2,3]),f"transit_timing_variation(): dt must be tuple of len 2/3 specifying (mu,std)/(min,start,max) but {dt} given."
-        assert isinstance(baseline_amount, (int,float)),f"transit_timing_variation(): baseline_amount must be a float/int but {baseline_amount} given."
+        assert isinstance(baseline_amount, (int,float,type(None))),f"transit_timing_variation(): baseline_amount must be a float/int but {baseline_amount} given."
         
         self._ttvs = SimpleNamespace(to_fit = "n", conf=[], fit_t0s=[], lc_names=[], pl_num=[],
-                                        fit_labels=[],prior=[],dt=dt,baseline=baseline_amount)
+                                        fit_labels=[],prior=[],dt=dt,baseline=baseline_amount,per_LC_T0=per_LC_T0)
         assert ttvs in ["y","n"], "transit_timing_variation(): ttvs must be 'y' or 'n'."
         if ttvs == "n":
             if verbose: _print_output(self,"timing_variation")
@@ -2218,11 +2588,19 @@ class load_lightcurves:
                 assert self._config_par[f"pl{n}"]["Period"].to_fit == "n" or self._config_par[f"pl{n}"]["Period"].step_size ==0,'Fix `Period` in `.planet_parameters()` to a reference value in order to setup TTVs.'
                 T0s.append(self._config_par[f"pl{n}"]["T_0"].start_value)
                 Ps.append(self._config_par[f"pl{n}"]["Period"].start_value)
+        
         lcnum = []
         for i,nm in enumerate(self._names):
             t, f = self._input_lc[nm]["col0"], self._input_lc[nm]["col1"]
-            self._ttvs.conf.append(split_transits(t=t, P=Ps, t_ref= T0s,flux=f, baseline_amount=baseline_amount, 
-                                                    show_plot=show_plot))
+            if per_LC_T0:    #get only one T0 within this LC
+                lc_T0s = []
+                for j in range(self._nplanet): lc_T0s.append([get_transit_time(t=t,per=Ps[j],t0=T0s[j])])
+                self._ttvs.conf.append(split_transits(t=t, P=Ps, input_t0s=lc_T0s,flux=f, baseline_amount=None, 
+                                                        show_plot=show_plot))     #returns
+            else:   #get all T0s in the LC
+                self._ttvs.conf.append(split_transits(t=t, P=Ps, t_ref= T0s,flux=f, baseline_amount=baseline_amount, 
+                                                        show_plot=show_plot))   
+            self._ttvs.conf[i].lcname = [nm]*len(self._ttvs.conf[i].t0s)
             self._ttvs.fit_t0s.extend(self._ttvs.conf[i].t0s)
             self._ttvs.pl_num.extend(self._ttvs.conf[i].plnum)
             self._ttvs.lc_names.extend([nm]*len(self._ttvs.conf[i].t0s))
@@ -2232,43 +2610,49 @@ class load_lightcurves:
         for j in range(len(self._ttvs.fit_t0s)):
             if isinstance(dt, tuple):
                 if len(dt) == 2:
+                    assert dt[0]==0, "transit_timing_variation(): for N(mu,std) prior, mu must be 0."
                     self._ttvs.prior.append(_param_obj(*["y", self._ttvs.fit_t0s[j], 2e-4, "p",self._ttvs.fit_t0s[j], dt[1], dt[1], 
                                                     self._ttvs.fit_t0s[j]-20*dt[1], self._ttvs.fit_t0s[j]+20*dt[1]]))
                 elif len(dt) == 3:
+                    assert dt[1]==0 and dt[0]<dt[2], "transit_timing_variation(): for U(min,start,max) prior, start must be 0 and min<max."
                     self._ttvs.prior.append(_param_obj(*["y", self._ttvs.fit_t0s[j], 2e-4, "n", self._ttvs.fit_t0s[j], 0, 0, 
-                                                            self._ttvs.fit_t0s[j]-dt[0], self._ttvs.fit_t0s[j]+dt[2]]))
+                                                            self._ttvs.fit_t0s[j]+dt[0], self._ttvs.fit_t0s[j]+dt[2]]))
         self._ttvs.lin_eph = {}
         for i in range(len(self._ttvs.fit_t0s)):
             self._ttvs.lin_eph[self._ttvs.fit_labels[i]] = self._ttvs.fit_t0s[i]
             
         if verbose: _print_output(self,"timing_variation")
         if print_linear_eph:
-            _print_lin = f"""\n======(linear ephemeris estimate)===============\n{"label":20s}\t{"T0s (ordered)":16s}"""
-            txtfmt = "\n{0:20s}\t{1:.8f}"
+            _print_lin = f"""\n======(linear ephemeris estimate)===============\n{"label":20s}\t{"T0s (ordered)":16s}\t{"T0s priors"}"""
+            txtfmt = "\n{0:20s}\t{1:.8f}\t{2}"
             for i in range(len(self._ttvs.fit_t0s)):
-                t = txtfmt.format(self._ttvs.fit_labels[i], self._ttvs.fit_t0s[i])
+                ttv_pri = f"N({self._ttvs.fit_t0s[i]:.4f},{dt})" if len(dt)==2 else f"U({self._ttvs.fit_t0s[i]+dt[0]:.4f},{self._ttvs.fit_t0s[i]:.4f},{self._ttvs.fit_t0s[i]+dt[2]:.4f})"
+                t = txtfmt.format(self._ttvs.fit_labels[i], self._ttvs.fit_t0s[i],ttv_pri)
                 _print_lin += t
             print(_print_lin)
     
-    def add_custom_LC_function(self,func=None, x="time",func_args=dict(), op_func=None,replace_LCmodel=False,
+    def add_custom_LC_function(self,func=None, x="time",func_args=dict(), extra_args=dict(), op_func=None,replace_LCmodel=False,
                                verbose=True):
         """
-        Define custom function to be combined with the light-curve model. The function must be of the form `func(x, **func_args)` where `x` is the independent variable of the function.
+        Define custom function to be combined with the light-curve model. The function must be of the form `func(x, **func_args,extra_args)` where `x` is the independent variable of the function.
         The function must return the signal to be combined with the light-curve model using `op_func`.
 
         Parameters:
         -----------
         func : callable;
-            custom function to add to the light-curve model. Must be of the form `func(x,**func_args)` where `x` is the independent variable of the function. Default is None.
+            custom function to add to the light-curve model. Must be of the form `func(x,**func_args,extra_args)` where `x` is the independent variable of the function. Default is None.
             if this function replaces the native lightcurve model(`replace_LCmodel=True`), an additional dictionary argument of zero initilized LC parameters should be given to use in computing the new LCmodel i.e
-            `func(x,**func_args, LC_pars=dict(Duration=0,rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,omega=90,q1=0,q2=0,D_occ=0,A_atm=0,ph_off=0,A_ev=0,A_db=0))`
+            `func(x,**func_args,extra_args, LC_pars=dict(Duration=0,rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,omega=90,q1=0,q2=0,D_occ=0,Fn=0,ph_off=0,A_ev=0,A_db=0))`
         x : str;
             the independent variable of the custom function. can be 'time' or 'phase_angle'. Default is "time".
             if 'time', the independent variable is the time array of each light-curve. if 'phase_angle', the independent variable is the phase angle computed within the transit model.
             the phase angle is generally given by true_anom+omega-pi/2 or simply 2pi*phase for circular orbit. If `replace_LCmodel=True`, then x needs to be time. 
         func_args : dict;
             dictionary of arguments to pass to the custom function. The keys must be the argument names for the custom function.
-            each parameter can be fixed to a value or set as a jump parameter. The values must be a float/int or tuple of length 2/3.
+            each parameter can be fixed to a value(float/int) or set as a jump parameter (tuple of length 2/3/4). Default is an empty dictionary.
+            tuple of length 2:nnormal prior (mean, std), tuple of length 3: uniform prior (min, start, max), tuple of length 4: truncated normal prior (min,max,mean, std)
+        extra_args : dict;
+            dictionary of extra arguments to pass to the custom function.  this arguments can be strings or any data type needed to be specified in the custom function. Default is an empty dictionary.
         op_func : callable;
             operation function to apply to the output of custom function and transit model to obtain the desired model. 
             Must be of the form `op_func(transit_model,custom_model)`. Default is None. This function is not required if `replace_LCmodel=True`. 
@@ -2283,7 +2667,7 @@ class load_lightcurves:
         Examples:
         --------
         # 1. create a custom function in phase angle that adds sinusoidal components to the light curve model
-        >>> def custom_func(phase_angle, A, B, C):     # A,B,C are the custom parameters
+        >>> def custom_func(phase_angle, A, B, C,extra_args={}):     # A,B,C are the custom parameters and no extra arguments
         >>>     return A*np.sin(phase_angle) + B*np.cos(2*phase_angle) + C
 
         >>> def op_func(transit_model, custom_model):   # operation function to combine the custom model with the transit model
@@ -2293,10 +2677,11 @@ class load_lightcurves:
         >>> custom_lcfunc = lc_obj.add_custom_LC_function(func=custom_func, x="phase_angle",func_args=dict(A=0.1, B=(0.2,0,0.01), C=(0.3,0.01), op_func=op_func)
         >>> # this custom function has now been registered and will be used in the light-curve model.
 
-        # 2. replace the transit model with a custom model that has two extra parameters beyond the standard transit model parameters.
-        # here we create a custom model from `catwoman` that models asymmetric transit light curves using two extra parameters rp2 and phi.
-        >>> LC_pars=dict(Duration=0,rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,omega=90,q1=0,q2=0,D_occ=0,A_atm=0,ph_off=0,A_ev=0,A_db=0)
-        >>> def catwoman_func(t, rp2, phi, LC_pars=LC_pars):
+        # 2. replace the transit model with a custom model that has two new parameters beyond the standard transit model parameters.
+        # here we create a custom model from `catwoman` that models asymmetric transit light curves using two new parameters rp2 and phi.
+        # the limb darkening law to use in catwoman  can be passed in the extra_args dictionary.
+        >>> LC_pars=dict(Duration=0,rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,omega=90,q1=0,q2=0,D_occ=0,Fn=0,ph_off=0,A_ev=0,A_db=0)
+        >>> def catwoman_func(t, rp2, phi, extra_args=dict(ld_law="quadratic"),LC_pars=LC_pars):
         >>>     import catwoman 
         >>>     import numpy as np
         >>>     import astropy.constants as c
@@ -2314,7 +2699,7 @@ class load_lightcurves:
         >>>     params.inc = np.arccos(LD_pars["Impact_para"]/aR)   
         >>>     params.ecc = LD_pars["Eccentricity"]   
         >>>     params.w   = LD_pars["omega"]             
-        >>>     params.limb_dark = "quadratic"  
+        >>>     params.limb_dark = extra_args["ld_law"]
         >>>     #convert from kipping parameterisation to quadratic
         >>>     u1 = 2*np.sqrt(LD_pars["q1"])*LD_pars["q2"]  
         >>>     u2 = np.sqrt(LD_pars["q1"])*(1-2*LD_pars["q2"]) 
@@ -2326,20 +2711,22 @@ class load_lightcurves:
         >>>     model = catwoman.TransitModel(params,t)         #initalises model
         >>>     return  model.light_curve(params)                #calculates light curve
         >>> 
-        >>> lc_obj.add_custom_LC_function(func=catwoman_func, x="time",func_args=dict(rp2=(0.1,0.01), phi=(-90,0,90)), op_func=None,replace_LCmodel=True)
+        >>> lc_obj.add_custom_LC_function(func=catwoman_func, x="time",func_args=dict(rp2=(0.1,0.01), phi=(-90,0,90)),extra_args=dict(ld_law="quadratic") op_func=None,replace_LCmodel=True)
         
         """
 
         if func!=None:
             assert callable(func), "add_custom_LC_function(): func must be a callable function."
             assert isinstance(func_args, dict), "add_custom_LC_function(): func_args must be a dictionary."
+            if extra_args == None: extra_args=dict()
+            assert isinstance(extra_args, dict), "add_custom_LC_function(): extra_args must be a dictionary."
             #check that opfunc takes two array arguments
             if not replace_LCmodel: 
                 assert x in ["time","phase_angle"], "add_custom_LC_function(): x must be 'time' or 'phase_angle'."
                 assert callable(op_func), "add_custom_LC_function(): op_func must be a callable function."
                 assert len(inspect.signature(op_func).parameters)==2, f"add_custom_LC_function(): op_func must take two arguments but {len(inspect.signature(op_func).parameters)} given."
-                #assert that number of arguments in func() is equalt to the number of parameters in func_args + the independent variable x
-                assert len(inspect.signature(func).parameters)==len(func_args)+1, f"add_custom_LC_function(): number of arguments in func_args must be equal to number of arguments in func minus 1."
+                #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args dict
+                assert len(inspect.signature(func).parameters)==len(func_args)+2, f"add_custom_LC_function(): number of arguments in func must be equal to number of parameters in func_args + the independent variable + extra_args."
             else:
                 assert x=="time", "add_custom_LC_function(): x must be 'time' if replace_LCmodel=True."
                 # assert LC_pars argument in func
@@ -2347,86 +2734,82 @@ class load_lightcurves:
                 #assert LC_pars argument is a dict with keys in planet_parameters
                 tp_arg = inspect.signature(func).parameters["LC_pars"].default
                 assert isinstance(tp_arg, dict) and len(tp_arg)==15, "add_custom_LC_function(): LC_pars argument in func must be a dictionary with 15 keys."
-                assert all([k in tp_arg.keys() for k in ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","A_atm","ph_off","A_ev","A_db"]]), \
-                    'add_custom_LC_function(): LC_pars argument in func must same keys as planet_parameters ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","A_atm","ph_off","A_ev","A_db"].'
-                #assert that number of arguments in func() is equalt to the number of parameters in func_args + the independent variable x + LC_pars
-                assert len(inspect.signature(func).parameters)==len(func_args)+2, f"add_custom_LC_function(): number of arguments in func_args must be equal to number of arguments in func minus 2."
+                assert all([k in tp_arg.keys() for k in ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","Fn","ph_off","A_ev","A_db"]]), \
+                    'add_custom_LC_function(): LC_pars argument in func must same keys as planet_parameters ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","Fn","ph_off","A_ev","A_db"].'
+                #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args + LC_pars
+                assert len(inspect.signature(func).parameters)==len(func_args)+3, f"add_custom_LC_function(): number of arguments in func_args must be equal to number of arguments in func minus 2."
         else: 
-            self._custom_LCfunc = SimpleNamespace(func=None,x=None,op_func=None, func_args={},par_dict={},npars=0,replace_LCmodel=False)
-            if verbose: _print_output(self,"custom_function")
+            self._custom_LCfunc = SimpleNamespace(func=None,x=None,op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_LCmodel=False)
+            if verbose: _print_output(self,"custom_LCfunction")
             return None
         
         par_dict = {}   #dictionary to store parameter objects
+        nfree    = 0
         for k in func_args.keys():
             if isinstance(func_args[k], (int,float)): 
                 par_dict[k]  = _param_obj(*["n", func_args[k], 0.00, "n", func_args[k], 0, 0, 0, 0])
             elif isinstance(func_args[k], tuple):
-                assert len(func_args[k]) in [2,3], f"add_custom_LC_function(): func_args[{k}] must be a tuple of length 2/3."
+                assert len(func_args[k]) in [2,3,4], f"add_custom_LC_function(): func_args[{k}] must be a tuple of length 2/3/4."
                 if len(func_args[k])==2: #gaussian prior
                     par_dict[k] = _param_obj(*["y", func_args[k][0], 0.1*func_args[k][1], "p", func_args[k][0], func_args[k][1], func_args[k][1], func_args[k][0]-10*func_args[k][1], func_args[k][0]+10*func_args[k][1]])
                 if len(func_args[k])==3: #uniform prior
                     par_dict[k] = _param_obj(*["y", func_args[k][1], 0.001*np.ptp(func_args[k]), "n", func_args[k][1], 0, 0, func_args[k][0], func_args[k][2]])
+                if len(func_args[k])==4: #trunc gaussian prior
+                    par_dict[k] = _param_obj(*["y", func_args[k][2], 0.1*func_args[k][3], "p", func_args[k][2], func_args[k][3], func_args[k][3], func_args[k][0], func_args[k][1]])
+                nfree += 1
             else:
                 _raise(TypeError, f"add_custom_LC_function(): func_args[{k}] must be a float/int/tuple.")
-        self._custom_LCfunc = SimpleNamespace(func=func, x=x,op_func=op_func, func_args=func_args,par_dict=par_dict, npars=len(par_dict),replace_LCmodel=replace_LCmodel)
+        self._custom_LCfunc = SimpleNamespace(func=func, x=x,op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_LCmodel=replace_LCmodel)
 
-        if verbose: _print_output(self,"custom_function")
+        if verbose: _print_output(self,"custom_LCfunction")
         return deepcopy(self._custom_LCfunc)
     
-    def setup_phasecurve(self, D_occ=0, A_atm=0, ph_off=0, A_ev=0, A_db=0, verbose=True ):
+    def setup_phasecurve(self, D_occ=0, Fn=None, ph_off=None, A_ev=0, A_db=0, verbose=True ):
         """
-            Setup phase curve parameters for each unique filter in loaded lightcurve. use `._fil_names` attribute to see the unique filter order.
-            
+            Setup phase curve parameters for each unique filter in loaded lightcurve. use `._filnames` attribute to see the unique filter order.
+            Fn and ph_off are set to None by default which means the planet's phase variation is not included in the model (so we have just the occultation model if Docc is given). setting Fn and ph_off to a value, even if fixed to zero turns on the phase variation model.             
             Parameters:
             -----------
             D_occ : float, tuple, list;
-                Occultation depth in ppm. Default is 0.
-
-            A_atm : float, tuple, list;
-                Semi-amplitude of planet's atmopsheric variation in ppm. Default is 0.
-
+                Occultation depth/dayside flux in ppm. Default is 0.
+            Fn : float, tuple, list,None;
+                Planet Nightside flux in ppm. Default is None which implies that a phase curve model is not included 
             ph_off : float, tuple,list;
-                Offset of the hotspot in degrees. Default is 0.
-
+                Offset of the hotspot in degrees. Default is None.
             A_ev : float, tuple, list;
                 semi-amplitude of ellipsoidal variation in ppm. Default is 0.
-
             A_db : float, tuple, list;
                 semi-amplitude of Doppler boosting in ppm. Default is 0.
-
             verbose : bool;
                 print output. Default is True.
         """
+
         DA = locals().copy()
         _  = [DA.pop(item) for item in ["self","verbose"]]
 
         nfilt  = len(self._filnames)    #length of unique filters
 
         for par in DA.keys():
-            if isinstance(DA[par], (int,float,tuple)): DA[par] = [DA[par]]*nfilt
+            if isinstance(DA[par], (int,float,tuple)) or DA[par]==None: DA[par] = [DA[par]]*nfilt
             if isinstance(DA[par], list):
                 if len(DA[par])==1: DA[par] = DA[par]*nfilt
             assert len(DA[par])==nfilt, \
                         f"setup_phasecurve(): {par} must be a list of length {nfilt} (for filters {list(self._filnames)}) or float/int/tuple."
         
-        #occ_depth
-        self._PC_dict = dict(D_occ = {}, A_atm = {}, ph_off = {}, A_ev = {}, A_db={})     #dictionary to store phase curve parameters
-        for par in DA.keys():      #D_occ, A_atm, ph_off,A_ev, A_db
+        self._model_phasevar = [False]*nfilt
+        for i in range(nfilt):
+            if DA['Fn'][i]!=None and DA['ph_off'][i]!=None: 
+                self._model_phasevar[i] = True
+                if verbose: print(f"{self._filnames[i]}: modeling planet's phase_variation with the occultation signal")
+            else:                         
+                self._model_phasevar[i] = False
+                if verbose: print(f"{self._filnames[i]}: modeling only occultation signal")
+
+        self._PC_dict = dict(D_occ = {}, Fn = {}, ph_off = {}, A_ev = {}, A_db={})     #dictionary to store phase curve parameters
+        for par in DA.keys():      #D_occ, Fn, ph_off,A_ev, A_db
             for i,f in enumerate(self._filnames):    
                 v = DA[par][i]
-                if isinstance(v, tuple):   
-                    #recall: _param_obj([to_fit, start_value, step_size,prior, prior_mean,pr_width_lo,prior_width_hi, bounds_lo, bounds_hi])
-                    step = 1  #deg or ppm
-                    if len(v) == 2:                 #gaussian  prior
-                        self._PC_dict[par][f] = _param_obj(*["y", v[0], step, "p", v[0], v[1], v[1], 0, v[0]+20*v[1]])
-                    elif len(v) == 3:               #uniform prior
-                        self._PC_dict[par][f] = _param_obj(*["y", v[1], step, "n", v[1], 0, 0, v[0], v[2]])
-                    else: _raise(ValueError, f"setup_phasecurve(): length of tuple {par} is {len(v)} but it must be 2 for gaussian or 3 for uniform priors")
-                
-                elif isinstance(v, (int, float)):   #fixed value
-                    self._PC_dict[par][f] = _param_obj(*["n", v, 0.00, "n", v, 0, 0, 0, 0])
-                
-                else: _raise(TypeError, f"setup_phasecurve(): {par} must be one of [tuple(of len 2 or 3), float] but {v} is given for filter {f}.")
+                self._PC_dict[par][f] = _param_obj.from_tuple(v,step=1,user_input=v,func_call="setup_phasecurve():")
 
         if verbose: _print_output(self,"phasecurve")
 
@@ -2438,23 +2821,17 @@ class load_lightcurves:
         ----------
         Teff : tuple
             (value, std) of stellar effective temperature
-
         logg : tuple
             (value, std) of stellar logg
-
         Z : tuple
             (value, std) of stellar metallicity
-
         filter_names : list of str
             SVO filter name such as 'Spitzer/IRAC.I1' or a name shortcut such as "TESS", "CHEOPS","kepler". 
             use `lc_obj._filter_shortcuts` to get list of filter shortcut names. Filter names can be obtained from http://svo2.cab.inta-csic.es/theory/fps/
-
         unc_mult : int/float, optional
             value by which to multiply ldtk uncertainties which are usually underestimated, by default 10
-
         fixed_unc : float/list, optional
             fixed uncertainty value to use for each filter, by default None and unc_mult is used
-
         use_result : bool, optional
             whether to use the result to setup limb darkening priors, by default True
 
@@ -2525,6 +2902,18 @@ class load_lightcurves:
                 if tuple, must be of - length 2 for normal prior (mean,std) or length 3 for uniform prior defined as (lo_lim, val, uplim).
                 The values must obey: (0<q1<1) and (0<=q2<1)
 
+            Example:
+            --------
+            # set the limb darkening coefficients for each filter
+            >>> lc_obj.limb_darkening(q1=0.5, q2=0.2)  # fixed values for all filters
+            >>> lc_obj.limb_darkening(q1=[0.5,0.6], q2=[0.2,0.3])  # different fixed values for each filter (2 filters)  
+
+            >>> lc_obj.limb_darkening(q1=(0.5,0.1), q2=(0.2,0.05))  # normal prior for all filters
+            >>> lc_obj.limb_darkening(q1=[(0.5,0.1),(0.6,0.05)], q2=[(0.2,0.05),(0.3,0.1)])  # different normal prior for each filter (2 filters)
+            
+            >>> lc_obj.limb_darkening(q1=(0,0.1,1), q2=(0,0.05,1))  # uniform prior for all filters
+            >>> lc_obj.limb_darkening(q1=[(0,0.1,1),(0.6,0.05,1)], q2=[(0,0.05,1),(0.3,0.1,1)])  # different uniform prior for each filter (2 filters
+
         """
         #defaults
         bound_lo1 = bound_lo2 = 0
@@ -2575,31 +2964,33 @@ class load_lightcurves:
 
     def contamination_factors(self, cont_ratio=0, verbose=True):
         """
-            add contamination factor for each unique filter defined from load_lightcurves().
+            add contamination factor for each unique filter defined in load_lightcurves().
 
             Paramters:
             ----------
-            cont_ratio: list, float;
+            cont_ratio: tuple, float;
                 ratio of contamination flux to target flux in aperture for each filter. The order of list follows lc_obj._filnames.
                 Very unlikely but if a single float/tuple is given for several filters, same cont_ratio is used for all.
+            
+            Example:
+            --------
+            >>> lc_obj.contamination_factors(cont_ratio=0.1)  # fixed contamination ratio for all filters
+            >>> lc_obj.contamination_factors(cont_ratio=[0.1,0.08])  # different contamination ratio for each filter
+            >>> lc_obj.contamination_factors(cont_ratio=(0.1,0.01))  # normal prior for all filters
         """
-
-        DA = locals().copy()
-        _ = DA.pop("self")            #remove self from dictionary
-        _ = DA.pop("verbose")
-
         nfilt = len(self._filnames)
 
+        if isinstance(cont_ratio, (int,float,tuple)): cont_ratio = [cont_ratio]*nfilt
+        elif isinstance(cont_ratio, list):
+            if len(cont_ratio)==1: cont_ratio = cont_ratio*nfilt
+            assert len(cont_ratio)==nfilt, f"contamination(): cont_ratio must be a list of length {nfilt}  (for filters {list(self._filnames)}) or float/int/tuple."
+        else:
+            _raise(TypeError, f"contamination(): cont_ratio must be one of [tuple(of len 2/3/4), float, or list of float/tuple] but {cont_ratio} is given.")
+        
+        self._contfact_dict = {}
+        for i,f in enumerate(self._filnames):
+                self._contfact_dict[f] = _param_obj.from_tuple(cont_ratio[i],user_input=cont_ratio[i],func_call="contamination_factors():")
 
-        for par in DA.keys():
-            if isinstance(DA[par], (int,float)): DA[par] = [(DA[par],0)]*nfilt
-            elif isinstance(DA[par], list):
-                assert len(DA[par]) == nfilt, f"contamination_factors(): length of input {par} must be equal to the length of unique filters (={nfilt}) or float."
-                for i in range(nfilt):
-                    if isinstance(DA[par][i], (int,float)): DA[par][i] = (DA[par][i],0)
-            else: _raise(TypeError, f"contamination_factors(): {par} must be a float but {DA[par]} given.")
-            
-        self._contfact_dict = DA
         if verbose: _print_output(self,"contamination")
 
     def __repr__(self):
@@ -2613,54 +3004,61 @@ class load_lightcurves:
         """
             Print out all input configuration (or particular section) for the light curve object. 
             It is printed out in the format of the legacy CONAN config file.
+            
             Parameters:
             ------------
             section : str (optional) ;
-                section of configuration to print.Must be one of ["lc_baseline", "gp", "planet_parameters", "custom_function", "depth_variation", "occultations", "limb_darkening", "contamination", "stellar_pars"].
+                section of configuration to print.Must be one of ["lc_baseline", "sinusoid","gp", "planet_parameters", "custom_LCfunction", "depth_variation", "occultations", "limb_darkening", "contamination", "stellar_pars"].
                 Default is 'all' to print all sections.
         """
         if section=="all":
             _print_output(self,"lc_baseline")
+            _print_output(self,"sinusoid")
             _print_output(self,"gp")
             _print_output(self,"planet_parameters")
             _print_output(self,"limb_darkening")
             _print_output(self,"depth_variation")
             _print_output(self,"timing_variation")
             _print_output(self,"phasecurve")
-            _print_output(self,"custom_function")
+            _print_output(self,"custom_LCfunction")
             _print_output(self,"contamination")
         else:
-            possible_sections= ["lc_baseline", "gp", "planet_parameters", "custom_function", "depth_variation","timing_variation",  
+            possible_sections= ["lc_baseline", "sinusoid", "gp", "planet_parameters", "custom_LCfunction", "depth_variation","timing_variation",  
                                 "phasecurve", "limb_darkening", "contamination", "stellar_pars"]
             assert section in possible_sections, f"print: {section} not a valid section of `lc_obj`. \
                 section must be one of {possible_sections}."
             _print_output(self, section)
 
-    def save_LCs(self, save_path=None, overwrite=False, verbose=True):
+    def save_LCs(self, save_path=None, suffix="",overwrite=False, verbose=True):
         """
-            Save the loaded light curves to a single file in the format of the legacy CONAN config file.
+            Save each of the loaded light curves to a .dat file  
 
             Parameters:
             -----------
             save_path : str;
                 path to save the LC data. Default is None to save to a folder 'data_preproc/' in current working directory.
-
+            suffix : str;
+                suffix to add to the original name of each file. Default is "".
             overwrite : bool;
                 overwrite the existing file. Default is False.
-
             verbose : bool;
                 print output. Default is True.
+
+            Example:
+            --------
+            >>> lc_obj.save_LCs(save_path="data_preproc/", suffix="_clpd")
         """
         if save_path is None: save_path = 'data_preproc/'
         for k,lc in self._input_lc.items():
             if not os.path.exists(save_path): os.makedirs(save_path)
+            _fname  = splitext(k)[0] + suffix + splitext(k)[1]
             if not overwrite:
-                if os.path.exists(save_path+k): 
-                    print(f"save_LCs(): {save_path+k} already exists. Set `overwrite=True` to overwrite the file.")
+                if os.path.exists(save_path+_fname): 
+                    print(f"save_LCs(): {save_path+_fname} already exists. Set `overwrite=True` to overwrite the file.")
                     return
             #save dict lc as a .dat file 
-            pd.DataFrame(lc).to_csv(save_path+k, index=False, sep="\t", header=False,float_format='%-16.6f')
-            if verbose: print(f"save_LCs(): {save_path+k} saved.")
+            pd.DataFrame(lc).to_csv(save_path+_fname, index=False, sep="\t", header=False,float_format='%-16.6f')
+            if verbose: print(f"save_LCs(): {save_path+_fname} saved.")
 
 
     def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, 
@@ -2675,29 +3073,21 @@ class load_lightcurves:
                 Default is (0,1,2) to plot column 0 against 1, and 2 as errorbar (i.e. time against flux with fluxerr). 
                 Use (3,1,2) to show the correlation between column 3 and the flux. Using tuple of length 2 does not plot errorbars. e.g (3,1).
                 if decorrelation has been done with `lmfit`, the "res" can also be given to plot a column against the residual of the fit.
-
             col_labels : tuple of length 2;
                 label of the given columns in plot_cols. Default is ("time", "flux").
-            
             nrow_ncols : tuple of length 2;
                 Number of rows and columns to plot the input files. 
                 Default is None to find the best layout.
-
             fit_order : int;
                 order of polynomial to fit to the plotted data columns to visualize correlation.
-
             show_decorr_model : bool;
                 show decorrelation model if decorrelation has been done.
-
             detrend : bool;
                 plot the detrended data. Default is False.
-
             hspace, wspace: float;
                 height and width space between subplots. Default is None to use matplotlib defaults.
-
             binsize : float;
                 binsize to use for binning the data in time. Default is 0.0104 (15mins).
-
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
 
@@ -2780,7 +3170,7 @@ class load_rvs:
             fdata = np.loadtxt(self._fpath+f)
             nrow,ncol = fdata.shape
             if ncol < 6:
-                print(f"Expected at least 6 columns for RV file: writing ones to the missing columns of file: {f}")
+                # if verbose: print(f"Expected at least 6 columns for RV file: writing ones to the missing columns of file: {f}")
                 new_cols = np.ones((nrow,6-ncol))
                 fdata = np.hstack((fdata,new_cols))
                 np.savetxt(self._fpath+f,fdata,fmt='%.8f')
@@ -2802,9 +3192,10 @@ class load_rvs:
             
         self._rescaled_data = SimpleNamespace(flag=False, config=["None"]*self._nRV)
         self.rv_baseline(verbose=False)
+        self.add_custom_RV_function(verbose=False)
 
 
-    def update_planet_parameters(self, T_0=0, Period=0, Eccentricity=0, omega=90, K=0, verbose=True):
+    def update_planet_parameters(self, T_0=None, Period=None, Eccentricity=None, omega=None, K=None, verbose=True):
         """
             Update the rv planet parameters defined in the lightcurve object. 
 
@@ -2842,8 +3233,12 @@ class load_rvs:
         
         if isinstance(method,str): method = [method]*self._nRV
         elif isinstance(method, list):
-            assert len(method)==1 or len(method)==self._nRV, f'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})'
-        else: _raise(TypeError,'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nphot})')
+            assert len(method)==1 or len(method)==self._nRV, f'rescale_data_columns(): method must be either str or list of same length as number of input lcs ({self._nRV})'
+        else: _raise(TypeError,'rescale_data_columns(): method must be either str or list of same length as number of input RVs ({self._nRV})')
+
+        if method == ["None"]*self._nRV:
+            self._rescaled_data.flag = False
+            return None
         
         for j,rv in enumerate(self._names):
             assert method[j] in ["med_sub", "rs0to1", "rs-1to1","None"], f"method must be one of ['med_sub','rs0to1','rs-1to1','None'] but {method[j]} given"
@@ -3007,9 +3402,7 @@ class load_rvs:
 
         return self._rvdecorr_result
     
-    def rv_baseline(self, dcol0=None, dcol3=None, dcol4=None, dcol5=None,sinPs=None,
-                    gamma=0.0, gam_steps=0.001, gp="n",
-                    verbose=True):
+    def rv_baseline(self, dcol0=None, dcol3=None, dcol4=None, dcol5=None, sinPs=None,gamma=0.0, gp="n",verbose=True):
         
         """
             Define rv baseline model parameters to fit.
@@ -3017,10 +3410,12 @@ class load_rvs:
             e.g. Given 3 input rvs, and one wishes to fit a 2nd order time trend to only the first and third lightcurves,
             then dcol0 = [2, 0, 2].
 
+            Parameters:
+            -----------
             dcol0,dcol3,dcol4,dcol5,: list of ints;
-                polynomial order to fit to each column. Default is 0 for all columns. 
+                polynomial order to fit to each column. Default is 0 for all columns. max order is 2
             gamma: tuple,floats or list of tuple/float;
-                specify if to fit for gamma. if float/int, it is fixed to this value. If tuple of len 2 it assumes gaussian prior as (prior_mean, width).
+                specify if to fit for gamma. if float/int, it is fixed to this value. If tuple of len 2 it assumes gaussian prior as (prior_mean, width) and if len 3 uniform as (min,start,max) with min<start<max.
         """
 
         # if self._names == []: 
@@ -3030,74 +3425,164 @@ class load_rvs:
         if isinstance(gamma, list): assert len(gamma) == self._nRV, f"gamma must be type tuple/int or list of tuples/floats/ints of len {self._nRV}."
         elif isinstance(gamma, (tuple,float,int)): gamma=[gamma]*self._nRV
         else: _raise(TypeError, f"gamma must be type tuple/int or list of tuples/floats/ints of len {self._nRV}." )
-        
-        gammas,prior,gam_pri,sig_lo,sig_hi,bound_lo, bound_hi = [],[],[],[],[],[],[]
-        for g in gamma:
-            #fixed gammas
-            if isinstance(g, (float,int)):
-                prior.append("n")
-                gammas.append(g)
-                gam_pri.append(g)
-                sig_lo.append(0)
-                sig_hi.append(0)
-                bound_lo.append(0)
-                bound_hi.append(0)
-            #fit gammas
-            elif isinstance(g, tuple):
-                if len(g)==2:
-                    prior.append("y")
-                    gammas.append(g[0])
-                    gam_pri.append(g[0])
-                    sig_lo.append(g[1])
-                    sig_hi.append(g[1])  
-                    bound_lo.append(g[0]-10*g[1])
-                    bound_hi.append(g[0]+10*g[1])
-                if len(g)==3:
-                    prior.append("n")
-                    gammas.append(g[1])
-                    gam_pri.append(g[1])
-                    sig_lo.append(0)
-                    sig_hi.append(0)  
-                    bound_lo.append(g[0])
-                    bound_hi.append(g[2]) 
-
-            else: _raise(TypeError, f"a tuple of len 2 or 3, float or int was expected but got the value {g} in gamma.")
+        sinPs = [0]*self._nRV
 
         DA = locals().copy()     #get a dictionary of the input/variables arguments for easy manipulation
-        _ = DA.pop("self")            #remove self from dictionary
-        _ = [DA.pop(item) for item in ["verbose","gamma"]]
-        if "g" in DA: _ = DA.pop("g")
+        _ = [DA.pop(item) for item in ["self","gamma","verbose"]]
 
-        for par in DA.keys():
-            assert DA[par] is None or isinstance(DA[par], (int,float,str)) or (isinstance(DA[par], (list,np.ndarray)) and len(DA[par]) == self._nRV), f"parameter {par} must be a list of length {self._nRV} or int (if same degree is to be used for all RVs) or None (if not used in decorrelation)."
-            
-            if DA[par] is None: DA[par] = [0]*self._nRV
+        for par in DA.keys():            
+            if DA[par] is None: DA[par] = ["n"]*self._nRV if par=="gp" else [0]*self._nRV
             elif isinstance(DA[par], (int,float,str)): DA[par] = [DA[par]]*self._nRV
+            elif isinstance(DA[par],list): 
+                if len(DA[par])==1: DA[par]*self._nRV
+                assert len(DA[par]) == self._nRV, f"parameter {par} must be a list of length {self._nRV} or 1 if same is to be used for all RVs or None"
 
             if par=="gp":
-                for p in DA[par]: assert p in ["ce","y","n"], f"rv_baseline(): gp must be one of ['y','n'] but {p} given."
-            
+                for p in DA[par]: assert p in ["ce","y","n"], f"rv_baseline(): gp must be one of ['y','ce','n'] but {p} given."
+            if 'dcol' in par:
+                for p in DA[par]: assert isinstance(p, (int,np.int64)) and p<3, f"rv_baseline(): polynomial order must be int of max 2 but {p} given."
 
         self._RVbases = [ [DA["dcol0"][i], DA["dcol3"][i], DA["dcol4"][i], DA["dcol5"][i],DA["sinPs"][i]] for i in range(self._nRV) ]
         self._useGPrv = DA["gp"]
-        self._gp_rvs  = lambda : np.array(self._names)[np.array(self._useGPrv) != "n"]     #lcs with gp == "y" or "ce"
+        self._gp_rvs  = lambda : np.array(self._names)[np.array(self._useGPrv) != "n"]     #rvs with gp == "y" or "ce"
         
-        gampriloa=[]
-        gamprihia=[]
-        for i in range(self._nRV):
-            gampriloa.append( 0. if (DA["prior"][i] == 'n' or DA["gam_steps"][i] == 0.) else DA["sig_lo"][i])
-            gamprihia.append( 0. if (DA["prior"][i] == 'n' or DA["gam_steps"][i] == 0.) else DA["sig_hi"][i])
-        
-        DA["gampriloa"] = gampriloa                
-        DA["gamprihia"] = gamprihia                
-        
+        DA["gamma"] = []
+        for g in gamma:
+            DA["gamma"].append(_param_obj.from_tuple(g, user_input=g, func_call="rv_baseline():"))
+                    
+        _ = [DA.pop(item) for item in ["dcol0","dcol3","dcol4","dcol5"]]
         self._rvdict   = DA
+        
         if not hasattr(self,"_rvspline"):  self.add_spline(None, verbose=False)
-        if np.all(np.array(self._useGPrv) == "n") or len(self._useGPrv)==0:        #if gp is "n" for all input lightcurves, run add_GP with None
+        if np.all(np.array(self._useGPrv) == "n") or len(self._useGPrv)==0:        #if gp is "n" for all input rvs, run add_rvGP with None
             self.add_rvGP(None, verbose=False)
 
         if verbose: _print_output(self,"rv_baseline")
     
+
+   
+    def add_custom_RV_function(self,func=None, x="time",func_args=dict(), extra_args=dict(), op_func=None,replace_RVmodel=False,
+                               verbose=True):
+        """
+        Define custom function to be combined with the RV model. The function must be of the form `func(x, **func_args,extra_args)` where `x` is the independent variable of the function.
+        The function must return the signal to be combined with the RV model using `op_func`.
+
+        Parameters:
+        -----------
+        func : callable;
+            custom function to add to the RV model. Must be of the form `func(x,**func_args,extra_args)` where `x` is the independent variable of the function. Default is None.
+            if this function replaces the native CONAN RV model(`replace_RVmodel=True`), an additional dictionary argument of zero-initialized RV parameters should be given to use in computing the new RVmodel i.e
+            `func(x,**func_args,extra_args, RV_pars=dict(T_0=0,Period=0,Eccentricity=0,omega=90,K=0))`
+        x : str;
+            the independent variable of the custom function. can be 'time' or 'true_anomaly'. Default is "time".
+            if 'time', the independent variable is the time array of each RV. if 'true_anomaly', the independent variable is the true anomaly computed within the RV model using time, T0, Period, Eccentricity and omega.
+        func_args : dict;
+            dictionary of arguments to pass to the custom function. The keys must be the argument names for the custom function.
+            each parameter can be fixed to a value(float/int) or set as a jump parameter (tuple of length 2/3/4). Default is an empty dictionary.
+            tuple of length 2:normal prior (mean, std), tuple of length 3: uniform prior (min, start, max), tuple of length 4: truncated normal prior (min,max,mean, std)
+        extra_args : dict;
+            dictionary of extra arguments to pass to the custom function.  this arguments can be strings or any data type needed to be specified in the custom function. Default is an empty dictionary.
+        op_func : callable;
+            operation function to apply to the output of custom function and transit model to obtain the desired model. 
+            Must be of the form `op_func(transit_model,custom_model)`. Default is None. This function is not required if `replace_RVmodel=True`. 
+        replace_RVmodel : bool;
+            replace the transit model with the custom model. Default is False.
+        
+        Returns:
+        --------
+        custom_RVfunc : SimpleNamespace;
+            namespace object containing the custom function, operation function and parameter dictionary.
+
+        Examples:
+        --------
+        # 1. create a custom function in phase angle that adds sinusoidal components to the light curve model
+        >>> def custom_func(phase_angle, A, B, C,extra_args={}):     # A,B,C are the custom parameters and no extra arguments
+        >>>     return A*np.sin(phase_angle) + B*np.cos(2*phase_angle) + C
+
+        >>> def op_func(transit_model, custom_model):   # operation function to combine the custom model with the transit model
+        >>>     return transit_model + custom_model
+
+        >>> # A is fixed, B has uniform prior, C has gaussian prior
+        >>> custom_lcfunc = lc_obj.add_custom_LC_function(func=custom_func, x="phase_angle",func_args=dict(A=0.1, B=(0.2,0,0.01), C=(0.3,0.01), op_func=op_func)
+        >>> # this custom function has now been registered and will be used in the light-curve model.
+
+        # 2. replace the transit model with a custom model that has two new parameters beyond the standard transit model parameters.
+        # here we create a custom model from `catwoman` that models asymmetric transit light curves using two new parameters rp2 and phi.
+        # the limb darkening law to use in catwoman  can be passed in the extra_args dictionary.
+        >>> LC_pars=dict(Duration=0,rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,omega=90,q1=0,q2=0,D_occ=0,Fn=0,ph_off=0,A_ev=0,A_db=0)
+        >>> def catwoman_func(t, rp2, phi, extra_args=dict(ld_law="quadratic"),LC_pars=LC_pars):
+        >>>     import catwoman 
+        >>>     import numpy as np
+        >>>     import astropy.constants as c
+        >>>     import astropy.units as u
+        >>>     
+        >>>     # create a catwoman model. CONAN transit pars in LDpars can be passed to the function
+        >>>     params  = catwoman.TransitParams()
+        >>>     params.t0  = LD_pars["T_0"]          
+        >>>     params.per = LD_pars["Period"]    
+        >>>     params.rp  = LD_pars["RpRs"] 
+        >>>     #convert stellar density to a/R*
+        >>>     G  = (c.G.to(u.cm**3/(u.g*u.second**2))).value
+        >>>     aR = ( rho*G*(P*(u.day.to(u.second)))**2 / (3*np.pi)) **(1/3.)
+        >>>     params.a   =  aR                          
+        >>>     params.inc = np.arccos(LD_pars["Impact_para"]/aR)   
+        >>>     params.ecc = LD_pars["Eccentricity"]   
+        >>>     params.w   = LD_pars["omega"]             
+        >>>     params.limb_dark = extra_args["ld_law"]
+        >>>     #convert from kipping parameterisation to quadratic
+        >>>     u1 = 2*np.sqrt(LD_pars["q1"])*LD_pars["q2"]  
+        >>>     u2 = np.sqrt(LD_pars["q1"])*(1-2*LD_pars["q2"]) 
+        >>>     params.u = [u1, u2]    
+
+        >>>     params.phi = phi                        #angle of rotation of top semi-circle (in degrees)
+        >>>     params.rp2 = rp2                        #bottom semi-circle radius (in units of stellar radii)
+        >>>     
+        >>>     model = catwoman.TransitModel(params,t)         #initalises model
+        >>>     return  model.light_curve(params)                #calculates light curve
+        >>> 
+        >>> lc_obj.add_custom_LC_function(func=catwoman_func, x="time",func_args=dict(rp2=(0.1,0.01), phi=(-90,0,90)),extra_args=dict(ld_law="quadratic") op_func=None,replace_RVmodel=True)
+        
+        """
+
+        if func!=None:
+            assert callable(func), "add_custom_RV_function(): func must be a callable function."
+            assert isinstance(func_args, dict), "add_custom_RV_function(): func_args must be a dictionary."
+            if extra_args == None: extra_args=dict()
+            assert isinstance(extra_args, dict), "add_custom_RV_function(): extra_args must be a dictionary."
+            assert x in ["time","true_anomaly"], "add_custom_RV_function(): x must be 'time' or 'true_anomaly'."
+
+            #check that opfunc takes two array arguments
+            if not replace_RVmodel: 
+                assert callable(op_func), "add_custom_RV_function(): op_func must be a callable function."
+                assert len(inspect.signature(op_func).parameters)==2, f"add_custom_RV_function(): op_func must take two arguments but {len(inspect.signature(op_func).parameters)} given."
+                #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args dict
+                assert len(inspect.signature(func).parameters)==len(func_args)+2, f"add_custom_RV_function(): number of arguments in func must be equal to number of parameters in func_args + the independent variable + extra_args."
+            else:
+                # assert RV_pars argument in func
+                assert "RV_pars" in inspect.signature(func).parameters, "add_custom_RV_function(): RV_pars dictionary argument must be in func in order to replace native transit model."
+                #assert RV_pars argument is a dict with keys in planet_parameters
+                tp_arg = inspect.signature(func).parameters["RV_pars"].default
+                assert isinstance(tp_arg, dict) and len(tp_arg)==5, "add_custom_RV_function(): RV_pars argument in func must be a dictionary with 5 keys i.e. RV_pars=dict(T_0=0,Period=0,Eccentricity=0,omega=90,K=0)"
+                assert all([k in tp_arg.keys() for k in ["T_0","Period","Eccentricity","omega","K"]]), \
+                    'add_custom_RV_function(): RV_pars argument in func must same keys as planet_parameters i.e. RV_pars=dict(T_0=0,Period=0,Eccentricity=0,omega=90,K=0).'
+                #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args + RV_pars
+                assert len(inspect.signature(func).parameters)==len(func_args)+3, f"add_custom_RV_function(): number of arguments in func_args must be equal to number of arguments in func minus 2."
+        else: 
+            self._custom_RVfunc = SimpleNamespace(func=None,x=None,op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_RVmodel=False)
+            if verbose: _print_output(self,"custom_RVfunction")
+            return None
+        
+        par_dict = {}   #dictionary to store parameter objects
+        nfree    = 0
+        for k in func_args.keys():
+            if isinstance(func_args[k], tuple): nfree += 1
+            par_dict[k] = _param_obj.from_tuple(func_args[k], user_input=func_args[k], func_call="add_custom_RV_function():")
+
+        self._custom_RVfunc = SimpleNamespace(func=func, x=x,op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_RVmodel=replace_RVmodel)
+
+        if verbose: _print_output(self,"custom_RVfunction")
+        return deepcopy(self._custom_RVfunc)
+
 
     def add_rvGP(self ,rv_list=None, par=[], kernel=[], operation=[""],
                     amplitude=[], lengthscale=[], verbose=True):
@@ -3236,6 +3721,9 @@ class load_rvs:
             self._rvGP_dict[rv]["ngp"] = ngp
             self._rvGP_dict[rv]["op"]  = DA["operation"][i]
 
+            if self._rvGP_dict[rv]["op"] == "*" and self._rvGP_dict[rv]["ngp"] == 2:
+                assert DA["amplitude"][i][1] == 1, f"add_rvGP(): for multiplication of 2 kernels, the second amplitude must be fixed to 1 to avoid degeneracy, but {DA['amplitude'][i][1]} given."
+
             for p in ["amplitude", "lengthscale"]:
                 for j in range(ngp):
                     if ngp==1: 
@@ -3268,7 +3756,13 @@ class load_rvs:
 
         if verbose: _print_output(self,"rv_gp")
 
-    def add_custom_rvGP():
+    def add_custom_rvGP( self, rv_list=None, module=None, kernel=[], par=[], GP_params=dict(), verbose=True):
+        
+        #user will need to provide the GPmodule to import, relevant kernel and GP parameters, how to get the loglikelihood and get samples(predict)
+
+        #import module using the string name
+        GPmodule = __import__(module)
+
         raise NotImplementedError
 
     
@@ -3376,7 +3870,7 @@ class load_rvs:
     
     def __repr__(self):
         data_type = str(self.__class__).split("load_")[1].split("'>")[0]
-        self.print()
+        self.print("rv_baseline")
         if self._nRV>0:
             return f'{data_type} from filepath: {self._fpath}\n{self._nplanet} planet(s)\n'
         else:
@@ -3446,10 +3940,8 @@ class load_rvs:
             -----------
             save_path : str;
                 path to save the rv data. Default is None to save to a folder 'data_preproc/' in current working directory.
-
             overwrite : bool;
                 overwrite the existing file. Default is False.
-
             verbose : bool;
                 print output. Default is True.
         """
@@ -3466,8 +3958,31 @@ class load_rvs:
 
 
     
-    def print(self, section="rv_baseline"):
-        _print_output(self, section)
+    def print(self, section="all"):
+        """
+            Print out all input configuration (or particular section) for the RV object. 
+            It is printed out in the format of the legacy CONAN config file.
+            
+            Parameters:
+            ------------
+            section : str (optional) ;
+                section of configuration to print. Must be one of ["rv_baseline", "rv_gp", "custom_RVfunction"].
+                Default is 'all' to print all sections.
+        """
+        if section=="all":
+            _print_output(self,"rv_baseline")
+            _print_output(self,"rv_gp")
+            if hasattr(self,"_lcobj"): _print_output(self._lcobj,"planet_parameters")
+            _print_output(self,"custom_RVfunction")
+        else:
+            possible_sections = ["rv_baseline", "rv_gp", "custom_RVfunction","planet_parameters"]
+            assert section in possible_sections, f"print(): section must be one of {possible_sections} but {section} given."
+            if section == "planet_parameters":
+                assert hasattr(self,"_lcobj"), "print(): planet_parameters section can only be printed for RVs if light curve data has been loaded. Use `lc_obj` argument in `load_rvs()` to load in the  lightcurve object."
+                _print_output(self._lcobj,section)
+            else:
+                _print_output(self,section)
+
     
 class fit_setup:
     """
@@ -3660,10 +4175,12 @@ class load_result:
         >>> fig    = result.plot_chains()                       # posterior chains
         >>> fig    = result.lc.plot_bestfit(detrend=True)        # model of the light curves
         >>> fig    = result.rv.plot_bestfit(detrend=True)        # model of the RV curves
+        >>> fig    = result.lc.plot_ttv()                        # plot the TTVs
+        >>> fig    = result.lc.plot_lcttv()                      # plot the light curves showing the TTVs
 
         #get the best-fit parameters
-        >>> med_pars = result.params.median()      # median values of the fitted parameters
-        >>> stdev    = result.params.stdev()       # standard deviation of the fitted parameters
+        >>> med_pars = result.params.median        # median values of the fitted parameters
+        >>> stdev    = result.params.stdev         # standard deviation of the fitted parameters
         >>> pars_dict= result.get_all_params_dict(stat="med")              # get all parameters (fitted, derived, and fixed) as a dictionary
         
         # load files
@@ -3703,6 +4220,7 @@ class load_result:
         input_lcs           = self._ind_para["input_lcs"]
         input_rvs           = self._ind_para["input_rvs"]
         self.fit_sampler    = self._ind_para["fit_sampler"]
+        self._ttvs          = self._ind_para["ttv_conf"]
 
         assert list(self._par_names) == list(self._ind_para["jnames"]),'load_result(): the fitting parameters do not match those saved in the chains_dict.pkl file' + \
             f'\nThey differ in these parameters: {list(set(self._par_names).symmetric_difference(set(self._ind_para["jnames"])))}.'
@@ -3784,6 +4302,8 @@ class load_result:
                                         _obj_type = "lc_obj"
                                         )
             self.lc.plot_bestfit = self._plot_bestfit_lc
+            self.lc.plot_ttv     = self._ttvplot
+            self.lc.plot_lcttv   = self._ttv_lcplot
             
             #RV data and functions
             self.rv = SimpleNamespace(  names     = self._rvnames,
@@ -3909,7 +4429,7 @@ class load_result:
         
     def plot_corner(self, pars=None, bins=20, thin=1, discard=0,
                     q=[0.16,0.5,0.84], range=None,show_titles=True, title_fmt =".3f", titlesize=14,
-                    labelsize=20, multiply_by=1, add_value= 0, force_plot = False ):
+                    labelsize=20, multiply_by=1, add_value= 0, force_plot = False, kwargs={}):
         """
             Corner plot of selected parameters.
             
@@ -3917,41 +4437,30 @@ class load_result:
             ------------
             pars : list of str;
                 parameter names to plot. Ideally less than 15 pars for clarity of plot
-
             bins : int;
                 number of bins in 1d histogram
-
             thin : int;
                 factor by which to thin the chains in order to reduce correlation.
-
             discard : int;
                 to discard first couple of steps within the chains. 
-            
             q : list of floats;
                 quantiles to show on the 1d histograms. defaults correspoind to +/-1 sigma
-                
             range : iterable (same length as pars);
                 A list where each element is either a length 2 tuple containing
                 lower and upper bounds or a float in range (0., 1.)
                 giving the fraction of samples to include in bounds, e.g.,
                 [(0.,10.), (1.,5), 0.999, etc.].
                 If a fraction, the bounds are chosen to be equal-tailed.
-            
             show_titles : bool;
                 whether to show titles for 1d histograms
-
             title_fmt : str;
                 format string for the quantiles given in titles. Default is ".3f" for 3 decimal places.
-
             titlesize : int;
                 size of the titles in the plot.
-
             labelsize : int;
                 size of the labels in the plot.
-
             multiply_by : float or list of floats;
                 factor by which to multiply the chains. Default is 1. If list, must be same length as pars.
-
             add_value : float or list of floats;
                 value to add to the chains. Default is 0. If list, must be same length as pars.
         """
@@ -3981,7 +4490,7 @@ class load_result:
         
         fig = corner.corner(samples, bins=bins, labels=pars, show_titles=show_titles, range=range,
                     title_fmt=title_fmt,quantiles=q,title_kwargs={"fontsize": titlesize},
-                    label_kwargs={"fontsize":labelsize})
+                    label_kwargs={"fontsize":labelsize},**kwargs)
         
         return fig
 
@@ -3997,13 +4506,10 @@ class load_result:
         -----------
         par : str;
             parameter posterior to plot
-
         thin : int;
             thin samples by factor of 'thin'
-
         discard : int;
             to discard first couple of steps within the chains. 
-
 
         Returns:
         --------
@@ -4064,30 +4570,24 @@ class load_result:
                 Default is (0,1,2) to plot column 0 against 1, and 2 as errorbar (i.e. time against flux with fluxerr). 
                 Use (3,1,2) to show the correlation between column 3 and the flux. 
                 Using tuple of length 2 does not plot errorbars. e.g (3,1).
-
             detrend : bool;
                 plot the detrended data. Default is False.
-
             col_labels : tuple of length 2;
                 label of the given columns in plot_cols. Default is ("time", "flux").
-            
             nrow_ncols : tuple of length 2;
                 Number of rows and columns to plot the input files. 
                 Default is None to find the best layout.
-            
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
-
             binsize : float;
-                binsize to use for binning the data in time. Default is 0.0104 (15mins).
-            
+                binsize to use for binning the data in time. Default is  None which gives 10 bin points in transit.
             hspace, wspace: float;
                 height and width space between subplots. Default is None to use matplotlib defaults.
-
             return_fig  : bool;
                 return figure object for saving to file.
         """
-        
+        if binsize==None: binsize = min(self.params.dur)/10
+
         obj = self.lc
         if col_labels is None:
             col_labels = ("time", "flux") if plot_cols[:2] == (0,1) else (f"column[{plot_cols[0]}]",f"column[{plot_cols[1]}]")
@@ -4120,26 +4620,19 @@ class load_result:
                 Default is (0,1,2) to plot column 0 against 1, and 2 as errorbar (i.e. time against flux with fluxerr). 
                 Use (3,1,2) to show the correlation between column 3 and the flux. 
                 Using tuple of length 2 does not plot errorbars. e.g (3,1).
-
             detrend : bool;
                 plot the detrended data. Default is False.
-
             col_labels : tuple of length 2;
                 label of the given columns in plot_cols. Default is ("time", "rv").
-            
             nrow_ncols : tuple of length 2;
                 Number of rows and columns to plot the input files. 
                 Default is None to find the best layout.
-            
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
-
             hspace, wspace: float;
                 height and width space between subplots. Default is None to use matplotlib defaults.
-
             binsize : float;
                 binsize to use for binning the data in time. Default is 0.0104 (15mins).
-                
             return_fig  : bool;
                 return figure object for saving to file.
         """
@@ -4275,7 +4768,6 @@ class load_result:
             posterior summary statistic to use for model calculation, must be one of ["median","max","bestfit"], by default "median".
             "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
             is the parameter combination that gives the maximum joint posterior probability.
-
         out_folder : str, optional
             folder to save the output files. Default is None to save in the current result directory.
 
@@ -4302,19 +4794,14 @@ class load_result:
         -----------
         file : str;
             name of the LC file  for which to evaluate the LC model.
-
         time : array-like;
             times at which to evaluate the model
-
         params : array-like;
             parameters to evaluate the model at. The median posterior parameters from the fit are used if params is None
-
         nsamp : int;
             number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 500.
-
         return_std : bool;
             if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
-
         Returns:
         --------
         object : SimpleNamespace;
@@ -4355,16 +4842,12 @@ class load_result:
         -----------
         file : str;
             name of the RV file for which to evaluate the RVmodel.
-
         time : array-like;
             times at which to evaluate the model
-
         params : array-like;
             parameters to evaluate the model at. The median posterior parameters from the fit are used if params is None
-
         nsamp : int;    
             number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 500.
-
         return_std : bool;
             if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
 
@@ -4399,3 +4882,317 @@ class load_result:
             output = SimpleNamespace(time=time if time is not None else self._ind_para["input_lcs"][file]["col0"],
                                     planet_model=mod.rv[file][0], components=mod.rv[file][1], sigma_low=qs[0], sigma_high=qs[2])
             return output
+
+    def _ttvplot(self,figsize=None):
+        """  
+        plot the transit times of the individual planets in the system having subtracted the best-fit linear ephemeris model.
+
+        Parameters:
+        -----------
+        figsize : tuple of length 2;
+            Figure size. If None, (10,6) used.
+
+        Returns:
+        --------
+        fig : figure object
+        """
+        if self._ttvs==[]:
+            return print("TTV fit not performed for this system.")
+        npl = self._nplanet
+        fig = plt.figure(figsize=(10,6) if figsize is None else figsize)
+        ntr = {}
+        for n in range(1,npl+1):
+            fit_t0s     = np.array([v.n for k,v in self.params_dict.items() if f'T0_pl{n}' in k])
+            fit_t0s_err = np.array([v.s for k,v in self.params_dict.items() if f'T0_pl{n}' in k])
+            epoch       = np.round((fit_t0s - self.params.T0[n-1])/self.params.P[n-1])
+            ntr[n]      = len(epoch)
+
+            pp      = np.polyfit(epoch, fit_t0s,1)
+            lin_t0s = np.polyval(pp,epoch)
+
+            plt.errorbar(lin_t0s, (fit_t0s - lin_t0s)*24*60, fit_t0s_err*24*60, fmt="o",label=f"Planet {n} (P={self.params.P[n-1]:.2f}d)",capsize=3 )
+        plt.axhline(0,ls="--",color="k")
+        plt.title("TTV plot")
+        plt.legend()
+        plt.ylabel("O – C [mins]")
+        plt.xlabel("Time [mBJD]")
+        return fig
+
+
+    def _ttv_lcplot(self, figsize=None, binsize=None,offset=None):
+        """  
+        plot the stacked individual transits of each planet in the system using linear ephemeris revealing the presence of TTVs.
+
+        Parameters:
+        -----------
+        figsize : tuple of length 2;
+            Figure size. If None, optimally determined.
+        binsize : float or list of floats;
+            binsize to use for binning the data in time. Default is None to use dur/10.
+        offset : float or list of floats;
+            vertical offset between the transits to use for plotting. Default is None to use 5*stdev transit data.
+
+        Returns:
+        --------
+        fig : figure object
+        """
+        if self._ttvs==[]:
+            return print("TTV fit not performed for this system.")
+        npl         = self._nplanet
+        lc          = pd.concat(self.lc.outdata,ignore_index=True)   # join all LC data into one dataframe
+        tsm,modsm  = np.array([]), np.array([])                     # join all smooth model data into one array
+        for nm,v in self._lc_smooth_time_mod.items():
+            tsm    = np.append(tsm, v.time)
+            modsm = np.append(modsm, v.model)
+
+        max_ntra = max([len([v.n for k,v in self.params_dict.items() if f'T0_pl{n}' in k]) for n in range(1,npl+1)])
+        if figsize==None: figsize = (6 if npl==1 else 10, max_ntra)
+
+
+        if isinstance(offset,(float,type(None))): offset=[offset]*npl
+        elif isinstance(offset,list): assert len(offset)==npl
+        else: raise TypeError("offset can only be float, None or a list of these types")
+            
+        if isinstance(binsize,(float,type(None))): binsize=[binsize]*npl
+        elif isinstance(binsize,list): assert len(binsize)==npl, "binsize must be a list of length equal to the number of planets"
+        else: raise TypeError("binsize can only be float, None or a list of these types")
+            
+        fig,ax = plt.subplots(int(np.ceil(npl/2)),npl, figsize=figsize)
+        ax = [ax] if npl==1 else ax.reshape(-1)
+        for n in range(1,npl+1):
+            fit_t0s = np.array([v.n for k,v in self.params_dict.items() if f'T0_pl{n}' in k]) # get t0 results for planet n
+            epoch   = np.round((fit_t0s - self.params.T0[n-1])/self.params.P[n-1])            # get epoch for each t0
+            pp      = np.polyfit(epoch, fit_t0s,1)                                            # fit linear ephemeris
+            lin_t0s = np.polyval(pp,epoch)                                                     # get linear ephemeris
+            dur     = self.params.dur[n-1]                                                     # get duration of planet n
+            per     = self.params.P[n-1]                                                        # get period of planet n
+            
+            # lc_names = list(np.concatenate([[nm]*len(self._ttvs[i].t0s) for i,nm in enumerate(self.lc.names)]))
+            # lc_names_ind = [self.lc.names.index(nm) for nm in lc_names] 
+            lc_ind  = [int(k.split(f"-T0_pl{n}")[0].split("lc")[-1])-1 for k in self.params_dict.keys() if f'T0_pl{n}' in k] # get the index of the lc data for the transit times of planet n
+            edges =[]
+            for i in range(len(self._ttvs)):
+                if i in lc_ind:
+                    pl_ind = np.array(self._ttvs[i].plnum)==(n-1)  # get indices of edges for planet n in this lc
+                    edges.append(tuple(np.array(self._ttvs[i].tr_edges)[pl_ind][0]))
+            
+            # edges   = np.concatenate([self._ttvs[i].tr_edges for i in range(len(self._ttvs)) if i in lc_ind]) # get the transit edges for the transits times of  planet n
+
+            ax[n-1].axvline(0,ls="--",color="gray")
+            for i,t0 in enumerate(lin_t0s):
+                # lc     = self.lc.outdata[self.lc.names[i]]
+                edg    = edges[i]
+                cut    = (lc["time"]>=edg[0]) & (lc["time"]<=edg[1]) #cut the data to the transit edges
+                cut_sm = (tsm>=edg[0]) & (tsm<=edg[1])                  #cut the smooth model data to the transit edges
+
+                t,f,e  = lc["time"][cut],lc["det_flux"][cut],lc["error"][cut]       #get the data for the transit
+                t_sm,mod_sm  = tsm[cut_sm], modsm[cut_sm]
+                ph     = phase_fold(t,per,t0,-0.25)*per    #phase fold but convert back to days
+                ph_sm  = phase_fold(t_sm,per,t0,-0.25)*per
+
+                ind    = abs(ph)<1.2*dur  #cut the data to 1.2 transit duration
+                t,f,e  = ph[ind],f[ind],e[ind]
+                ind_sm = abs(ph_sm)<1.2*dur 
+                ts, ms = ph_sm[ind_sm], mod_sm[ind_sm]
+
+                if offset[n-1]==None: offset[n-1] = 5* np.std(np.diff(f))/np.sqrt(2)
+                if binsize[n-1]==None: binsize[n-1] = dur/10
+                t_,f_,e_ = bin_data_with_gaps(t,f,e,binsize=binsize[n-1])
+
+                # to hrs
+                x  = t*24 #(t-t0)*24
+                xs = ts*24 #(ts-t0)*24
+                x_ = t_*24 #(t_-t0)*24
+                srt_xs = np.argsort(xs)
+
+                ax[n-1].plot(x,f+i*offset[n-1],".",ms=3)
+                ax[n-1].errorbar(x_,f_+i*offset[n-1],e_,fmt="k.",ms=8,mfc="w",label=f"{binsize[n-1]*24*60:.0f}min bins") 
+
+                ax[n-1].plot(xs[srt_xs],ms[srt_xs]+i*offset[n-1],"k")
+                ax[n-1].set_title(f"Planet {n} (P={self.params.P[n-1]:.2f})")
+                ax[n-1].set_yticks([])
+                ax[n-1].set_xlabel("time from linear ephemeris [hrs]")
+                if i==0: ax[n-1].legend()
+                
+        plt.subplots_adjust(wspace=0.02)
+        return fig
+
+
+
+class compare_results:
+    def __init__(self,result_list):
+        """
+        Compare the results of multiple CONAN3 fits.
+
+        Parameters:
+        -----------
+        result_list : list of CONAN3 objects or result folder names;
+            list of CONAN3 objects to compare.
+
+        Examples:
+        ---------
+        #load the result objects before comparing
+        >>> import CONAN3
+        >>> res1 = CONAN3.load_result("result1")
+        >>> res2 = CONAN3.load_result("result2")
+        >>> res3 = CONAN3.load_result("result3")
+        >>> comp = CONAN3.compare([res1,res2,res3])
+
+        #or load the result folders directly for comparing
+        >>> comp = CONAN3.compare(["result1","result2","result3"])
+
+        """
+        for r in result_list:
+            assert isinstance(r, (load_result,str)), "compare: all elements in result_list must be CONAN3 objects or strings of folder names."
+        
+        if isinstance(result_list[0],str):
+            self.results_list = [load_result(r) for r in result_list]
+        else:
+            self.results_list = result_list
+
+    def plot_corner(self, pars=None, bins=20, thin=1, discard=0, q=[0.5], range=None,show_titles=True, title_fmt =".3f", titlesize=14,save_fig=False):
+        """  
+        make corner plot of loaded results object
+
+        Parameters:
+        -----------
+        pars : list of str;
+            parameter names to plot. Ideally less than 15 pars for clarity of plot
+        bins : int;
+            number of bins in 1d histogram
+        thin : int;
+            factor by which to thin the chains in order to reduce correlation.
+        discard : int;
+            to discard first couple of steps within the chains.
+        q : list of floats;
+            quantiles to show on the 1d histograms. defaults is 0.5 to show just the median
+        range : dict or list with the same length as pars;
+            A dict/list where each key/element is either a length 2 tuple containing
+            lower and upper bounds or a float in range (0., 1.) giving the fraction of samples to include in bounds, e.g.,
+            [(0.,10.), (1.,5), 0.999, etc.] or {"P":(1.,5.), "rho_star":(1.,5), "Impact_para":0.999,...}
+        
+        """
+        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+        all_pars = set()
+        for r in self.results_list:
+            all_pars = all_pars.union(r.params.names)
+            
+        for p in all_pars:
+                for r in self.results_list:
+                    nsamp = len(r._chains[r.params.names[0]])
+                    if p not in r.params.names:
+                        r._chains[p] = np.random.normal(0,1e-10,nsamp)
+        
+        if range!=None:
+            if isinstance(range,list):
+                assert len(range) == len(pars), "range must be a list (of tuples/floats) with length equal to the number of parameters in pars."
+                prange = range
+            elif isinstance(range,dict):
+                for p in range.keys(): assert p in pars, f"{p} in range is not a parameter in in pars"
+                prange = [None]*len(pars)
+                for i,p in enumerate(pars):
+                    if p in range.keys():
+                        prange[i] = range[p]
+                    else:
+                        xs = np.concatenate([r._chains[p] for r in self.results_list])
+                        prange[i] = (xs.min(),xs.max())
+            else:
+                raise TypeError("range must be a dictionary or list  containing the range (tuple/float) for each parameter in par")
+        else: 
+            prange = None
+
+        for i,r in enumerate(self.results_list):
+            if i ==0: f = r.plot_corner(pars=pars, bins=bins, thin=thin, discard=discard, q=q, range=prange,show_titles=False, title_fmt =title_fmt, titlesize=titlesize, kwargs={"color":color_cycle[i]})
+            else: r.plot_corner(pars=pars, bins=bins, thin=thin, discard=discard, q=q, range=prange,show_titles=False, title_fmt =title_fmt, titlesize=titlesize,kwargs={"fig":f,"color":color_cycle[i]})
+        logz= np.array([r.evidence for r in self.results_list])
+        dlogz = (logz-logz[0]) if all(logz) else None
+        
+        f.suptitle(f"Comparing all results to {self.results_list[0]._folder} gives $\Delta$logZ={list(dlogz)}", fontsize=20)
+        f.subplots_adjust(top=0.95)
+
+        return f
+
+    def plot_param_sigma_diff(self, pars):
+        p1 = self.results_list[0].get_all_params_dict()
+        p2 = self.results_list[1].get_all_params_dict()
+        fig = plt.figure(figsize=(12, 5))
+        for i,p in enumerate(pars):
+            assert p in p1 and p in p2, f"{p} not in both results"
+            diff = p1[p]-p2[p]
+            assert isinstance(diff, type(ufloat(0,1)-0)), f"parameter {p} is not a ufloat"
+            plt.plot(i, diff.n/diff.s, "o")
+        
+        plt.xticks(np.arange(len(pars)), pars, rotation=45)
+        plt.grid()
+        plt.axhline(0,ls=":",color="k")
+        plt.ylabel("sigma_difference: (p1-p2)/err(p1-p2)")
+        return fig
+
+    def plot_lc(self, plot_cols=(0, 1, 2),detrend=False,col_labels=None,nrow_ncols=None,figsize=None,hspace=None,wspace=None,
+                binsize=0.0104):
+        """
+        side-by-side plot of the best-fit model of the LCs of the loaded results objects.
+
+        Parameters:
+        -----------
+        plot_cols : tuple of length 2 or 3;
+            Tuple specifying which columns in input file to plot. 
+            Default is (0,1,2) to plot column 0 against 1, and 2 as errorbar (i.e. time against flux with fluxerr). 
+            Use (3,1,2) to show the correlation between column 3 and the flux. 
+            Using tuple of length 2 does not plot errorbars. e.g (3,1).
+        detrend : bool;
+            plot the detrended data. Default is False.
+        col_labels : tuple of length 2;
+            label of the given columns in plot_cols. Default is ("time", "flux").
+        nrow_ncols : tuple of length 2;
+            Number of rows and columns to plot the input files of each result object. 
+            Default is None which creates layout of (nfiles x 1) for each result object
+        figsize: tuple of length 2;
+            Figure size to plot the LCs of each result object. If None, (7,3.5*nfiles) is used.
+        hspace, wspace: float;
+            height and width space between subplots. Default is None to use matplotlib defaults.
+        binsize : float;
+            binsize to use for binning the data in time. Default is  None which gives 10 bin points in transit.
+        
+        Examples:
+        ---------
+        >>> comp = CONAN3.compare_results(["results1_folder","results2_folder"])
+        >>> fig  = comp.plot_lc(plot_cols=(0,1,2),detrend=False)
+        >>> fig.savefig("compare_LC.png", dpi=200)
+        """
+        from PIL import Image
+        nfiles = len(self.results_list[0].lc.names)
+        if nrow_ncols is None: nrow_ncols = (nfiles,1)
+        if figsize is None: figsize = (7,3.5*nfiles)
+
+        imgs = []
+        ev   = []
+        for i,r in enumerate(self.results_list):
+            fig_ = r._plot_bestfit_lc(plot_cols=plot_cols,detrend=detrend,col_labels=col_labels,nrow_ncols=nrow_ncols,
+                                            figsize=figsize,hspace=hspace,wspace=wspace,binsize=binsize,return_fig=True)
+            # Save fig1 and fig2 as temporary PNG files
+            fig_.savefig(f".temp{i}.png",bbox_inches='tight',dpi=200)
+            ev.append(f"{r.evidence:.2f}" if r.evidence else "")
+            # Load the temporary PNG files
+            imgs.append(Image.open(f".temp{i}.png") ) 
+            os.remove(f".temp{i}.png")
+
+        # Create a matplotlib figure
+        fig, axes = plt.subplots(1, len(self.results_list), figsize=(figsize[0]*len(self.results_list),3.5*nfiles ))
+        # Display the images
+        for i,img in enumerate(imgs):
+            axes[i].imshow(img)
+            # axes[i].axis('off')
+            axes[i].set_xticks([])
+            axes[i].set_yticks([])
+            axes[i].set_title(f"{self.results_list[i]._folder}: ev={ev[i]}")
+        # Adjust layout
+        plt.tight_layout()
+        # Clean up temporary file
+        
+
+        return fig
+
+    def plot_rv():
+        pass

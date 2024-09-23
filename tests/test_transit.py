@@ -125,24 +125,27 @@
 #test light travel time
 import numpy as np
 import matplotlib.pyplot as plt
-from CONAN3.funcs import light_travel_time_correction
+from CONAN3.utils import light_travel_time_correction
 from CONAN3.models import Transit_Model
-from CONAN3.utils import get_transit_time, get_orbital_elements, get_Tconjunctions
+from CONAN3.utils import get_transit_time, get_orbital_elements, get_Tconjunctions,inclination,Tdur_to_aR
 from CONAN3.get_files import get_parameters
 sys_params = get_parameters("WASP-121 b")
 
 
 P  = sys_params["planet"]["period"][0]
-aR = sys_params["planet"]["aR"][0]
 t0 = 0
-t14= sys_params['planet']['T14'][0]  
-e  = 0.2
-w  = np.radians(180)
+t14= sys_params['planet']['T14'][0] 
+b  = sys_params["planet"]["b"][0]
+e  = 0.
+w  = np.radians(90)
+aR = Tdur_to_aR(sys_params["planet"]["T14"][0],b,sys_params["planet"]["rprs"][0],P,e,np.degrees(w))
+inc = inclination(b,aR,e,np.degrees(w))
+
 sesinw, secosw = np.sqrt(e)*np.sin(w), np.sqrt(e)*np.cos(w)
 
 t = np.linspace(-0.25, 0.75*P, 3000)
 
-tcorr = light_travel_time_correction(t,t0,aR,P,89.5,1.46,e,w)
+tcorr = light_travel_time_correction(t,t0,aR,P,np.radians(inc),1.46,e,w)
 tconj  = get_Tconjunctions(t,t0,P,e,w)
 
 
@@ -154,7 +157,7 @@ plt.legend()
 
 
 TM = Transit_Model(dur=sys_params["planet"]["T14"][0], T0=0,
-             RpRs=sys_params["planet"]["rprs"][0], b=sys_params["planet"]["b"][0],per=P,
+             RpRs=sys_params["planet"]["rprs"][0], b=b,per=P,
              sesinw=sesinw,secosw=secosw, occ=4000)
 
 t = np.linspace(P/2-0.07,P/2+0.07,1500)
@@ -173,3 +176,91 @@ ax[1].set_ylabel("res [ppm]")
 _=[ax[0].axvline(tt,c="k",ls=":") for tt in [tconj.eclipse]]
 
 plt.subplots_adjust(hspace=0)
+
+
+# TESS slight  ECCENTRICITY 
+
+# TESS slight  ECCENTRICITY 
+
+
+e  = 0.0035
+w  = np.radians(83)
+sesinw, secosw = np.sqrt(e)*np.sin(w), np.sqrt(e)*np.cos(w)
+
+TM = Transit_Model(dur=sys_params["planet"]["T14"][0], T0=0,
+             RpRs=sys_params["planet"]["rprs"][0], b=b,per=P,
+             sesinw=0,secosw=0, occ=4000)
+
+TM_ecc = Transit_Model(dur=sys_params["planet"]["T14"][0], T0=0,
+             RpRs=sys_params["planet"]["rprs"][0], b=b,per=P,
+             sesinw=sesinw,secosw=secosw, occ=4000)
+
+t = np.linspace(P/2-0.1,P/2+0.1,1500)
+flux,_     = TM.get_value(t)
+flux_ecc,_ = TM_ecc.get_value(t)
+
+tconj      = get_Tconjunctions(t,t0,P,ecc=0,omega=np.pi/2)
+tconj_ecc  = get_Tconjunctions(t,t0,P,e,w)
+
+
+
+fig,ax =plt.subplots(2,1,figsize=(15,4),sharex=True,  gridspec_kw={"height_ratios":(2,1)})
+ax[0].plot(t,flux,label="no ecc")
+ax[0].plot(t,flux_ecc,"--",label="ecc")
+ax[0].legend()
+ax[0].set_title(f"this ecc,w delays the eclipse time by {24*3600*(tconj_ecc.eclipse-tconj.eclipse):.1f}secs, and longer egress than ingress")
+
+ax[1].plot(t, 1e6*(flux_ecc-flux))
+ax[1].set_ylabel("res [ppm]")
+
+_=[ax[0].axvline(tt,c="b",ls=":") for tt in [tconj.eclipse]]
+_=[ax[0].axvline(tt,c="r",ls=":") for tt in [tconj_ecc.eclipse]]
+plt.subplots_adjust(hspace=0)
+
+
+
+#compare transit model to batman
+
+import batman
+from Planet_tools.convert_param import convert_LD_coeffs, inclination
+def batman_model(pars,tobs):
+    """
+    T0,P,rp,aR,b,u1,u2,fp,fnight,delta
+    
+    Ftra+Fph+Focc
+    """
+    params = batman.TransitParams()       #object to store transit parameters
+    
+    #transit pars
+    params.t0  = pars[0]                        #time of inferior conjunction
+    params.per = pars[1]                       #orbital period
+    params.rp  = pars[2]                       #planet radius (in units of stellar radii)
+    params.a   = pars[3]                        #semi-major axis (in units of stellar radii)
+    imp_par    = pars[4]
+    params.ecc = 0.                       #eccentricity
+    params.w   = 90.                        #longitude of periastron (in degrees)
+    params.limb_dark = "quadratic"        #limb darkening model
+    q1,q2 = pars[5], pars[6]
+    
+    params.inc = inclination(imp_par, params.a)                      #orbital inclination (in degrees)
+    u1,u2 = convert_LD_coeffs(q1,q2,"q2u",verify=False)
+    params.u=[u1,u2]
+    
+    m1 = batman.TransitModel(params, t)
+    trans_flux = m1.light_curve(params)                    #calculates transit
+
+    return trans_flux
+
+
+TM = Transit_Model(dur=sys_params["planet"]["T14"][0], T0=0,
+             RpRs=sys_params["planet"]["rprs"][0], b=sys_params["planet"]["b"][0],per=P,
+             sesinw=sesinw,secosw=secosw, occ=4000)
+
+t = np.linspace(-0.25, 0.75*P, 3000)
+flux,_     = TM.get_value(t)
+
+batflux = batman_model([0,P,sys_params["planet"]["rprs"][0],aR,b,0,0],t)
+
+plt.plot(t, 1e6*(flux-batflux))
+
+

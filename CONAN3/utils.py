@@ -6,6 +6,45 @@ import matplotlib.pyplot as plt
 from uncertainties import ufloat 
 from uncertainties.umath import sin,cos, sqrt
 from scipy.interpolate import interp1d
+from celerite import terms
+
+
+
+def light_travel_time_correction(t,t0,aR,P,inc,Rstar,ecc=0,w=1.57079):
+    '''
+    Corrects the time array for light travel time effects i.e subtracts the light travel time at each time point
+
+    Args:
+        t: time array
+        t0: time of transit center
+        aR: semi-major axis over stellar radius
+        P: orbital period
+        inc: inclination in radians
+        Rstar: stellar radius in solar radii
+        ecc: eccentricity. default is 0
+        w: argument of periastron in radians. default is pi/2
+
+    Returns:
+        tcorr: time array corrected for light travel time effects
+    '''
+    if ecc==0:
+        # circular orbit
+        ph_angle = 2*np.pi*(t-t0)/P
+        d = aR*np.ones_like(t)    # distance to the planet same at all times
+    else:
+        orb = get_orbital_elements(t,t0,P,ecc,w)
+        ph_angle = orb.phase_angle
+        d   = aR * (1-ecc**2)/(1+ecc*np.cos(orb.true_anom))    # distance to the planet at each time/true anomaly
+
+    assert inc<2*np.pi, f"inc should be in radians but {inc} gotten" 
+    assert w<2*np.pi, f"w should be in radians but {w} gotten" 
+
+    c    = 299792.458 *(60*60*24)   # speed of light in km/day
+    Rsun = 695700.0                 # solar radius in km
+    c_R = c/(Rstar*Rsun)
+    tcorr = t - d/c_R * np.sin(inc) * (1-np.cos(ph_angle))
+
+    return tcorr
 
 
 def phase_fold(t, per, t0,phase0=-0.5):
@@ -143,7 +182,7 @@ def get_transit_time(t, per, t0):
 #     #mid eclipse is at ph_angle = np.pi, so select time closest to this angle
 #     return tsm[np.argmin(abs(ph_angle-np.pi))]
 
-def get_Tconjunctions(t, t0, per, ecc,omega):
+def get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=None,verbose=True):
     """Get the time of conjunctions (transit and eclipse) for the given time array.
 
     Parameters
@@ -155,18 +194,73 @@ def get_Tconjunctions(t, t0, per, ecc,omega):
     t0 : float
         Time of transit center.
     ecc : float
-        Eccentricity.
+        Eccentricity. Default is 0.
     omega : float
-        Argument of periastron in radians
+        Argument of periastron in radians. Default is 1.5707963.
+    Rstar : float
+        Stellar radius in solar radii. used to calculate delay in eclipse time due to light travel travel. Default is None to ignore the delay.
+    aR : float
+        Semi-major axis over stellar radius. used to calculate delay in eclipse time due to light travel travel. Default is None to ignore the delay.
+    inc : float
+        Inclination in radians. used to calculate delay in eclipse time due to light travel travel. Default is None to ignore the delay.
 
     Returns
     -------
     t_conj : SimpleNamespace
-        transit : float
+        transit : float/numpy.ndarray
             Time of transit. if multiple transits, only the time of first transit is returned
-        eclipse : float
+        eclipse : float/numpy.ndarray
             Time of eclipse. if multiple eclipses, only the time of first eclipse is returned
     """
+    in_args = locals()
+    _ = [in_args.pop(k) for k in ["t","verbose"]]
+
+    #check if any of the keys of in_args is iterable using np.iterable
+    if any([np.iterable(in_args[k]) for k in in_args.keys()]):
+        len_arr = len([k for k in in_args.keys() if np.iterable(in_args[k])][0])   # len of array
+        in_args = {k: np.array(in_args[k]) if np.iterable(in_args[k]) else np.full(len_arr,in_args[k]) for k in in_args.keys()}
+        
+        tconj = SimpleNamespace(transit=np.zeros(len_arr),eclipse=np.zeros(len_arr))
+        for i in range(len_arr):
+            tconj.transit[i],tconj.eclipse[i] = _get_Tconjunctions(t, in_args['t0'][i], in_args['per'][i], in_args['ecc'][i], 
+                                                                    in_args['omega'][i], in_args['Rstar'][i], in_args['aR'][i], 
+                                                                    in_args['inc'][i], verbose)
+        return tconj
+    else: 
+        tconj = SimpleNamespace(transit=0,eclipse=0)
+        tconj.transit,tconj.eclipse = _get_Tconjunctions(t, t0, per, ecc, omega, Rstar, aR, inc, verbose)
+        return tconj
+
+
+def _get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=None,verbose=True):
+    """Get the time of conjunctions (transit and eclipse) for the given time array.
+
+    Parameters
+    ----------
+    t : array-like
+        Time stamps.
+    per : float
+        Period.
+    t0 : float
+        Time of transit center.
+    ecc : float
+        Eccentricity. Default is 0.
+    omega : float
+        Argument of periastron in radians. Default is 1.5707963.
+    Rstar : float
+        Stellar radius in solar radii. used to calculate delay in eclipse time due to light travel travel. Default is None to ignore the delay.
+    aR : float
+        Semi-major axis over stellar radius. used to calculate delay in eclipse time due to light travel travel. Default is None to ignore the delay.
+    inc : float
+        Inclination in radians. used to calculate delay in eclipse time due to light travel travel. Default is None to ignore the delay.
+
+    Returns
+    -------
+    t_conj : tuple of floats
+        (transit_time, eclipse_time)
+        if multiple transits/eclipses, only the time of first transit/eclipse is returned
+    """
+
     if ecc==0: omega = np.pi/2.
     tsm      = np.linspace(t.min(),t.min()+per,max(len(t)*10,20000))  # only need to calculate for one period after start of timeseries
     orb_pars = get_orbital_elements(tsm, t0, per, ecc, omega)
@@ -177,7 +271,13 @@ def get_Tconjunctions(t, t0, per, ecc,omega):
     intpd  = interp1d(ph_angle,tsm,fill_value="extrapolate")
     t_conj = intpd([0,np.pi])
     if ecc==0: assert np.isclose(abs(t_conj[1] - t_conj[0]), per/2), "time between transit and Eclipse not equal to per/2, as required for circular orbit!. Check the code/inputs."
-    return SimpleNamespace(transit=t_conj[0],eclipse=t_conj[1])
+
+    #account for LTT delay in eclipse time
+    if None not in [Rstar,aR,inc]:  # if Rstar,aR,inc are provided
+        dt = t_conj[1] - light_travel_time_correction(t_conj[1],t0,aR,per,inc,Rstar,ecc,omega)   #time delay of mid-eclipse
+        if verbose: print(f"adding light travel time delay of {24*3600*dt:.4f} secs to the eclipse time")
+        t_conj[1] += dt
+    return t_conj
 
 
 def bin_data(t,f,err=None,statistic="mean",bins=20):
@@ -320,13 +420,16 @@ def sesinw_secosw_to_ecc_omega(sesinw, secosw):
     omega: array-like
         argument of periastron in radians
     """
+    # ecc = sesinw**2 + secosw**2
+    # if ecc==0: # if circular orbit, set omega to pi/2
+    #     omega = np.pi/2
+    # else:
+    #     omega = np.arctan2(sesinw,secosw)
+    #     if omega < 0: 
+    #         omega += 2*np.pi
     ecc = sesinw**2 + secosw**2
-    if ecc==0: # if circular orbit, set omega to pi/2
-        omega = np.pi/2
-    else:
-        omega = np.arctan2(sesinw,secosw)
-        if omega < 0: 
-            omega += 2*np.pi
+    omega = np.where(ecc==0,np.pi/2, np.arctan2(sesinw,secosw))
+    omega = np.where(omega<0, omega+2*np.pi, omega)
     return ecc, omega
 
 def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
@@ -439,9 +542,10 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
     return sesinw_in, secosw_in
 
 
-def rho_to_aR(rho, P, qm=0):
+def rho_to_aR(rho, P, e=0, w=90, qm=0):
     """
-    convert stellar density to semi-major axis of planet with a particular period
+    convert stellar density to semi-major axis of planet with a particular period.
+    uses eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x to account for eccentricity
 
     Parameters:
     -----------
@@ -450,6 +554,7 @@ def rho_to_aR(rho, P, qm=0):
         
     P: float, ufloat, array-like;
         The period of the planet in days.
+
 
     qm: float, ufloat, array-like;
         The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
@@ -460,16 +565,19 @@ def rho_to_aR(rho, P, qm=0):
         The scaled semi-major axis of the planet.
     """
 
-    G = (c.G.to(u.cm**3/(u.g*u.second**2))).value
-    Ps = P*(u.day.to(u.second))
-    aR = ( rho*G*Ps**2 / (3*np.pi) *(1+qm)) **(1/3.)
+    G   = (c.G.to(u.cm**3/(u.g*u.second**2))).value
+    Ps  = P*(u.day.to(u.second))
+    w   = np.radians(w)
+    ecc_factor = (1+e*np.sin(w))**3/(1-e**2)**(3/2)
+    rho = rho*ecc_factor  #eccentricity correction  eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
+    aR  = ( rho*G*Ps**2 / (3*np.pi) *(1+qm)) **(1/3.)
 
     return aR
 
-def aR_to_rho(P,aR,qm=0):
+def aR_to_rho(P,aR,e=0,w=90,qm=0):
     """
-    Compute the transit derived stellar density from the planet period and 
-    scaled semi major axis
+    Compute the transit derived stellar density from the planet period and scaled semi major axis.
+    uses eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x to account for eccentricity
     
     
     Parameters:
@@ -479,6 +587,12 @@ def aR_to_rho(P,aR,qm=0):
     
     aR: float, ufloat, array-like;
         The scaled semi-major axis of the planet orbit
+    
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit. Default is 0
+
+    w: float, ufloat, array-like;
+        The argument of periastron in degrees. Default is 90
 
     qm: float, ufloat, array-like;
         The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
@@ -489,11 +603,76 @@ def aR_to_rho(P,aR,qm=0):
         The stellar density in g/cm^3
     """
 
-    G = (c.G.to(u.cm**3/(u.g*u.second**2))).value
+    G  = (c.G.to(u.cm**3/(u.g*u.second**2))).value
     Ps = P*(u.day.to(u.second))
+    w  = np.radians(w)
     
     st_rho=3*np.pi*aR**3 / (G*Ps**2) * (1+qm)
+
+    #eccentricity correction  eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
+    ecc_factor = (1+e*np.sin(w))**3/(1-e**2)**(3/2)
+    st_rho = st_rho/ecc_factor
     return st_rho
+
+def inclination(b, a, e=0, w=90, tra_occ="tra"):
+    """
+    Function to convert impact parameter b to inclination in degrees.
+        
+    Parameters:
+    ----------
+    b: Impact parameter of the transit.
+    
+    a: Scaled semi-major axis i.e. a/R*.
+
+    e: float;
+        eccentricity of the orbit.
+    
+    w: float;
+        longitude of periastron in degrees
+    
+    Returns
+    --------
+    
+    inc: The inclination of the planet orbit in degrees.
+    
+    """
+    w = np.radians(w)
+    esinw = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    ecc_factor=(1-e**2)/(1+esinw)  
+    inc = np.degrees(np.arccos( b / (a*ecc_factor)) )
+    return inc
+
+def impact_parameter(inc, a, e=0, w=90, tra_occ="tra"):
+    """
+    Function to convert inclination in degrees to  impact parameter b.
+        
+    Parameters:
+    ----------
+    inc: Inclination in degrees.
+
+    a: Scaled semi-major axis i.e. a/R*.
+
+    e: float;
+        eccentricity of the orbit.
+    
+    w: float;
+        longitude of periastron in degrees
+    
+    Returns
+    --------
+    
+    b: the impact parameter
+    
+    """
+    inc = np.radians(inc)
+    w   = np.radians(w)
+    
+    esinw      = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    ecc_factor = (1-e**2)/(1+esinw)  
+
+    b = a*np.cos(inc)*ecc_factor
+    return b
+
 
 def k_to_Mp(k, P, Ms, i, e, Mp_unit = "star"):
     """
@@ -535,10 +714,49 @@ def k_to_Mp(k, P, Ms, i, e, Mp_unit = "star"):
     if Mp_unit == "star":
         return Mp/Ms
 
-def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
+def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra",total=True):
     """
     convert scaled semi-major axis to transit duration in days 
-    eq 1 of https://doi.org/10.1093/mnras/stu318, eq 14,16 of https://arxiv.org/pdf/1001.2010.pdf
+    using eqn 30 and 31 of Kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
+    it is a more precise modification of eq 14,16 of Winn2010 https://arxiv.org/pdf/1001.2010.pdf
+
+    Parameters:
+    -----------
+    aR: float, ufloat, array-like;
+        The scaled semi-major axis of the planet.
+    b: float, ufloat, array-like;
+        The impact parameter.
+    Rp: float, ufloat, array-like;
+        planet-to-star radius ratio.
+    P: float, ufloat, array-like;
+        The period of the planet in days.
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit.
+    w: float, ufloat, array-like;
+        The argument of periastron in degrees.
+    tra_occ: str;
+        select duration of transit (tra) or occultation (occ)
+    total: bool;
+        select total duration T14 (True) or full duration T23 (False)
+    Returns:
+    --------
+    Tdur: array-like;
+        The transit duration in days (same unit as P).
+    """
+    w      = np.radians(w)
+    esinw  = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    rp     = Rp if total else -Rp
+    
+    ecc_fac = (1-e**2)/(1+esinw)
+    inc     = np.arccos(b/(aR*ecc_fac))
+    sini    = np.sin(inc)
+    
+    Tdur = P/np.pi * (ecc_fac**2/(np.sqrt(1-e**2))) * np.arcsin(np.sqrt( (1+rp)**2 - b**2 )/(aR*ecc_fac*sini))
+    return np.round(Tdur,8)
+
+def ingress_duration(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
+    """
+    Compute the ingress duration of transit or occultation in units of P
 
     Parameters:
     -----------
@@ -559,22 +777,25 @@ def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
 
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
+
+    tra_occ: str;
+        select duration of transit (tra) or occultation (occ)
         
     Returns:
     --------
     Tdur: array-like;
-        The transit duration in days.
+        The ingress duration in days (same unit as P).
     """
-    factr =  ((1+Rp)**2 - b**2)/(aR**2-b**2)
-    ecc_fac = np.sqrt(1-e**2)/(1+e*np.sin(np.deg2rad(w)))  if tra_occ=="tra" else np.sqrt(1-e**2)/(1-e*np.sin(np.deg2rad(w)))
-    Tdur = (P/np.pi)*np.arcsin( np.sqrt(factr) ) * ecc_fac
-    return np.round(Tdur,8)
+    T14 = aR_to_Tdur(aR, b, Rp, P,e,w, tra_occ, total=True)
+    T23 = aR_to_Tdur(aR, b, Rp, P,e,w, tra_occ, total=False)
+    return (T14 - T23)/2
 
 
 def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     """
     convert transit duration to scaled semi-major axis
-    eq 1 of https://doi.org/10.1093/mnras/stu318, eq 14,16 of https://arxiv.org/pdf/1001.2010.pdf
+    using eqn 41 of Kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
+    note (1+p^2) in the equation should instead be (1+p)^2
 
     Parameters:
     -----------
@@ -601,9 +822,15 @@ def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     aR: array-like;
         The scaled semi-major axis of the planet.
     """
-    ecc_fac = np.sqrt(1-e**2)/(1+e*np.sin(np.deg2rad(w))) if tra_occ=="tra" else np.sqrt(1-e**2)/(1-e*np.sin(np.deg2rad(w)))
-    factr = (np.sin(np.pi*Tdur/(P*ecc_fac)))**2
-    aR =  np.sqrt(((1+Rp)**2 - b**2)/factr + b**2)
+    w       = np.radians(w)
+    esinw   = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    ecc_fac = (1-e**2)/(1+esinw)
+
+    numer =  (1+Rp)**2 - b**2
+    denom = np.sin( Tdur*np.pi*np.sqrt(1-e**2)/(P*ecc_fac**2) )**2 *ecc_fac**2
+
+    aR = np.sqrt(numer/denom + (b/ecc_fac)**2)
+    
     return aR
 
 def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
@@ -635,7 +862,7 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
     Tdur: array-like;
         The transit duration in days.
     """
-    aR = rho_to_aR(rho, P)
+    aR = rho_to_aR(rho, P,e,w)
     Tdur = aR_to_Tdur(aR, b, Rp, P,e,w)
     return Tdur
 
@@ -683,7 +910,7 @@ def convert_rho(rho, ecc, w, conv="true2obs"):
     ecc : float
         eccentricity
     w : float
-        argumenent of periastron
+        argumenent of periastron in radians
     conv : str, optional
         whether to convert from true2obs or obs2true, by default "true2obs"
 
@@ -700,7 +927,50 @@ def convert_rho(rho, ecc, w, conv="true2obs"):
 
     return rho*phi if conv=="true2obs" else rho/phi
 
-def cosine_atm_variation(phi, Fd=0, A=0, delta_deg=0,cosine_order=1):
+def sinusoid(x, A=0, x0= None, P=None, n=1,trig="sin"):
+    """
+    Calculate the sinusoidal function y = A*sin(2*pi*(x-x0)/P) or y = A*cos(2*pi*(x-x0)/P) given the parameters.
+
+    Parameters
+    ----------
+    x : array-like
+        x values
+    A : float
+        amplitude of the sinusoid
+    x0 : float
+        phase offset of the sinusoid
+    P : float
+        period of the sinusoid
+    trig : str
+        trigonometric function to use. Default is "sin". Options are "sin", "cos", "sincos"
+    
+    Returns
+    -------
+    y : array-like
+        sinusoidal function
+    """
+    if trig is None:
+        return np.zeros_like(x)
+
+    assert trig in ["sin","cos","sincos"], "trig must be one of ['sin','cos','sincos']"
+    if isinstance(A,(int,float)): A = [A]
+    if trig in ["sin","cos"]: assert len(A)==n,f"len(A) must be equal to n but {A=} given while {n=}"
+    elif trig=="sincos": assert len(A)==2*n,f"len(A) must be equal to 2*n but {A=} given while {n=}"
+
+
+    # if x0 is [None,0]: x0 = np.nanmin(x)
+    if P in [None,0]: P   = 2*np.pi     # default period is 2pi so the function is a sine function of x
+    
+    phi = 2*np.pi*(x-x0)/P
+    sinus = 0
+    trig_func = [np.sin,np.cos] if trig=="sincos" else [np.sin] if trig=="sin" else [np.cos]
+
+    for j,fxn in enumerate(trig_func):
+        for i in range(n):
+            sinus += A[i+(n*j)]*1e-6 * fxn((i+1)*phi)
+    return sinus
+
+def cosine_atm_variation2(phi, Fd=0, A=0, delta_deg=0,cosine_order=1):
     """
     Calculate the phase curve of a planet approximated by a cosine function with peak-to-peak amplitude  A=F_max-F_min.
     The equation is given as F = Fmin + A(1-cos(phi + delta)) where A is the semi-amplitude of the atmospheric phase variation  = (Fmax-Fmin)/2,
@@ -733,6 +1003,42 @@ def cosine_atm_variation(phi, Fd=0, A=0, delta_deg=0,cosine_order=1):
     res.Fnight = Fd - 2*A * np.cos(res.delta)**cosine_order
     res.pc     = res.Fmin + A*(1-np.cos(phi+res.delta)**cosine_order)
     res.Fmax   = 2*A + res.Fmin
+    return res 
+
+def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
+    """
+    Calculate the phase curve of a planet approximated by a cosine function from Fmin to Fmax
+    The equation is given as F = Fmin + (Fmax-Fmin)/2*(1-cos(phi + delta)). The semi-amplitude of the atmospheric phase variation  is (Fmax-Fmin)/2,
+    phi is the phase angle of the planet (true anomaly+omega-pi/2) in radians, and delta is the hotspot offset (in radians).
+    Fday and Fnight are obtained as the value of F at phi=pi and 0 respectively.
+
+
+    Parameters
+    ----------
+    phi : array-like
+        phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
+    Fd : float
+        Dayside flux/occultation depth
+    Fn : float
+        night side flux
+    delta_deg : float
+        hotspot offset in degrees.
+    cosine_order: float/int;
+        order of the cosine function. Default is 1
+        
+    Returns
+    -------
+    F : array-like
+        planetary flux as a function of phase
+    """
+    res        = SimpleNamespace()
+    res.delta  = np.deg2rad(delta_deg)
+    
+    res.Aatm   = (Fd - Fn)/(2*np.cos(res.delta)**cosine_order)
+
+    res.Fmin   = Fd - res.Aatm*(1-np.cos(np.pi+res.delta)**cosine_order)
+    res.pc     = res.Fmin + res.Aatm*(1-np.cos(phi+res.delta)**cosine_order)
+    res.Fmax   = 2*res.Aatm + res.Fmin
     return res 
 
 def gauss_atm_variation(phi,A=0,delta_deg=0,width_deg=90):
@@ -788,19 +1094,13 @@ def rescale_minus1_1(x):
 
 def convert_LD(coeff1, coeff2,conv="q2u"):
     """ 
-    convert 2 parameter limb darkening coefficients between different parameterizations.
+    convert quadratic limb darkening coefficients between different parameterizations.
     conversion is done as described in https://arxiv.org/pdf/1308.0009.pdf
     """
-    assert conv in ["c2u","u2c","q2u","u2q"], "conv must be either c2u or u2c"
-    if conv == "c2u":
-        u1 = (coeff1 + coeff2)/3
-        u2 = (coeff1 - 2.*coeff2)/3.
-        return u1,u2
-    elif conv=="u2c":
-        c1 = 2*coeff1 + coeff2
-        c2 = coeff1 - coeff2
-        return c1,c2
-    elif conv=="u2q":
+
+    if conv=="u2q":
+        if coeff1==0 and coeff2==0: 
+            return 0, 0
         q1 = (coeff1 + coeff2)**2
         q2 = coeff1/(2*(coeff1 + coeff2))
         return q1,q2
@@ -808,6 +1108,27 @@ def convert_LD(coeff1, coeff2,conv="q2u"):
         u1 = 2*np.sqrt(coeff1)*coeff2
         u2 = np.sqrt(coeff1)*(1-2*coeff2)
         return u1,u2
+    else:
+        raise ValueError("LD conv must be either q2u or u2q")
+
+
+
+class celerite_cosine(terms.Term):
+    parameter_names = ("log_a", "log_P")
+
+    def get_real_coefficients(self, params):
+        log_a, log_P = params
+        return (
+            np.exp(log_a), 0.0,
+        )
+
+    def get_complex_coefficients(self, params):
+        log_a, log_P = params
+        return (
+            np.exp(log_a), 0.0,
+            0.0, 2*np.pi*np.exp(-log_P),
+        )
+
 
 class supersampling:
     def __init__(self, exp_time=0, supersample_factor=1):
@@ -889,7 +1210,7 @@ class gp_params_convert:
             
         log_pars = []
         for i,kern in enumerate(kernels):
-            assert kern in ["g_mat32","g_mat52","g_expsq","g_exp","g_cos","sho","mat32","real"],  \
+            assert kern in ["g_mat32","g_mat52","g_expsq","g_exp","g_cos","sho","mat32","real","cos"],  \
                 f'gp_params_convert(): kernel to convert must be one of ["any_george","sho","mat32","real"] but "{kern}" given'
 
             # call class function with the name kern
@@ -924,6 +1245,16 @@ class gp_params_convert:
         
         log_S0, log_w0 = np.log(S0), np.log(w0)
         return log_S0, log_w0
+
+    def cos(self, data, amplitude, lengthscale):
+        """
+        CosineKernel implementation in celerite
+        """
+        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        log_sigma  = np.log(amplitude)
+        log_period = np.log(lengthscale)
+        return log_sigma, log_period
+
     
     def real(self, data, amplitude, lengthscale):
         """
@@ -1020,43 +1351,39 @@ def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=
 
         Parameters:
         -----------
-
         P : float;
             Orbital period in same unit as t.
-
         t_ref : float;
             reference time of transit - T0 from literature or visual estimate of a mid-transit time in the data 
             Used to calculate expected time of transits in the data assuming linear ephemerides.
-
         baseline_amount: float between 0.05 and 0.5 times the period P;
-            amount of baseline data to keep before and after each transit. Default is 0.3*P, has to be between 0.05P and 0.5P.
-            
+            amount of baseline data to keep before and after each transit. Default is 0.3*P, has to be between 0.05P and 0.5P.   
         input_t0s: array, list, (optional);
             split transit using these mid-transit times
-            
         show_plot: bool;
             set true to plot the data and show split points.
-
         """        
         assert t is not None, "t must be provided"
 
-        if baseline_amount < 0.05 :
+        if baseline_amount == None:
+            pass
+        elif baseline_amount < 0.05 :
             baseline_amount = 0.05
             print("Baseline amount defaulted to minimum 0.05")
         elif baseline_amount > 0.5 :
             baseline_amount = 0.5
             print("Baseline amount defaulted to maximum 0.5")  
         
-        t0s, Ps, plnum, trnum = [], [], [],[]
-        tr_times, fluxes, indz = [], [], []
-        t0_list, P_list, plnum_list = [],[],[]
+        t0s, Ps, plnum, trnum       = [], [], [],[]
+        tr_times, fluxes, indz      = [], [], []
+        t0_list, P_list, plnum_list = [], [], []
         npl = len(P)
         if input_t0s is None: input_t0s = [None]*npl
 
         for j in range(npl):
             #t0s for each planet
             if input_t0s[j] is not None: t0s.append(list(input_t0s[j]))
-            else: t0s.append(get_T0s(t, t_ref[j], P[j]))
+            else: t0s.append(get_T0s(t, t_ref[j], P[j]))    #get all transit times of a planet in this data
             if len(t0s[j]) > 0: 
                 Ps.append([P[j]]*len(t0s[j]))    #period of each t0
                 plnum.append([j]*len(t0s[j]) )         #planet number
@@ -1065,14 +1392,14 @@ def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=
         srt_t0s = np.argsort(np.concatenate(t0s))    #sort t0s
         t0s     = np.concatenate(t0s)[srt_t0s]
         Ps      = np.concatenate(Ps)[srt_t0s]
-        plnum  = np.concatenate(plnum)[srt_t0s]
-        trnum  = np.concatenate(trnum)[srt_t0s]
+        plnum   = np.concatenate(plnum)[srt_t0s]
+        trnum   = np.concatenate(trnum)[srt_t0s]
 
         #split data into individual/planet group transits. taking points around each tmid    
         i=0
         while i < len(t0s):
-            lo_cut = t0s[i]-baseline_amount*Ps[i]
-            hi_cut = t0s[i]+baseline_amount*Ps[i]
+            lo_cut = t0s[i]-baseline_amount*Ps[i] if baseline_amount!=None else min(t)
+            hi_cut = t0s[i]+baseline_amount*Ps[i] if baseline_amount!=None else max(t)
             Phere  = [Ps[i]]
             T0here = [t0s[i]]
             plnum_here = [plnum[i]]
@@ -1099,13 +1426,14 @@ def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=
         if show_plot:
             assert fluxes is not None, f"plotting requires input flux"
             plt.figure(figsize=(15,3))
+            plt.plot(t,flux,".",c="gray",ms=2)
             [plt.plot(t,f,".",c="C0") for t,f in zip(tr_times,fluxes)]
             [plt.axvspan(edg[0], edg[1], alpha=0.1, color='cyan') for edg in tr_edges]
             [plt.plot(t0s[Ps == P[i]], (0.997*np.min(flux))*np.ones_like(t0s[Ps == P[i]]),"^") for i in range(npl)]
             plt.xlabel("Time (days)", fontsize=14)
             plt.title(f"Using t_ref: shaded regions={len(indz)} transit chunk(s);  triangles=expected linear ephemeris");
         
-        return SimpleNamespace(t0s=list(t0s), t0_list=t0_list, plnum=list(plnum), trnum=list(trnum),plnum_list=plnum_list,  P_list = P_list,
+        return SimpleNamespace(t0s=list(t0s), t0_list=t0_list, plnum=list(plnum), trnum=list(trnum),plnum_list=plnum_list, P_list = P_list,
                                 n_chunks=len(tr_times),tr_times=tr_times, fluxes=fluxes, tr_edges=tr_edges, indices=indz)
 
 
@@ -1125,8 +1453,8 @@ def get_T0s(t, t_ref, P):
     n_tot_tr = round((tr_last - tr_first)/P)                  #total nmumber of transits in data_range
     t0s      = [tr_first + P*n for n in range(n_tot_tr+1) ]        #expected tmid of transits in data (if no TTV)
     #remove tmid without sufficient transit data around it
-    t0s      = list(filter( lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>5, t0s))  # reserve only expected t0s where there is data around it (0.1P on each side)
-    t0s      = [t0 for t0 in t0s if t.min()<t0<t.max()] # only t0s within the data
+    t0s      = list(filter( lambda t0: ( t[ (t<t0+0.05*P) & (t>t0-0.05*P)] ).size>5, t0s))  # reserve only expected t0s where there is data around it (0.05P on each side)
+    t0s      = [t0 for t0 in t0s if (t.min()-0.5)<t0<(t.max()+0.5)] # only t0s within the data time range +/-0.5d (this allows to take t0s of partial transits)
 
     return t0s
 

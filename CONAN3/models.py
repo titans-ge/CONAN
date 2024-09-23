@@ -21,7 +21,7 @@ except ImportError:
     occultquad = OQ.occultquad
 
 from .utils import rho_to_aR, Tdur_to_aR, cosine_atm_variation, reflection_atm_variation, phase_fold,convert_LD,rescale0_1,sesinw_secosw_to_ecc_omega
-from .funcs import light_travel_time_correction
+from .utils import light_travel_time_correction
 from types import SimpleNamespace
 
 def get_anomaly(t, T0, per, ecc, omega):
@@ -127,7 +127,7 @@ def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, pe
 
     """
 
-    mm = np.ones_like(tarr)          #baseline of lc model
+    mm = np.zeros_like(tarr)  #np.ones_like(tarr)        #zero baseline of lc model
 
     #for each chunk of the data, compute transit model with different T0s for the transit of each planet
     for i in range(split_conf.n_chunks):     
@@ -144,10 +144,11 @@ def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, pe
         imp_par    = list(np.array(b)[plnum])
 
         TM = Transit_Model(rho_star=rho_star, dur=dur, T0=this_t0, RpRs=rprs, b=imp_par, per=P, sesinw=sesinw_, secosw=secosw_, 
-                            ddf=0, occ=0, A_atm=0, delta=0, q1=q1, q2=q2,cst_pars=cst_pars, npl=len(this_t0))
-        this_trans,_ = TM.get_value(tarr_split,ss=ss,vcont=vcont,Rstar=Rstar,custom_LCfunc=custom_LCfunc)  #compute the transit model for this chunk of data
-        mm[ind]      = this_trans
+                            ddf=0, occ=0, Fn=0, delta=0, q1=q1, q2=q2,cst_pars=cst_pars, npl=len(this_t0))
+        this_trans,_ = TM.get_value(tarr_split,ss=ss,vcont=vcont,Rstar=Rstar,model_phasevar=False,custom_LCfunc=custom_LCfunc)  #compute the transit model for this chunk of data
+        mm[ind]     += (this_trans-1)   #add the zero-baseline transit chunk to the zero baseline total model
 
+    mm += 1   #take total baseline to 1
     return mm, {"pl_1": mm}
 
 class Transit_Model(Model):
@@ -178,8 +179,8 @@ class Transit_Model(Model):
         LD coefficient 2
     occ : float
         Occultation depth
-    A_atm : float
-        semi-Amplitude of the atmospheric variation
+    Fp : float
+        nightside flux ratio
     delta : float
         hotspot shift of the atmospheric variation in degrees
     A_ev : float
@@ -204,7 +205,7 @@ class Transit_Model(Model):
     """
 
     def __init__(self, rho_star=None, dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=[0], secosw=[0], 
-                    ddf=0, q1=0, q2=0, occ=0, A_atm=0, delta=0, A_ev=0, A_db=0, cst_pars={},npl=1):
+                    ddf=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0, cst_pars={},npl=1):
         self.rho_star = rho_star
         self.dur      = dur
         self.T0       = [T0]     if isinstance(T0,      (int,float)) else T0
@@ -218,15 +219,15 @@ class Transit_Model(Model):
         self.q1       = q1
         self.q2       = q2
         self.npl      = npl
-        self.A_atm    = A_atm #*1e-6
-        self.delta    = delta
+        self.Fn       = Fn if Fn!=None else 0
+        self.delta    = delta if delta!=None else 0
         self.A_ev     = A_ev #*1e-6
         self.A_db     = A_db #*1e-6
         self.cst_pars = cst_pars
 
-        self.parameter_names = ['rho_star','dur', 'T0', 'RpRs', 'b', 'per', 'sesinw', 'secosw', 'ddf', 'q1', 'q2', 'occ', 'A_atm','delta', 'A_ev', 'A_db','cst_pars','npl']
+        self.parameter_names = ['rho_star','dur', 'T0', 'RpRs', 'b', 'per', 'sesinw', 'secosw', 'ddf', 'q1', 'q2', 'occ', 'Fn','delta', 'A_ev', 'A_db','cst_pars','npl']
 
-    def get_value(self, tarr, ss=None,grprs=0, vcont=0, Rstar=None, custom_LCfunc=None):
+    def get_value(self, tarr, ss=None,grprs=0, vcont=0, Rstar=None, model_phasevar=False, custom_LCfunc=None):
         """ 
         computes the transit/occultation/phase curve model for a given set of parameters along with the baseline
         
@@ -242,6 +243,8 @@ class Transit_Model(Model):
             contamination factor
         Rstar: float
             Stellar radius in Rsun. used to calculate light travel time correction. Default: None to not perform light travel time correction
+        model_phasevar : bool
+            fit the phase variation in the model. Default: False, in which case even if occultation depth is given the transit and occ are joined by a straight line
         custom_LCfunc : SimpleNamespace
             object containing the custom light curve function to be combined to the lightcurve model. Default: None
         Returns
@@ -253,13 +256,12 @@ class Transit_Model(Model):
 
         """
         tt = tarr
-
-        f_trans  = np.ones_like(tt)       #transit
-        f_occ    = np.ones_like(tt)       #occultation
-        pl_mod   = np.zeros_like(tt)      #total lc model
-        model_components = {}           #components of the model lc for each planet
-        
         tt_ss   = ss.supersample(tt) if ss is not None else tt   #supersample the timestamps if ss is not None
+
+        f_trans  = np.ones_like(tt_ss)       #transit
+        f_occ    = np.ones_like(tt_ss)       #occultation
+        pl_mod   = np.zeros_like(tt_ss)      #total lc model
+        model_components = {}           #components of the model lc for each planet
 
         for n in range(self.npl):    #iterate through all planets
             # ==============================================================
@@ -277,19 +279,21 @@ class Transit_Model(Model):
             # calculate the ars 
             efac1 = np.sqrt(1.-ecc**2)/(1.+ecc*np.sin(ome))
             efac2 = self.b[n]*(1.-ecc**2)/(1.+ecc*np.sin(ome))
-            if self.dur is not None: ars =  np.sqrt(((1.+RR)**2 - efac2**2 * (1.-(np.sin(self.dur*np.pi/self.per[n]))**2))/(np.sin(self.dur*np.pi/self.per[n]))**2) * efac1
-            if self.rho_star is not None: ars = rho_to_aR(self.rho_star,self.per[n])
+            if self.dur is not None: 
+                # ars  =  np.sqrt(((1.+RR)**2 - efac2**2 * (1.-(np.sin(self.dur*np.pi/self.per[n]))**2))/(np.sin(self.dur*np.pi/self.per[n]))**2) * efac1
+                ars  = Tdur_to_aR(self.dur,self.b[n],RR,self.per[n],ecc,np.degrees(ome))
+            else: ars = rho_to_aR(self.rho_star,self.per[n],ecc,np.degrees(ome))
 
             #light travel time correction
             if Rstar is not None:
-                inc = np.arccos(self.b[n]/(ars*(1-ecc**2)/(1+ecc*np.sin(ome))))  #inclination
+                inc = np.arccos(self.b[n]/(ars*(1-ecc**2)/(1+ecc*np.sin(ome))))  #inclination in radians
                 tt_ss = light_travel_time_correction(tt_ss, self.T0[n],ars,self.per[n],inc,Rstar,ecc,ome)
 
             # if replacing the LC model with a custom function
             if custom_LCfunc!=None and custom_LCfunc.replace_LCmodel:
                 LC_pars = dict(Duration=self.dur, rho_star=self.rho_star,RpRs=RR,Impact_para=self.b[n],T_0=self.T0[n],Period=self.per[n],Eccentricity=ecc,
-                                omega=ome*180/np.pi,q1=self.q1,q2=self.q2,D_occ=self.occ,A_atm=self.A_atm,ph_off=self.delta,A_ev=self.A_ev,A_db=self.A_db)
-                lc_mod = custom_LCfunc.func(tt_ss,**self.cst_pars,LC_pars=LC_pars)
+                                omega=ome*180/np.pi,q1=self.q1,q2=self.q2,D_occ=self.occ,Fn=self.Fn,ph_off=self.delta,A_ev=self.A_ev,A_db=self.A_db)
+                lc_mod = custom_LCfunc.func(tt_ss,**self.cst_pars,extra_args=custom_LCfunc.extra_args,LC_pars=LC_pars)
             
             else:
                 EA_lc, TA_lc = get_anomaly(tt_ss, self.T0[n], self.per[n], ecc, ome)
@@ -321,7 +325,7 @@ class Transit_Model(Model):
                 if RR < 0: mm0[ph_transit] = 1-mm0[ph_transit]+1   #allow negative depths
                 
                 #============= OCCULTATION ==========================
-                Fp,A_atm,A_db, A_ev = self.occ*1e-6, self.A_atm*1e-6, self.A_db*1e-6, self.A_ev*1e-6
+                Fp,Fn,A_db, A_ev = self.occ*1e-6, self.Fn*1e-6, self.A_db*1e-6, self.A_ev*1e-6
 
                 ph_occultation  = np.where((y < 0))
                 npo_occultation = len(z[ph_occultation])
@@ -334,13 +338,13 @@ class Transit_Model(Model):
                 ph_angle = TA_lc + (ome-np.pi/2)   
                 # phase  = phase_fold(tt_ss,self.per[n],self.T0[n])
                 # phi    = 2*np.pi*phase
-                if A_atm not in [None,0]: 
+                if model_phasevar: 
                     #sepate the transit and occultation models and add the atmospheric variation
                     f_trans[ph_transit]   = mm0[ph_transit]
                     f_occ[ph_occultation] = mm0[ph_occultation]
                     f_occ                 = rescale0_1(f_occ)  #rescale the occultation model to be between 0 and 1
                     
-                    atm    = cosine_atm_variation(ph_angle, Fp, A_atm, self.delta)
+                    atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta)
                     ellps  = A_ev * (1 - (np.cos(2*ph_angle)) )
                     dopp   = A_db * np.sin(ph_angle)
                     lc_mod = f_trans*(1+ellps+dopp) + f_occ*atm.pc
@@ -443,7 +447,7 @@ def para_minfunc(icoeff, ivars, mm, LCdata):
 
 
 ####### radial velocity model
-def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,npl=None):
+def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=None,custom_RVfunc=None):
     """ 
     Model the radial velocity curve of planet(s). 
     T0, per, K, sesinw, secosw are given as lists of the same length (npl), each element corresponding to a planet.
@@ -512,10 +516,18 @@ def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,npl=None):
 
         ecc, ome = sesinw_secosw_to_ecc_omega(sesinw[n],secosw[n])
         
-        EA_rv, TA_rv = get_anomaly(tt, T0[n], per[n], ecc, ome)    
+        if custom_RVfunc!=None and custom_RVfunc.replace_RVmodel:
+            RV_pars = dict(T0=T0[n],Period=per[n],K=K[n],ecc=ecc,omega=ome)
+            m_RV = custom_RVfunc.func(tt,**cst_pars,extra_args=custom_RVfunc.extra_args,RV_pars=RV_pars)
+        else:
+            EA_rv, TA_rv = get_anomaly(tt, T0[n], per[n], ecc, ome)    
+            # get the model RV at each time stamp
+            m_RV = K[n] * (np.cos(TA_rv + ome) + ecc * np.sin(ome))
 
-        # get the model RV at each time stamp
-        m_RV = K[n] * (np.cos(TA_rv + ome) + ecc * np.sin(ome))
+            if custom_RVfunc!=None and custom_RVfunc.replace_LCmodel==False:
+                cst_model = custom_RVfunc.func(tt,**cst_pars) if custom_RVfunc.x=="time" else custom_RVfunc.func(TA_rv,**cst_pars)
+                m_RV      = custom_RVfunc.op_func(m_RV,cst_model)
+        
         model_components[f"pl_{n+1}"] = m_RV
         mod_RV += m_RV      #add RV of each planet to the total RV
 

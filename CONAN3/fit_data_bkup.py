@@ -21,7 +21,7 @@ from george import GP
 import celerite
 from celerite import GP as cGP
 from copy import deepcopy
-from .utils import gp_params_convert, celerite_cosine
+from .utils import gp_params_convert
 from .conf import create_configfile
 from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
@@ -56,7 +56,7 @@ def prior_transform(u,prior_dst,prior_names):
         x[i] = x[i]
     return x 
 
-def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_folder="output", init_only=False,progress=True,
+def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_folder="output", progress=True,
             rerun_result=False, verbose=False, debug=False, save_burnin_chains=True, resume_sampling=False,
             dyn_kwargs=dict(sample='rwalk',bound='multi'), run_kwargs=dict() ):
     """
@@ -82,8 +82,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if True, show MCMC progress bar, default is True.
     out_folder : str;
         path to output folder, default is "output".
-    init_only : bool;
-        generate only initial models, prior display, and *out.dat files in the output folder. useful for diagnosing starting points or generating full lc and rv models
     rerun_result : bool;
         if True, rerun CONAN with previous fit result in order to regenerate plots and files. 
         This also allows to create files compatibile with latest CONAN version. Default is False.
@@ -118,6 +116,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
     if os.path.exists(f'{out_folder}/chains_dict.pkl'):
+        fol = 'myfolder/chains_dict.pkl'
+
+        #get directory of fol
+        
+
+
         if not rerun_result:
             print(f'Fit result already exists in this folder: {out_folder}.\n Loading results...')
             result = load_result(out_folder)
@@ -176,10 +180,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     RVbases_init = rv_obj._RVbases_init
     RVunit       = rv_obj._RVunit
 
-    custom_RVfunc = rv_obj._custom_RVfunc     # custom RV function
-    ncustomRV     = custom_RVfunc.npars 
-
     extinpars= []  # set up array to contain the names of the externally input parameters (parameters always needed to generate a transit/RV model even if not a jumping parameter)
+    
+    for i in range(nRV):
+        if (float(rv_dict["gam_steps"][i]) != 0.) :
+            njumpRV[i]=njumpRV[i]+1
+
 
 #============transit and RV jump parameters===============
     #from load_lightcurves.planet_parameters()
@@ -271,6 +277,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     
 #============ddfs ==========================
     #from load_lighcurves.transit_depth_variations()
+    drprs_op = lc_obj._ddfs.drprs_op    # drprs options --> [0., step, bounds_lo, bounds_hi, 0., width_lo, width_hi]
     divwhite = lc_obj._ddfs.divwhite    # do we do a divide-white?
     ddfYN    = lc_obj._ddfs.ddfYN       # do we do a depth-dependent fit?
                 
@@ -288,6 +295,80 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             dwind         = np.concatenate((dwind,np.zeros(len(dwCNM),dtype=int)+i), axis=0)
             indices       = np.where(dwind==i)
             dwCNMind.append(indices)        
+
+
+    #============phasecurve setup=============
+    #from load_lightcurves.setup_phasecurve()
+
+    DA_occ  = lc_obj._PC_dict["D_occ"]
+    DA_Aatm = lc_obj._PC_dict["A_atm"]
+    DA_off  = lc_obj._PC_dict["ph_off"]
+    DA_Aev  = lc_obj._PC_dict["A_ev"]
+    DA_Adb  = lc_obj._PC_dict["A_db"]
+
+    nocc      = len(filnames)
+    occ_in    = np.zeros((nocc,7))
+    Aatm_in   = np.zeros((nocc,7))
+    phoff_in  = np.zeros((nocc,7))
+    Aev_in    = np.zeros((nocc,7))
+    Adb_in    = np.zeros((nocc,7))
+
+    for i, f in enumerate(filnames):
+        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
+
+        occ_in[i,:] = [DA_occ[f].start_value, DA_occ[f].step_size, DA_occ[f].bounds_lo, DA_occ[f].bounds_hi,
+                        DA_occ[f].prior_mean, DA_occ[f].prior_width_lo, DA_occ[f].prior_width_hi ]           
+        if DA_occ[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+
+
+        Aatm_in[i,:] = [DA_Aatm[f].start_value, DA_Aatm[f].step_size, DA_Aatm[f].bounds_lo, DA_Aatm[f].bounds_hi,
+                        DA_Aatm[f].prior_mean, DA_Aatm[f].prior_width_lo, DA_Aatm[f].prior_width_hi ]           
+        if DA_Aatm[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+
+        phoff_in[i,:] = [DA_off[f].start_value, DA_off[f].step_size, DA_off[f].bounds_lo, DA_off[f].bounds_hi,
+                        DA_off[f].prior_mean, DA_off[f].prior_width_lo, DA_off[f].prior_width_hi ]           
+        if DA_off[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+
+        Aev_in[i,:] = [DA_Aev[f].start_value, DA_Aev[f].step_size, DA_Aev[f].bounds_lo, DA_Aev[f].bounds_hi,
+                        DA_Aev[f].prior_mean, DA_Aev[f].prior_width_lo, DA_Aev[f].prior_width_hi ]           
+        if DA_Aev[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+
+        Adb_in[i,:] = [DA_Adb[f].start_value, DA_Adb[f].step_size, DA_Adb[f].bounds_lo, DA_Adb[f].bounds_hi,
+                        DA_Adb[f].prior_mean, DA_Adb[f].prior_width_lo, DA_Adb[f].prior_width_hi ]           
+        if DA_Adb[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1    
+
+#============limb darkening===============
+    #from load_lightcurves.limb_darkening()
+    DA_ld = lc_obj._ld_dict
+
+    q1_in=np.zeros((nfilt,7))
+    q2_in=np.zeros((nfilt,7))
+
+    for i in range(nfilt):
+        j=np.where(filnames == filnames[i])              # make sure the sequence in this array is the same as in the "filnames" array
+        k=np.where(np.array(lc_obj._filters) == filnames[i])
+
+        q1_in[j,:] = [DA_ld["q1"][i], DA_ld["step1"][i],DA_ld["bound_lo1"][i],DA_ld["bound_hi1"][i],DA_ld["q1"][i],DA_ld["sig_lo1"][i],DA_ld["sig_hi1"][i]]
+        q1_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else q1_in[j,5])   #sig_lo
+        q1_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step1"][i] == 0.) else q1_in[j,6])   #sig_hi
+        if q1_in[j,1] != 0.:
+            njumpphot[k]=njumpphot[k]+1
+
+
+        q2_in[j,:] = [DA_ld["q2"][i], DA_ld["step2"][i],DA_ld["bound_lo2"][i],DA_ld["bound_hi2"][i],DA_ld["q2"][i],DA_ld["sig_lo2"][i],DA_ld["sig_hi2"][i]]  # the limits are -3 and 3 => very safe
+        q2_in[j,5] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step2"][i] == 0.) else q2_in[j,5])
+        q2_in[j,6] = (0. if (DA_ld["priors"][i] == 'n' or DA_ld["step2"][i] == 0.) else q2_in[j,6])
+        if q2_in[j,1] != 0.:
+            njumpphot[k]=njumpphot[k]+1
+
+#============contamination factors=======================
+    #from load_lightcurves.contamination()
+    DA_cont = lc_obj._contfact_dict
+    cont=np.zeros((nfilt,2))
+
+    for i in range(nfilt):
+        j = np.where(filnames == filnames[i])               # make sure the sequence in this array is the same as in the "filnames" array
+        cont[j,:]= [DA_cont["cont_ratio"][i][0], DA_cont["cont_ratio"][i][1]]
 
 #=============sampling setup===============
     #from setup_fit()
@@ -453,7 +534,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     ttv_conf = lc_obj._ttvs.conf   #ttv configuration
     ttvYN    = lc_obj._ttvs.to_fit
     if ttvYN == "y":
-        print("Setting up TTV arrays ...")
         nttv = len(lc_obj._ttvs.fit_t0s)    
         for i in range(nttv):
             params    = np.concatenate((params,   [lc_obj._ttvs.prior[i].start_value]))
@@ -469,111 +549,80 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         nttv = 0
 
     if ddfYN == 'y':   # if ddFs are fit: set the Rp/Rs to the specified value, and fix it.
-        njumpphot = njumpphot+1   # each LC has another jump param (i.e. dRpRs for each filter/lc)
+        drprs_in  = np.zeros((nfilt,7))
+        njumpphot = njumpphot+1   # each LC has another jump pm
 
-        drprs = lc_obj._ddfs.drprs
-        for i,f in enumerate(filnames):  # and make an array with the drprs inputs  # the dRpRs options
-            params        = np.concatenate((params,   [drprs.start_value]))     # add them to the parameter arrays    
-            stepsize      = np.concatenate((stepsize, [drprs.step_size]))
-            pmin          = np.concatenate((pmin,     [drprs.bounds_lo]))
-            pmax          = np.concatenate((pmax,     [drprs.bounds_hi]))
-            prior         = np.concatenate((prior,    [drprs.prior_mean]))
-            priorlow      = np.concatenate((priorlow, [drprs.prior_width_lo]))
-            priorup       = np.concatenate((priorup,  [drprs.prior_width_hi]))
-            pnames        = np.concatenate((pnames,   [f+'_dRpRs']))
+        for i in range(nfilt):  # and make an array with the drprs inputs  # the dRpRs options
+            drprs_in[i,:] = drprs_op     #[0., step, bounds_lo, bounds_hi, 0., width_lo, width_hi]
+            params        = np.concatenate((params,   [drprs_in[i,0]]))     # add them to the parameter arrays    
+            stepsize      = np.concatenate((stepsize, [drprs_in[i,1]]))
+            pmin          = np.concatenate((pmin,     [drprs_in[i,2]]))
+            pmax          = np.concatenate((pmax,     [drprs_in[i,3]]))
+            prior         = np.concatenate((prior,    [drprs_in[i,4]]))
+            priorlow      = np.concatenate((priorlow, [drprs_in[i,5]]))
+            priorup       = np.concatenate((priorup,  [drprs_in[i,6]]))
+            pnames        = np.concatenate((pnames,   [filnames[i]+'_dRpRs']))
             
-    nocc = len(filnames)
-    DA_occ  = lc_obj._PC_dict["D_occ"]
-    for i,f in enumerate(filnames):  # add the occultation depths
-        params     = np.concatenate((params,   [DA_occ[f].start_value]))
-        stepsize   = np.concatenate((stepsize, [DA_occ[f].step_size]))
-        pmin       = np.concatenate((pmin,     [DA_occ[f].bounds_lo]))
-        pmax       = np.concatenate((pmax,     [DA_occ[f].bounds_hi]))
-        prior      = np.concatenate((prior,    [DA_occ[f].prior_mean]))
-        priorlow   = np.concatenate((priorlow, [DA_occ[f].prior_width_lo]))
-        priorup    = np.concatenate((priorup,  [DA_occ[f].prior_width_hi]))
-        pnames     = np.concatenate((pnames,   [f+'_DFocc']))
-        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
-        if DA_occ[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+            
+    for i in range(nfilt):  # add the occultation depths
+        params     = np.concatenate((params,   [occ_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [occ_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [occ_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [occ_in[i,3]]))
+        prior      = np.concatenate((prior,    [occ_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [occ_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [occ_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_DFocc']))
 
-    DA_Fn = lc_obj._PC_dict["Fn"]
-    for i,f in enumerate(filnames):  # add the nightside flux
-        params     = np.concatenate((params,   [DA_Fn[f].start_value if DA_Fn[f].start_value!=None else 0]))
-        stepsize   = np.concatenate((stepsize, [DA_Fn[f].step_size]))
-        pmin       = np.concatenate((pmin,     [DA_Fn[f].bounds_lo]))
-        pmax       = np.concatenate((pmax,     [DA_Fn[f].bounds_hi]))
-        prior      = np.concatenate((prior,    [DA_Fn[f].prior_mean]))
-        priorlow   = np.concatenate((priorlow, [DA_Fn[f].prior_width_lo]))
-        priorup    = np.concatenate((priorup,  [DA_Fn[f].prior_width_hi]))
-        pnames     = np.concatenate((pnames,   [f+'_Fn']))
-        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
-        if DA_Fn[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+    for i in range(nfilt):  # add the pc amplitudes
+        params     = np.concatenate((params,   [Aatm_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [Aatm_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [Aatm_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [Aatm_in[i,3]]))
+        prior      = np.concatenate((prior,    [Aatm_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [Aatm_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [Aatm_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_Aatm']))
 
-    DA_off  = lc_obj._PC_dict["ph_off"]
-    for i,f in enumerate(filnames):  # add the phase offsets
-        params     = np.concatenate((params,   [DA_off[f].start_value if DA_off[f].start_value!=None else 0]))
-        stepsize   = np.concatenate((stepsize, [DA_off[f].step_size]))
-        pmin       = np.concatenate((pmin,     [DA_off[f].bounds_lo]))
-        pmax       = np.concatenate((pmax,     [DA_off[f].bounds_hi]))
-        prior      = np.concatenate((prior,    [DA_off[f].prior_mean]))
-        priorlow   = np.concatenate((priorlow, [DA_off[f].prior_width_lo]))
-        priorup    = np.concatenate((priorup,  [DA_off[f].prior_width_hi]))
-        pnames     = np.concatenate((pnames,   [f+'_ph_off']))
-        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
-        if DA_off[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
-    
-    DA_Aev  = lc_obj._PC_dict["A_ev"]
-    for i,f in enumerate(filnames):  # add the Aev amplitudes
-        params     = np.concatenate((params,   [DA_Aev[f].start_value]))
-        stepsize   = np.concatenate((stepsize, [DA_Aev[f].step_size]))
-        pmin       = np.concatenate((pmin,     [DA_Aev[f].bounds_lo]))
-        pmax       = np.concatenate((pmax,     [DA_Aev[f].bounds_hi]))
-        prior      = np.concatenate((prior,    [DA_Aev[f].prior_mean]))
-        priorlow   = np.concatenate((priorlow, [DA_Aev[f].prior_width_lo]))
-        priorup    = np.concatenate((priorup,  [DA_Aev[f].prior_width_hi]))
-        pnames     = np.concatenate((pnames,   [f+'_Aev']))
-        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
-        if DA_Aev[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
+    for i in range(nfilt):  # add the phase offsets
+        params     = np.concatenate((params,   [phoff_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [phoff_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [phoff_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [phoff_in[i,3]]))
+        prior      = np.concatenate((prior,    [phoff_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [phoff_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [phoff_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_ph_off']))
 
-    DA_Adb  = lc_obj._PC_dict["A_db"]
-    for i,f in enumerate(filnames):  # add the Adb amplitudes
-        params     = np.concatenate((params,   [DA_Adb[f].start_value]))
-        stepsize   = np.concatenate((stepsize, [DA_Adb[f].step_size]))
-        pmin       = np.concatenate((pmin,     [DA_Adb[f].bounds_lo]))
-        pmax       = np.concatenate((pmax,     [DA_Adb[f].bounds_hi]))
-        prior      = np.concatenate((prior,    [DA_Adb[f].prior_mean]))
-        priorlow   = np.concatenate((priorlow, [DA_Adb[f].prior_width_lo]))
-        priorup    = np.concatenate((priorup,  [DA_Adb[f].prior_width_hi ]))
-        pnames     = np.concatenate((pnames,   [f+'_Adb']))
-        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
-        if DA_Adb[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1  
+    for i in range(nfilt):  # add the Aev amplitudes
+        params     = np.concatenate((params,   [Aev_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [Aev_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [Aev_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [Aev_in[i,3]]))
+        prior      = np.concatenate((prior,    [Aev_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [Aev_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [Aev_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_Aev']))
 
-    DA_cont  = lc_obj._contfact_dict
-    for i,f in enumerate(filnames):  # add the contamination factors
-        params     = np.concatenate((params,   [DA_cont[f].start_value]))
-        stepsize   = np.concatenate((stepsize, [DA_cont[f].step_size]))
-        pmin       = np.concatenate((pmin,     [DA_cont[f].bounds_lo]))
-        pmax       = np.concatenate((pmax,     [DA_cont[f].bounds_hi]))
-        prior      = np.concatenate((prior,    [DA_cont[f].prior_mean]))
-        priorlow   = np.concatenate((priorlow, [DA_cont[f].prior_width_lo]))
-        priorup    = np.concatenate((priorup,  [DA_cont[f].prior_width_hi ]))
-        pnames     = np.concatenate((pnames,   [f+'_cont']))
-        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
-        if DA_cont[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1          
+    for i in range(nfilt):  # add the Adb amplitudes
+        params     = np.concatenate((params,   [Adb_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [Adb_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [Adb_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [Adb_in[i,3]]))
+        prior      = np.concatenate((prior,    [Adb_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [Adb_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [Adb_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_Adb']))
 
-    DA_ld = lc_obj._ld_dict     #TODO modify ld_dict to use simplenamespace for consistency
-    for i,f in enumerate(filnames):  # # add the LD coefficients for the filters to the parameters
-        params     = np.concatenate((params,   [DA_ld["q1"][i],        DA_ld["q2"][i]]))
-        stepsize   = np.concatenate((stepsize, [DA_ld["step1"][i],     DA_ld["step2"][i]]))
-        pmin       = np.concatenate((pmin,     [DA_ld["bound_lo1"][i], DA_ld["bound_lo2"][i]]))
-        pmax       = np.concatenate((pmax,     [DA_ld["bound_hi1"][i], DA_ld["bound_hi2"][i]]))
-        prior      = np.concatenate((prior,    [DA_ld["q1"][i],        DA_ld["q2"][i]]))
-        priorlow   = np.concatenate((priorlow, [DA_ld["sig_lo1"][i],   DA_ld["sig_lo2"][i]]))
-        priorup    = np.concatenate((priorup,  [DA_ld["sig_hi1"][i],   DA_ld["sig_hi2"][i]]))
-        pnames     = np.concatenate((pnames,   [f+'_q1',f+'_q2']))
-        k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
-        if DA_ld["step1"][i] != 0.: njumpphot[k]=njumpphot[k]+1
-        if DA_ld["step2"][i] != 0.: njumpphot[k]=njumpphot[k]+1
+    for i in range(nfilt):  # add the LD coefficients for the filters to the parameters
+        params     = np.concatenate((params,   [q1_in[i,0], q2_in[i,0]]))
+        stepsize   = np.concatenate((stepsize, [q1_in[i,1], q2_in[i,1]]))
+        pmin       = np.concatenate((pmin,     [q1_in[i,2], q2_in[i,2]]))
+        pmax       = np.concatenate((pmax,     [q1_in[i,3], q2_in[i,3]]))
+        prior      = np.concatenate((prior,    [q1_in[i,4], q2_in[i,4]]))
+        priorlow   = np.concatenate((priorlow, [q1_in[i,5], q2_in[i,5]]))
+        priorup    = np.concatenate((priorup,  [q1_in[i,6], q2_in[i,6]]))
+        pnames     = np.concatenate((pnames,   [filnames[i]+'_q1',filnames[i]+'_q2']))
 
     for i in range(nphot):    #add jitter
         if (jit_LCapply=='y'):
@@ -599,6 +648,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
             pnames      = np.concatenate((pnames,  [f"lc{i+1}_logjitter"]), axis=0)
+    
     
     if custom_LCfunc.func != None: 
         print('Setting up parameters for custom LC function ...')
@@ -672,9 +722,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             sine_conf.pars[filt].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars list
                             if p!="Amp": break # only continue the n loop for Amp and not for P and x0 which remain same
                         if p!="Amp": break # only continue the trig loop for Amp and not for P and x0 which remain same for sin and cos
-                
-                k = np.where(np.array(lc_obj._filters)== filt)     #  get indices where the filter name is the same as the one in the input file
-                njumpphot[k]=njumpphot[k]+sinus.nfree
+                njumpphot += sinus.nfree  
                 nsin      += sinus.npars
                 sine_conf.index[filt] = np.arange(st_ind,st_ind+sinus.npars)
                 st_ind += sinus.npars
@@ -701,23 +749,22 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             sine_conf.pars[nm].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars_dict
                             if p!="Amp": break # only continue the n loop for Amp and not for P and x0 which remain same
                         if p!="Amp": break # only continue the trig loop for Amp and not for P and x0 which remain same for sin and cos
-                njumpphot[LCnames.index(nm)] += sinus.nfree
+                njumpphot += sinus.nfree
                 nsin      += sinus.npars
                 sine_conf.index[nm] = np.arange(st_ind,st_ind+sinus.npars)
                 st_ind += sinus.npars           
 
 
     for i in range(nRV):
-        params      = np.concatenate((params,  [rv_dict["gamma"][i].start_value]),    axis=0)
-        stepsize    = np.concatenate((stepsize,[rv_dict["gamma"][i].step_size]),      axis=0)
-        pmin        = np.concatenate((pmin,    [rv_dict["gamma"][i].bounds_lo]),      axis=0)
-        pmax        = np.concatenate((pmax,    [rv_dict["gamma"][i].bounds_hi]),      axis=0)
-        prior       = np.concatenate((prior,   [rv_dict["gamma"][i].prior_mean]),     axis=0)
-        priorlow    = np.concatenate((priorlow,[rv_dict["gamma"][i].prior_width_lo]), axis=0)
-        priorup     = np.concatenate((priorup, [rv_dict["gamma"][i].prior_width_hi]), axis=0)
+        params      = np.concatenate((params,  [rv_dict["gammas"][i]]),   axis=0)
+        stepsize    = np.concatenate((stepsize,[rv_dict["gam_steps"][i]]), axis=0)
+        pmin        = np.concatenate((pmin,    [rv_dict["bound_lo"][i]]), axis=0)
+        pmax        = np.concatenate((pmax,    [rv_dict["bound_hi"][i]]),  axis=0)
+        prior       = np.concatenate((prior,   [rv_dict["gam_pri"][i]]),   axis=0)
+        priorlow    = np.concatenate((priorlow,[rv_dict["gampriloa"][i]]), axis=0)
+        priorup     = np.concatenate((priorup, [rv_dict["gamprihia"][i]]), axis=0)
         pnames      = np.concatenate((pnames,  [f"rv{i+1}_gamma"]), axis=0)
-        if rv_dict["gamma"][i].step_size!=0: njumpRV[i]=njumpRV[i]+1
-
+        
         if (jit_apply=='y'):
             params      = np.concatenate((params,  [rvjitt_start[i]]), axis=0)
             stepsize    = np.concatenate((stepsize,[0.0001]), axis=0)
@@ -742,18 +789,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             priorup     = np.concatenate((priorup, [0.]), axis=0)
             pnames      = np.concatenate((pnames,  [f"rv{i+1}_jitter"]), axis=0)
     
-    if custom_RVfunc.func != None: 
-        print('Setting up parameters for custom RV function ...')
-        params     = np.concatenate((params,   [custom_RVfunc.par_dict[key].start_value    for key in custom_RVfunc.par_dict.keys()]))
-        stepsize   = np.concatenate((stepsize, [custom_RVfunc.par_dict[key].step_size      for key in custom_RVfunc.par_dict.keys()]))
-        pmin       = np.concatenate((pmin,     [custom_RVfunc.par_dict[key].bounds_lo      for key in custom_RVfunc.par_dict.keys()]))
-        pmax       = np.concatenate((pmax,     [custom_RVfunc.par_dict[key].bounds_hi      for key in custom_RVfunc.par_dict.keys()]))
-        prior      = np.concatenate((prior,    [custom_RVfunc.par_dict[key].prior_mean     for key in custom_RVfunc.par_dict.keys()]))
-        priorlow   = np.concatenate((priorlow, [custom_RVfunc.par_dict[key].prior_width_lo for key in custom_RVfunc.par_dict.keys()]))
-        priorup    = np.concatenate((priorup,  [custom_RVfunc.par_dict[key].prior_width_hi for key in custom_RVfunc.par_dict.keys()]))
-        pnames     = np.concatenate((pnames,   list(custom_RVfunc.par_dict.keys())) )
-        njumpRV    = njumpRV + custom_RVfunc.nfree        
-
+        
+    nbc_tot = np.copy(0)  # total number of baseline coefficients let to vary (leastsq OR jumping)
 
     #################################### GP setup #########################################
     if lc_obj._GP_dict != {}: print('Setting up photometry GPs ...')
@@ -782,12 +819,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     
     celerite_kernel = dict(mat32  = celerite.terms.Matern32Term,
                             sho   = celerite.terms.SHOTerm,
-                            real  = celerite.terms.RealTerm,
-                            cos   = celerite_cosine)
+                            real  = celerite.terms.RealTerm)
 
     # =================PHOTOMETRY =========================================
-    nbc_tot = np.copy(0)  # total number of baseline coefficients let to vary (leastsq OR jumping)
-
     for i in range(nphot):
         # t, flux, err, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in = np.loadtxt(fpath+names[i], usecols=(0,1,2,3,4,5,6,7,8), unpack = True)  # reading in the data
         thisLCdata = input_lcs[LCnames[i]]
@@ -840,13 +874,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         #   [T0,RpRs,b,per,sesinw, secosw,K,                   (7)*npl
         #   ttv,...                                      (nttv)
         #   ddf_1, ..., ddf_n,                           (nddf)
-        #   (occ_1,Fn_1,phoff_1,Aev_1,A_db_1,cont_1),...,occ_n,Fn_n,phoff_n,Aev_n,Adb_n,cont_n(6*nocc)
+        #   (occ_1,Aatm_1,phoff_1,Aev_1,A_db_1),...,occ_n,Aatm_n,phoff_n,Aev_n,Adb_n(5*nocc)
         #   q1_f1,q2_f1, q1_f2, .... , q2fn,            (2*n_filt)
         #   LC_jit                                       (nphot)
         #   Rv_gamma, RV_jit                              (2*nRVs)         
         #   baseline                                       22, ...]
-        #    = 1+7*npl+nttv+nddf+nocc*6+2*n_filt+nphot+ncustom +2*nRV + 22*nphot
-        #    each lightcurve has 22 possible baseline jump parameters, starting with index  1+7*npl+nttv+nddf+nocc*6+2*n_filt+nphot+ncustom +2*nRV
+        #    = 1+7*npl+nttv+nddf+nocc*5+4*n_filt+nphot+ncustom +2*nRV + 22*nphot
+        #    each lightcurve has 22 possible baseline jump parameters, starting with index  1+7*npl+nttv+nddf+nocc*5+2*n_filt+nphot+ncustom +2*nRV
 
         # pargp_all = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
 
@@ -1110,13 +1144,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (stepsize[occind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[occind]),axis=0)
 
-        #nightside flux
-        Fn_ind=1+7*npl+nttv+nddf+nocc+k                   # the index of the first Fn for this LC
-        if (stepsize[Fn_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
-            temp=np.concatenate((np.asarray(temp),[Fn_ind]),axis=0)
+        #pc atm
+        Aatm_ind=1+7*npl+nttv+nddf+nocc+k                   # the index of the first atm amplitude for this LC
+        if (stepsize[Aatm_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
+            temp=np.concatenate((np.asarray(temp),[Aatm_ind]),axis=0)
         
         #phpff
-        phoff_ind=1+7*npl+nttv+nddf+nocc*2+k                   # the index of the first phase offset for this LC
+        phoff_ind=1+7*npl+nttv+nddf+nocc*2+k                   # the index of the first atm amplitude for this LC
         if (stepsize[phoff_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[phoff_ind]),axis=0)
 
@@ -1126,44 +1160,39 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             temp=np.concatenate((np.asarray(temp),[Aev_ind]),axis=0)
 
         #db
-        Adb_ind=1+7*npl+nttv+nddf+nocc*4+k                   # the index of the first db amplitude for this LC
+        Adb_ind=1+7*npl+nttv+nddf+nocc*4+k                   # the index of the first ev amplitude for this LC
         if (stepsize[Adb_ind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
             temp=np.concatenate((np.asarray(temp),[Adb_ind]),axis=0)
 
-        #cont
-        contind=1+7*npl+nttv+nddf+nocc*5+k                   # the index of the contam parameter for this LC
-        if (stepsize[contind]!=0.):        # if nonzero stepsize ->it is jumping, add it to the list
-            temp=np.concatenate((np.asarray(temp),[contind]),axis=0)
-
         #limb darkening
-        q1ind=1+7*npl+nttv+nddf+nocc*6+k*2
+        q1ind=1+7*npl+nttv+nddf+nocc*5+k*2
         if (stepsize[q1ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[q1ind]),axis=0)
         
-        q2ind=1+7*npl+nttv+nddf+nocc*6+k*2+1
+        q2ind=1+7*npl+nttv+nddf+nocc*5+k*2+1
         if (stepsize[q2ind]!=0.):
             temp=np.concatenate((np.asarray(temp),[q2ind]),axis=0)
 
         #jitter
-        LCjitterind = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + i 
+        LCjitterind = 1+7*npl +nttv+ nddf+nocc*5 + nfilt*2 + i 
         if (stepsize[LCjitterind]!=0.):           
             temp=np.concatenate((temp,[LCjitterind]),axis=0)
 
-        #custom LC parameters
+        #custom parameters
         if ncustom>0:
-            customind = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + np.arange(ncustom) # the index of the custom parameters 
+            customind = 1+7*npl +nttv+ nddf+nocc*5 + nfilt*2 + nphot + np.arange(ncustom) # the index of the custom parameters 
             cst_step  = customind[np.where(stepsize[customind]!=0.)[0] ]       
             temp=np.concatenate((temp,cst_step),axis=0)
 
         #sinuoid parameters:
         if sine_conf.flag:
             file_slct = filnames[k] if sine_conf.fit=="filt" else "same" if sine_conf.fit=="same" else LCnames[i]            
-            sin_ind   = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom + sine_conf.index[file_slct]  #the indices of this lc/filt sinuoid parameters
+            sin_ind   = 1+7*npl +nttv+ nddf+nocc*5 + nfilt*2 + nphot + ncustom + sine_conf.index[file_slct]  #the indices of this lc/filt sinuoid parameters
             sin_step  = sin_ind[np.where(stepsize[sin_ind]!=0.)[0] ]       
             temp=np.concatenate((temp,sin_step),axis=0)
     
         #baseline
-        bfstart= 1+7*npl+nttv+nddf+nocc*6+nfilt*2 + nphot + ncustom + nsin + nRV*2 + ncustomRV # the first index in the param array that refers to a baseline function    
+        bfstart= 1+7*npl+nttv+nddf+nocc*5+nfilt*2 + nphot + ncustom + nsin + nRV*2  # the first index in the param array that refers to a baseline function    
         blind = np.asarray(list(range(bfstart+i*22,bfstart+i*22+22)))  # the indices for the coefficients for the base function   
 
         lcstep1 = np.where(stepsize[blind]!=0.)
@@ -1184,9 +1213,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         
     RVjump = [] # a list where each item contain a list of the indices of params that jump and refer to this specific RV dataset
     for i in range(nRV):
+        
         temp=np.ndarray([])
         
-        rv_ind  = np.array([0])     #rho_star/duration
+        rv_ind  = np.array([0])     #rho_star
         rv_ind  = np.append(rv_ind, np.concatenate([np.arange(1,8)+7*n for n in range(npl)])) # the common RV jump parameters: transit + K for all planets
         rvstep1 = np.where(stepsize[rv_ind]!=0.)  
         rvstep = rvstep1[0]
@@ -1195,21 +1225,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             temp=np.copy(rvstep)
 
         # identify the gamma index of this RV (note: each gamma comes with a jitter, so 2 indices needed per rvdata)
-        gammaind  = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom + nsin + i*2
-        jitterind = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom + nsin + i*2 + 1
+        gammaind  = 1+7*npl +nttv+ nddf+nocc*5 + nfilt*2 + nphot + ncustom + nsin + i*2
+        jitterind = 1+7*npl +nttv+ nddf+nocc*5 + nfilt*2 + nphot + ncustom + nsin + i*2 + 1
 
         if (stepsize[gammaind]!=0.):           
             temp=np.concatenate((temp,[gammaind]),axis=0)
 
         if (stepsize[jitterind]!=0.):           
             temp=np.concatenate((temp,[jitterind]),axis=0)
-
-        if ncustomRV>0:
-            customRVind = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom + nsin + nRV*2 + np.arange(ncustomRV) # the index of the custom parameters 
-            cstRV_step  = customRVind[np.where(stepsize[customRVind]!=0.)[0] ]       
-            temp=np.concatenate((temp,cstRV_step),axis=0)
             
-        bfstart= 1+7*npl+nttv+nddf+nocc*6+nfilt*2 + nphot + ncustom + nsin + nRV*2 + ncustomRV + nphot*22  # the first index in the param array that refers to an RV baseline function    
+        bfstart= 1+7*npl+nttv+nddf+nocc*5+nfilt*2 + nphot + ncustom + nsin + nRV*2 + nphot*22  # the first index in the param array that refers to an RV baseline function    
         blind = np.asarray(list(range(bfstart+i*12,bfstart+i*12+12)))  # the indices for the coefficients for the base function    
 
         rvstep1 = np.where(stepsize[blind]!=0.)
@@ -1305,7 +1330,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     for jj in range(ndim,nrows*6): ax[jj].axis("off")   #remove unused subplots
     plt.subplots_adjust(hspace=0.2)
     fig.savefig(f"{out_folder}/priors.png", bbox_inches="tight")
-    plt.close("all")
     matplotlib.use(__default_backend__)
 
 
@@ -1314,9 +1338,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     print('\nPlotting initial guess\n---------------------------')
 
     inmcmc = 'n'
-    indparams = {   "t_arr": t_arr,"f_arr": f_arr,"col3_arr": None,"col4_arr": None,"col6_arr": None,"col5_arr": None,"col7_arr": None,"custom_RVfunc": custom_RVfunc,"custom_LCfunc": custom_LCfunc,"nphot": nphot,"nRV": nRV,"sine_conf": sine_conf,
+    indparams = {   "t_arr": t_arr,"f_arr": f_arr,"col3_arr": None,"col4_arr": None,"col6_arr": None,"col5_arr": None,"col7_arr": None,"bis_arr": None,"custom_LCfunc": custom_LCfunc,"nphot": nphot,"nRV": nRV,"sine_conf": sine_conf,
                     "filters": filters,"nfilt": nfilt,"filnames": filnames,"nddf": nddf,"nocc": nocc,"nttv": nttv,"col8_arr": _,"grprs": grprs,"ttv_conf": ttv_conf,"grnames": grnames,"groups": groups,"ngroup": ngroup,"ewarr": ewarr,
-                    "inmcmc": inmcmc,"paraCNM": paraCNM,"baseLSQ": baseLSQ,"bvars": bvars,"bvarsRV": bvarsRV,"model_phasevar": lc_obj._model_phasevar,"LCnames": LCnames,"RVnames": RVnames,"e_arr": e_arr,"divwhite": divwhite,"dwCNMarr": dwCNMarr,"dwCNMind": dwCNMind,
+                    "inmcmc": inmcmc,"paraCNM": paraCNM,"baseLSQ": baseLSQ,"bvars": bvars,"bvarsRV": bvarsRV,"cont": cont,"LCnames": LCnames,"RVnames": RVnames,"e_arr": e_arr,"divwhite": divwhite,"dwCNMarr": dwCNMarr,"dwCNMind": dwCNMind,
                     "params": params,"useGPphot": useGPphot,"useGPrv": useGPrv,"GPobjects": GPobjects,"GPparams": GPparams,"GPindex": GPindex,"pindices": pindices,"jumping": jumping,"jnames": jnames,"prior_distr": prior_distr,"pnames_all": pnames_all,
                     "norm_sigma": norm_sigma,"uni_low": uni_low,"uni_up": uni_up,"pargps": pargps,"jumping_noGP": jumping_noGP,"gpkerns": gpkerns,"LTT": LTT,"jumping_GP": jumping_GP,"GPstepsizes": GPstepsizes,"sameLCgp": sameLCgp,
                     "npl": npl,"useSpline_lc": useSpline_lc,"useSpline_rv": useSpline_rv,"s_samp": s_samp,"rvGPobjects": rvGPobjects,"rvGPparams": rvGPparams,"rvGPindex": rvGPindex,"input_lcs": input_lcs,"input_rvs": input_rvs,
@@ -1331,8 +1355,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
     if debug: print(f'finished fit_plots, took {(time.time() - debug_t2)} secs')
 
-    if init_only:
-        return
+
     ########################### MCMC run ###########################################
     print(f'\n============ Samping started ... (using {fit_sampler} [{NS_type if fit_sampler=="dynesty" else emcee_move}])======================')
 
@@ -1628,17 +1651,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         fig = result.rv.plot_bestfit(detrend=True)
         fig.savefig(out_folder+"/bestfit_RV_detrended.png", bbox_inches="tight")
     matplotlib.use(__default_backend__)
-
-
-    if ttvYN == "y":
-        print("\nPlotting TTVs")
-        matplotlib.use('Agg')
-        fig=result.lc.plot_ttv()
-        fig.savefig(out_folder+"/TTVs.png", bbox_inches="tight")
-
-        fig=result.lc.plot_lcttv()
-        fig.savefig(out_folder+"/TTVs_lc.png", bbox_inches="tight")
-        matplotlib.use(__default_backend__)
 
     #make print out statement in the fashion of conan the barbarian
     print(_text_format.RED + "\nCONAN: I have now crushed your data," +\

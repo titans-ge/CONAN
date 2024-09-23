@@ -30,7 +30,7 @@ def basecoeff(ibase,spline,init=None,lims=None):
         nbc = nbc+1
     else:
         offset[:,0]=[init["off"],0.1*np.diff(lims["off"])[0],*lims["off"]]        # no CNM: set the starting value and limits of the offset    
-        if spline.use: offset[:,0]=[init["off"],0,0,0]   # if we use a spline, set offset to 1 and fix it
+        if spline.use: offset[:,0]=[init["off"],0,0,0]   # if we use a spline, fix offset to 1 or bestvalue from get_decorr fit
         else: nbc = nbc+1
     
      # dcol0 coeff:   A0*dcol0 + B0*dcol0^2 + C0*dcol0^3 + D0*dcol0^4
@@ -113,11 +113,11 @@ def basecoeff(ibase,spline,init=None,lims=None):
 
     # dsin  coeff:   Amp*sin(2pi(dcol0-phi)/P) -x-> Amp*sin(freq*dcol0+phi)
     dsin=np.zeros((4,3), dtype=float)
-    if ibase[7] > 0: 
-        dsin[:,0]=[init["amp"],0.001,0,1]
-        dsin[:,1]=[init["freq"],0.001,1,333]
-        dsin[:,2]=[init["phi"],0.001,0,1]
-        nbc = nbc+3
+    # if ibase[7]=="y": 
+    #     dsin[:,0]=[init["amp"],0.001,0,1]
+    #     dsin[:,1]=[init["freq"],0.001,1,333]
+    #     dsin[:,2]=[init["phi"],0.001,0,1]
+    #     nbc = nbc+3
                     
     # H coeff => CNM                
     dCNM=np.zeros((4,2), dtype=float)
