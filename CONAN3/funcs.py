@@ -133,7 +133,7 @@ def credregionML(posterior=None, percentile=0.6827, pdf=None, xpdf=None):
     density for a given percentile of the highest posterior density.
     These outputs can be used to easily compute the HPD credible regions.
 
-    Parameters
+    Parameters:
     ----------
     posterior: 1D float ndarray
         A posterior distribution.

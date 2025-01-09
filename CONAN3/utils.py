@@ -3,10 +3,14 @@ import astropy.constants as c
 import astropy.units as u
 from types import SimpleNamespace
 import matplotlib.pyplot as plt
-from uncertainties import ufloat 
+from uncertainties import ufloat
+from uncertainties import unumpy as unp
+from uncertainties.core import AffineScalarFunc
 from uncertainties.umath import sin,cos, sqrt
 from scipy.interpolate import interp1d
 from celerite import terms
+import spleaf
+from numba import vectorize
 
 
 
@@ -50,7 +54,7 @@ def light_travel_time_correction(t,t0,aR,P,inc,Rstar,ecc=0,w=1.57079):
 def phase_fold(t, per, t0,phase0=-0.5):
     """Phase fold a light curve.
 
-    Parameters
+    Parameters:
     ----------
     t : array-like
         Time stamps.
@@ -68,67 +72,181 @@ def phase_fold(t, per, t0,phase0=-0.5):
     """
     return ( ( ( (t-t0)/per % 1) - phase0) % 1) + phase0
 
-def get_orbital_elements(t, T0, per, ecc, omega):
-    """
-    Calculate the mean,eccentric, and true anomaly for a given time t.
+# def get_orbital_elements(t, T0, per, ecc, omega, approx=False):
+#     """
+#     Calculate the mean,eccentric, and true anomaly for a given time t.
 
-    Parameters 
-    ----------
-    t : array-like
-        timestamps
-    T0 : float
-        mid-transit time
-    per : float
-        orbital period
-    ecc : float
-        eccentricity
-    omega : float  
-        argument of periastron in radians
+#     Parameters: 
+#     ----------
+#     t : array-like
+#         timestamps
+#     T0 : float
+#         mid-transit time
+#     per : float
+#         orbital period
+#     ecc : float
+#         eccentricity
+#     omega : float  
+#         argument of periastron in radians
     
-    Returns
-    -------
-    orb_pars : SimpleNamespace
-        mean_anom : array-like
-            mean anomaly
-        ecc_anom : array-like
-            eccentric anomaly
-        true_anom : array-like  
-            true anomaly
-        phase_angle : array-like
-            phase angle
-    """
-    # calculate the true -> eccentric -> mean anomaly at transit -> perihelion time
-    if ecc==0: omega = np.pi/2.  # if circular orbit, set omega to pi/2
-    TA_tra = np.pi/2. - omega
-    TA_tra = np.mod(TA_tra,2.*np.pi)
-    EA_tra = 2.*np.arctan( np.tan(TA_tra/2.) * np.sqrt((1.-ecc)/(1.+ecc)) )
-    EA_tra = np.mod(EA_tra,2.*np.pi)
-    MA_tra = EA_tra - ecc * np.sin(EA_tra)
-    MA_tra = np.mod(MA_tra,2.*np.pi)
-    mmotio = 2.*np.pi/per   # the mean motion, i.e. angular velocity [rad/day] if we had a circular orbit
-    T_peri = T0 - MA_tra/mmotio
+#     Returns
+#     -------
+#     orb_pars : SimpleNamespace
+#         mean_anom : array-like
+#             mean anomaly
+#         ecc_anom : array-like
+#             eccentric anomaly
+#         true_anom : array-like  
+#             true anomaly
+#         phase_angle : array-like
+#             phase angle
+#     """
+#     # calculate the true -> eccentric -> mean anomaly at transit -> perihelion time
+#     if ecc==0: omega = np.pi/2.  # if circular orbit, set omega to pi/2
+#     TA_tra = np.pi/2. - omega
+#     EA_tra = 2.*np.arctan( np.tan(TA_tra/2.) * np.sqrt((1.-ecc)/(1.+ecc)) ) #EA at transit(scalar)
+#     MA_tra = EA_tra - ecc * np.sin(EA_tra)                                  #MA at transit(scalar)
+#     MM     = 2.*np.pi/per   # the mean motion, i.e. angular velocity [rad/day] if we had a circular orbit
+#     T_peri = T0 - MA_tra/MM
 
-    MA = (t - T_peri)*mmotio       
-    MA = np.mod(MA,2*np.pi)
-    # # source of the below equation: http://alpheratz.net/Maple/KeplerSolve/KeplerSolve.pdf
-    EA_lc = MA + np.sin(MA)*ecc + 1./2.*np.sin(2.*MA)*ecc**2 + \
-                (3./8.*np.sin(3.*MA) - 1./8.*np.sin(MA))*ecc**3 + \
-                    (1./3.*np.sin(4.*MA) - 1./6.*np.sin(2*MA))*ecc**4 + \
-                        (1./192*np.sin(MA)-27./128.*np.sin(3.*MA)+125./384.*np.sin(5*MA))*ecc**5 + \
-                            (1./48.*np.sin(2.*MA)+27./80.*np.sin(6.*MA)-4./15.*np.sin(4.*MA))*ecc**6
-    EA_lc = np.mod(EA_lc,2*np.pi)
-    TA_lc = 2.*np.arctan(np.tan(EA_lc/2.) * np.sqrt((1.+ecc)/(1.-ecc)) )
-    TA_lc = np.mod(TA_lc,2*np.pi)  # that's the true anomaly!
-    phase_angle    = TA_lc + omega-np.pi/2
-    phase_angle    = np.mod(phase_angle,2*np.pi)
+#     MA = (t - T_peri)*MM  
+#     if approx:     
+#     # # source of the below equation: http://alpheratz.net/Maple/KeplerSolve/KeplerSolve.pdf
+#         EA_lc = MA + np.sin(MA)*ecc + 1./2.*np.sin(2.*MA)*ecc**2 + \
+#                     (3./8.*np.sin(3.*MA) - 1./8.*np.sin(MA))*ecc**3 + \
+#                         (1./3.*np.sin(4.*MA) - 1./6.*np.sin(2*MA))*ecc**4 + \
+#                             (1./192*np.sin(MA)-27./128.*np.sin(3.*MA)+125./384.*np.sin(5*MA))*ecc**5 + \
+#                                 (1./48.*np.sin(2.*MA)+27./80.*np.sin(6.*MA)-4./15.*np.sin(4.*MA))*ecc**6
+#     else:
+#         EA_lc = get_EccentricAnomaly(MA, ecc)
+        
+#     TA_lc       = 2.*np.arctan(np.tan(EA_lc/2.) * np.sqrt((1.+ecc)/(1.-ecc)) )
+#     phase_angle = TA_lc + omega-np.pi/2   #phase angle is therefore 0 at transit and pi at eclipse
+#     phase_angle = np.mod(phase_angle,2*np.pi)
 
-    return SimpleNamespace(mean_anom=MA,ecc_anom=EA_lc, true_anom=TA_lc,phase_angle=phase_angle)
+#     return SimpleNamespace(mean_anom=MA,ecc_anom=EA_lc, true_anom=TA_lc,phase_angle=phase_angle,t_peri=T_peri)
+
+
+# def get_EccentricAnomaly(M, ecc, approx=False):
+#     """
+#     Get the eccentric anomaly from the mean anomaly and eccentricity.
+#     By solving Kepler's equation M = E - ecc.sin(E) 
+
+#     Parameters:
+#     ----------
+#     M : array-like;
+#         Mean anomaly.
+#     ecc : float;
+#         Eccentricity.
+
+#     Returns
+#     -------
+#     E : array-like
+#         Eccentric anomaly.
+#     """
+#     M = M % (2*np.pi)
+#     if ecc == 0:
+#         return M
+    
+#     if approx:
+#     # source of the below equation: http://alpheratz.net/Maple/KeplerSolve/KeplerSolve.pdf
+#         E = M + np.sin(M)*ecc + 1./2.*np.sin(2.*M)*ecc**2 + \
+#                     (3./8.*np.sin(3.*M) - 1./8.*np.sin(M))*ecc**3 + \
+#                         (1./3.*np.sin(4.*M) - 1./6.*np.sin(2*M))*ecc**4 + \
+#                             (1./192*np.sin(M)-27./128.*np.sin(3.*M)+125./384.*np.sin(5*M))*ecc**5 + \
+#                                 (1./48.*np.sin(2.*M)+27./80.*np.sin(6.*M)-4./15.*np.sin(4.*M))*ecc**6
+
+#     else:
+#         # Algorithm from Markley 1995, CeMDA, 63, 101 via pyAstronomy class keplerOrbit.py
+
+#         alpha = (3*np.pi + 1.6*(np.pi-abs(M))/(1+ecc) )/(np.pi - 6/np.pi)
+#         d     = 3*(1 - ecc) + alpha*ecc
+#         r     = 3*alpha*d * (d-1+ecc)*M + M**3
+#         q     = 2*alpha*d*(1-ecc) - M**2
+#         w     = (abs(r) + np.sqrt(q**3 + r**2))**(2/3)
+#         E     = (2*r*w/(w**2 + w*q + q**2) + M) / d
+#         f_0   = E - ecc*np.sin(E) - M
+#         f_1   = 1 - ecc*np.cos(E)
+#         f_2   = ecc*np.sin(E)
+#         f_3   = 1-f_1
+#         d_3   = -f_0/(f_1 - 0.5*f_0*f_2/f_1)
+#         d_4   = -f_0/(f_1 + 0.5*d_3*f_2 + (d_3**2)*f_3/6)
+        
+#         E     = E -f_0/(f_1 + 0.5*d_4*f_2 + d_4**2*f_3/6 - d_4**3*f_2/24)
+#     return E
+
+# def get_Rsky(nu, ecc, omega, aR, inc):
+#     """
+#     Get the projected distance of the planet from the star in the orbital plane
+#     following the equations in Winn 2010 (https://arxiv.org/abs/1001.2010).
+#     Also return mask of transit and eclipse phases.
+
+#     Parameters:
+#     ----------
+#     nu : array-like;
+#         True anomaly.
+#     ecc : float;
+#         Eccentricity.
+#     omega : float;
+#         Argument of periastron in radians.
+#     aR : float
+#         semi-major axis over stellar radius
+#     inc : float
+#         inclination in radians
+
+#     Returns:
+#     --------
+#     rsky : array-like
+#         projected distance of the planet from the star in the orbital plane
+#     y : array-like
+#         coordinates of the planet in the orbital plane. y>=0 is the transit phase.
+
+#     """
+#     r    = aR * (1-ecc**2)/(1+ecc*np.cos(nu))                   #eqn 1
+#     y    = r * np.sin(omega + nu)*np.sin(inc)                   #eqn 4 transit = y<=0
+#     rsky = r * np.sqrt(1-np.sin(nu+omega)**2*np.sin(inc)**2)    #eqn 5
+
+#     return rsky, y
+
+# def get_planet_xyz(t, T0, per, ecc, omega, aR, inc):
+#     """
+#     Get the x,y,z coordinates of the planet in the orbital plane
+#     following the equations in Winn 2010 (https://arxiv.org/abs/1001.2010)
+
+#     Parameters:
+#     ----------
+#     t : array-like
+#         timestamps
+#     T0 : float
+#         mid-transit time
+#     per : float
+#         orbital period
+#     ecc : float
+#         eccentricity
+#     omega : float
+#         argument of periastron in radians
+#     aR : float
+#         semi-major axis over stellar radius
+#     inc : float
+#         inclination in radians
+#     -------
+#     x, y, z : array-like
+#         x, y, z coordinates of the planet in the orbital plane.
+#     """
+#     nu = get_orbital_elements(t, T0, per, ecc, omega).true_anom
+
+#     r  = aR * (1-ecc**2)/(1+ecc*np.cos(nu))     #eqn 1
+#     x  = -r * np.cos(omega + nu)                #eqn 2
+#     y  = -r * np.sin(omega + nu)*np.cos(inc)    #eqn 3
+#     z  =  r * np.sin(omega + nu)*np.sin(inc)    #eqn 4
+    
+#     return x, y, z
 
 
 def get_transit_time(t, per, t0):
     """Get the transit time within a light curve.
 
-    Parameters
+    Parameters:
     ----------
     t : array-like
         Time stamps.
@@ -153,39 +271,235 @@ def get_transit_time(t, per, t0):
         T0  = np.array([T01,T02])
         return T0[np.argmin(abs(T0 - min(t)))]
     
-# def get_eclipse_time(t, t0, per, ecc,omega):
-#     """Get the eclipse time within a light curve.
 
-#     Parameters
-#     ----------
-#     t : array-like
-#         Time stamps.
-#     per : float
-#         Period.
-#     t0 : float
-#         Time of transit center.
-#     ecc : float
-#         Eccentricity.
-#     omega : float
-#         Argument of periastron in radians
+class get_orbital_elements:
+    def __init__(self, t, T0, per, ecc, omega, aR=None, inc=None, approx=False):
+        """
+        Calculate the mean,eccentric, and true anomaly for a given time t.
 
-#     Returns
-#     -------
-#     t_ecl : array-like
-#         Eclipse times.
-#     """
-#     if ecc==0: omega = np.pi/2.
-#     tsm      = np.linspace(t.min(),t.max(),max(len(t)*10,20000))
-#     orb_pars = get_orbital_elements(tsm, t0, per, ecc, omega)
-#     ph_angle = orb_pars.phase_angle
+        Parameters: 
+        ----------
+        t : array-like
+            timestamps
+        T0 : float
+            mid-transit time
+        per : float
+            orbital period
+        ecc : float
+            eccentricity
+        omega : float  
+            argument of periastron in radians
+        aR : optional - float, None;
+            semi-major axis over stellar radius
+        inc : optional - float, None;
+            inclination in radians.
+        approx: bool;
+            if to use approximate equation to calculate eccentric anomaly. Default is False.
+        """
+        
+        self._time  = t
+        self._T0    = T0
+        self._per   = per
+        self._ecc   = ecc
+        self._omega = omega
+        self._aR    = aR
+        self._inc   = inc
+        
+        # calculate the true -> eccentric -> mean anomaly at transit -> perihelion time
+        if self._ecc==0: 
+            self._omega = np.pi/2.  # if circular orbit, set omega to pi/2
 
-#     #mid eclipse is at ph_angle = np.pi, so select time closest to this angle
-#     return tsm[np.argmin(abs(ph_angle-np.pi))]
+        ph_tra = self.get_phase("transit")
+        
+        self.t_peri      = self._T0  - ph_tra*self._per
+        self.mean_anom   = (self._time - self.t_peri)*2*np.pi/self._per
+        self.mean_anom   = self.mean_anom % (2*np.pi)
+        self.ecc_anom    = self.get_EccentricAnomaly(approx=approx)
+        self.true_anom   = 2.*np.arctan(np.tan(self.ecc_anom/2.) * np.sqrt((1.+self._ecc)/(1.-self._ecc)) )
+        self.phase_angle = self.true_anom + self._omega-np.pi/2   #phase angle is therefore 0 at transit and pi at eclipse
+        self.phase_angle = np.mod(self.phase_angle, 2*np.pi)
+        
+        if self._aR!=None:
+            self._r = self._aR * (1-self._ecc**2)/(1+self._ecc*np.cos(self.true_anom))
+    
+    def get_phase(self, position):
+        """
+        Get the phase of the planet at the given position.
+
+        Parameters:
+        ----------
+        position : str
+            Position of the planet. Can be one of "transit","eclipse"
+        
+        Returns:
+        --------
+        phase : float
+        """
+        if position == "transit":   TA = np.pi/2 - self._omega
+        elif position == "eclipse": TA = 3*np.pi/2 - self._omega
+
+        TA    = np.mod(TA,2*np.pi)
+        EA    = 2.*np.arctan( np.tan(TA/2.) * np.sqrt((1.-self._ecc)/(1.+self._ecc)) )
+        EA    = np.mod(EA,2*np.pi)
+        MA    = EA - self._ecc * np.sin(EA)     #in radians
+        MA    = MA % (2*np.pi)
+        phase = MA/(2*np.pi)
+        return phase
+
+
+    def get_EccentricAnomaly(self, approx=False):
+        """
+        Get the eccentric anomaly from the mean anomaly and eccentricity.
+        By solving Kepler's equation M = E - ecc.sin(E) 
+
+        Returns
+        -------
+        E : array-like
+            Eccentric anomaly.
+        """
+        M = self.mean_anom
+        ecc = self._ecc
+
+        M = M % (2*np.pi)
+        if ecc == 0:
+            return M
+        
+        if approx:
+        # source of the below equation: http://alpheratz.net/Maple/KeplerSolve/KeplerSolve.pdf
+        # solution not accurate at high eccentricities (~> 0.5)
+            E = M + np.sin(M)*ecc + 1./2.*np.sin(2.*M)*ecc**2 + \
+                        (3./8.*np.sin(3.*M) - 1./8.*np.sin(M))*ecc**3 + \
+                            (1./3.*np.sin(4.*M) - 1./6.*np.sin(2*M))*ecc**4 + \
+                                (1./192*np.sin(M)-27./128.*np.sin(3.*M)+125./384.*np.sin(5*M))*ecc**5 + \
+                                    (1./48.*np.sin(2.*M)+27./80.*np.sin(6.*M)-4./15.*np.sin(4.*M))*ecc**6
+            # E = np.mod(E,2*np.pi)
+        else:
+            # from pycheops.funcs import esolve
+            E = esolve(M, ecc)
+
+        return E
+    
+    def get_Rsky(self,aR=None, inc=None):
+        """
+        Get the projected distance of the planet from the star in the orbital plane
+        following the equations in Winn 2010 (https://arxiv.org/abs/1001.2010).
+        Also return mask of transit and eclipse phases.
+
+        Parameters:
+        ----------
+        aR : float, None;
+            semi-major axis over stellar radius
+        inc : float, None;
+            inclination in radians
+
+        Returns:
+        --------
+        rsky : array-like
+            projected distance of the planet from the star in the orbital plane
+        y : array-like
+            coordinates of the planet in the orbital plane. y>=0 is the transit phase.
+
+        """
+        if self._aR==None:
+            assert aR is not None, "aR should be provided"
+            self._aR = aR
+        if self._inc==None:
+            assert inc is not None, "inc should be provided"
+            self._inc = inc
+
+        if not hasattr(self,"_r") or aR!=None:   # recompute only if not exists or new aR given
+            self._r  = self._aR * (1-self._ecc**2)/(1+self._ecc*np.cos(self.true_anom))   #eqn 1
+        
+        y       = self._r * np.sin(self._omega + self.true_anom)*np.sin(self._inc)                   #eqn 4 transit = y<=0
+        rsky    = self._r * np.sqrt(1-np.sin(self.true_anom+self._omega)**2*np.sin(self._inc)**2)
+
+        return rsky, y
+
+    def get_xyz(self,aR=None, inc=None):
+        """
+        Get the x,y,z coordinates of the planet in the orbital plane
+        following the equations in Winn 2010 (https://arxiv.org/abs/1001.2010)
+        
+        Parameters:
+        ----------
+        aR : float
+            semi-major axis over stellar radius
+        inc : float
+            inclination in radians
+
+        Returns:
+        -------
+        x, y, z : array-like
+            x, y, z coordinates of the planet in the orbital plane.
+        """
+        if self._aR==None:
+            assert aR is not None, "aR should be provided"
+            self._aR = aR
+        if self._inc==None:
+            assert inc is not None, "inc should be provided"
+            self._inc = inc
+
+        if not hasattr(self,"_r") or aR!=None:   # recompute only if not exists or new aR given
+            self._r  = self._aR * (1-self._ecc**2)/(1+self._ecc*np.cos(self.true_anom))   #eqn 1
+        
+        x  = -self._r * np.cos(self._omega + self.true_anom)                          #eqn 2
+        y  = -self._r * np.sin(self._omega + self.true_anom)*np.cos(self._inc)        #eqn 3
+        z  =  self._r * np.sin(self._omega + self.true_anom)*np.sin(self._inc)        #eqn 4
+
+        return x, y, z
+
+    def get_t_eclipse(self):
+        """
+        Get the time of eclipse.
+
+        Returns:
+        -------
+        t_eclipse : float
+            Time of eclipse.
+        """
+        T0     = get_transit_time(self._time, self._per, self._T0)  #get transit time in the data
+        ph_tra = self.get_phase("transit")
+        ph_ecl = self.get_phase("eclipse")
+        
+        return T0 + self._per*(ph_ecl - ph_tra)
+
+@vectorize(nopython=True)
+def esolve(M, ecc):
+    """
+    Solve Kepler's equation M = E - ecc.sin(E), returning the eccentric anomaly.
+    Algorithm is from Markley 1995, CeMDA, 63, 101 via pyAstronomy class keplerOrbit.py
+    function taken 'from pycheops.funcs import esolve'
+    """
+    M = M % (2*np.pi)
+    if ecc == 0:
+        return M
+    if M > np.pi:
+        M = 2*np.pi - M
+        flip = True
+    else:
+        flip = False
+    alpha = (3*np.pi + 1.6*(np.pi-abs(M))/(1+ecc) )/(np.pi - 6/np.pi)
+    d = 3*(1 - ecc) + alpha*ecc
+    r = 3*alpha*d * (d-1+ecc)*M + M**3
+    q = 2*alpha*d*(1-ecc) - M**2
+    w = (abs(r) + np.sqrt(q**3 + r**2))**(2/3)
+    E = (2*r*w/(w**2 + w*q + q**2) + M) / d
+    f_0 = E - ecc*np.sin(E) - M
+    f_1 = 1 - ecc*np.cos(E)
+    f_2 = ecc*np.sin(E)
+    f_3 = 1-f_1
+    d_3 = -f_0/(f_1 - 0.5*f_0*f_2/f_1)
+    d_4 = -f_0/(f_1 + 0.5*d_3*f_2 + (d_3**2)*f_3/6)
+    E = E -f_0/(f_1 + 0.5*d_4*f_2 + d_4**2*f_3/6 - d_4**3*f_2/24)
+    if flip:
+        E =  2*np.pi - E
+    return E
+
 
 def get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=None,verbose=True):
     """Get the time of conjunctions (transit and eclipse) for the given time array.
 
-    Parameters
+    Parameters:
     ----------
     t : array-like
         Time stamps.
@@ -222,20 +536,25 @@ def get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=N
         
         tconj = SimpleNamespace(transit=np.zeros(len_arr),eclipse=np.zeros(len_arr))
         for i in range(len_arr):
-            tconj.transit[i],tconj.eclipse[i] = _get_Tconjunctions(t, in_args['t0'][i], in_args['per'][i], in_args['ecc'][i], 
+            t_vals = _get_Tconjunctions(t, in_args['t0'][i], in_args['per'][i], in_args['ecc'][i], 
                                                                     in_args['omega'][i], in_args['Rstar'][i], in_args['aR'][i], 
                                                                     in_args['inc'][i], verbose)
+            p_vals = phase_fold(np.array([t_vals[0],t_vals[1]]), in_args['per'][i], in_args['t0'][i])
+            tconj.transit[i],tconj.eclipse[i]       = t_vals
+            tconj.transit_phase,tconj.eclipse_phase = np.round(p_vals,6)%1
+
         return tconj
     else: 
         tconj = SimpleNamespace(transit=0,eclipse=0)
         tconj.transit,tconj.eclipse = _get_Tconjunctions(t, t0, per, ecc, omega, Rstar, aR, inc, verbose)
+        tconj.transit_phase, tconj.eclipse_phase = np.round(phase_fold(np.array([tconj.transit,tconj.eclipse]),per,t0), 6)%1
         return tconj
 
 
 def _get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=None,verbose=True):
     """Get the time of conjunctions (transit and eclipse) for the given time array.
 
-    Parameters
+    Parameters:
     ----------
     t : array-like
         Time stamps.
@@ -284,7 +603,7 @@ def bin_data(t,f,err=None,statistic="mean",bins=20):
     """
     Bin data in time.
 
-    Parameters
+    Parameters:
     ----------
     t : array-like
         Time stamps.
@@ -307,24 +626,26 @@ def bin_data(t,f,err=None,statistic="mean",bins=20):
         Binned flux uncertainties. Only returned if `err` is not None.
     """
     from scipy.stats import binned_statistic
-    y_bin, y_binedges, _ = binned_statistic(t, f, statistic=statistic, bins=bins)
-    bin_width            = y_binedges[1] - y_binedges[0]
-    t_bin                = y_binedges[:-1] + bin_width/2.
-    nans = np.isnan(y_bin)
+    try:
+        y_bin, y_binedges, _ = binned_statistic(t, f, statistic=statistic, bins=bins)
+        bin_width            = y_binedges[1] - y_binedges[0]
+        t_bin                = y_binedges[:-1] + bin_width/2.
+        nans = np.isnan(y_bin)
 
-    if err is not None:
-        err_bin, _, _ = binned_statistic(t, err, statistic = lambda x: 1/np.sqrt(np.sum(1/x**2)), bins=bins)
-        return t_bin[~nans], y_bin[~nans], err_bin[~nans]
+        if err is not None:
+            err_bin, _, _ = binned_statistic(t, err, statistic = lambda x: 1/np.sqrt(np.sum(1/x**2)), bins=bins)
+            return t_bin[~nans], y_bin[~nans], err_bin[~nans]
 
-    return t_bin[~nans], y_bin[~nans]
+        return t_bin[~nans], y_bin[~nans]
+    except:
+        return (t,f,err) if err is not None else (t,f)
 
-
-def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=1.):
+def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=2.):
     """
     # split t into chunks with gaps larger than gap_threshold*bin_size
     # then bin each chunk separately
     """
-    if binsize==0:
+    if binsize==0 or binsize<=np.median(np.diff(t)):  # no binning, if binsize is zero or less than the median time difference
         return (t,f) if e is None else (t,f,e)
     try:
         gap = np.diff(t)
@@ -402,9 +723,9 @@ def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_c
     
     return x[ok], y[ok], yerr[ok]
 
-def sesinw_secosw_to_ecc_omega(sesinw, secosw):
+def sesinw_secosw_to_ecc_omega(sesinw, secosw, angle_unit="radians"):
     """
-    Convert sesinw and secosw to eccentricity and argument of periastron
+    Convert sesinw and secosw to eccentricity and argument of periastron in angle_unit
 
     Parameters:
     -----------
@@ -412,35 +733,33 @@ def sesinw_secosw_to_ecc_omega(sesinw, secosw):
         sqrt(ecc)*sin(omega)
     secosw: array-like
         sqrt(ecc)*cos(omega)
+    angle_unit: str
+        unit in which to return the argument of periastron. Default is "radians"
 
     Returns:
     --------
     ecc: array-like
         eccentricity
     omega: array-like
-        argument of periastron in radians
+        argument of periastron in angle_unit
     """
-    # ecc = sesinw**2 + secosw**2
-    # if ecc==0: # if circular orbit, set omega to pi/2
-    #     omega = np.pi/2
-    # else:
-    #     omega = np.arctan2(sesinw,secosw)
-    #     if omega < 0: 
-    #         omega += 2*np.pi
+
+    assert angle_unit in ["radians","degrees"], "angle_unit should be either 'radians' or 'degrees'"
     ecc = sesinw**2 + secosw**2
     omega = np.where(ecc==0,np.pi/2, np.arctan2(sesinw,secosw))
-    omega = np.where(omega<0, omega+2*np.pi, omega)
+    omega = np.where(omega<0, omega+2*np.pi, omega) + 0    # add zero to make it scalar if necessary
+    if angle_unit=="degrees": omega *= 180/np.pi
     return ecc, omega
 
 def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
     """
-    This function calculates the prior values and limits for the eccentricity and omega parameters, sesinw and secosw.
-    It also converts the input values given as tuples to a SimpleNamespace object
+    This function calculates the prior values and limits for the eccentricity and omega parameters, 
+    sesinw and secosw. It also converts the input values given as tuples to a SimpleNamespace object
 
-    Parameters
+    Parameters:
     ----------
     ecc: float, tuple, SimpleNamespace;
-        eccentricity value or tuple of (mean, width) or SimpleNamespace object with the following attributes:
+        eccentricity value or tuple of (mean, width) or SimpleNamespace object with the following Attributes
         to_fit: str; "y" if to be fit, "n" if not to be fit
         start_value: float; starting value
         step_size: float; step size for the MCMC
@@ -502,7 +821,7 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
         sesinw_prior_mean, sesinw_prior_width = sesinw_prior.n, sesinw_prior.s
         secosw_prior_mean, secosw_prior_width = secosw_prior.n, secosw_prior.s
 
-    if (ecc.prior_width_lo!=0.) and omega.prior_width==0:   # normal ecc, uniform omega
+    if (ecc.prior_width_lo!=0.) and omega.prior_width_lo==0:   # normal ecc, uniform omega
         ecc_distr = np.random.normal(ecc.prior_mean,ecc.prior_width_lo,10000)            # generate random normal ecc distr
         w_distr   = np.random.uniform(omega.bounds_lo,omega.bounds_hi,10000)             # generate random uniform omega distr
         fc, fs    = np.sqrt(ecc_distr)*np.cos(w_distr), np.sqrt(ecc_distr)*np.sin(w_distr)
@@ -551,11 +870,12 @@ def rho_to_aR(rho, P, e=0, w=90, qm=0):
     -----------
     rho: float, ufloat, array-like;
         The density of the star in g/cm^3.
-        
     P: float, ufloat, array-like;
         The period of the planet in days.
-
-
+    e: float, ufloat, array-like;
+        The eccentricity of the orbit. Default is 0
+    w: float, ufloat, array-like;
+        The argument of periastron in degrees. Default is 90
     qm: float, ufloat, array-like;
         The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
         
@@ -567,12 +887,15 @@ def rho_to_aR(rho, P, e=0, w=90, qm=0):
 
     G   = (c.G.to(u.cm**3/(u.g*u.second**2))).value
     Ps  = P*(u.day.to(u.second))
-    w   = np.radians(w)
-    ecc_factor = (1+e*np.sin(w))**3/(1-e**2)**(3/2)
+    w   = unp.radians(w)
+    ecc_factor = (1+e*unp.sin(w))**3/(1-e**2)**(3/2)
     rho = rho*ecc_factor  #eccentricity correction  eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
     aR  = ( rho*G*Ps**2 / (3*np.pi) *(1+qm)) **(1/3.)
 
-    return aR
+    if np.iterable(aR):
+        return unp.nominal_values(aR) if all(unp.std_devs(aR) == np.zeros_like(aR)) else aR
+    else:
+        return unp.nominal_values(aR).item() if unp.std_devs(aR) == 0 else aR
 
 def aR_to_rho(P,aR,e=0,w=90,qm=0):
     """
@@ -584,19 +907,14 @@ def aR_to_rho(P,aR,e=0,w=90,qm=0):
     -----------
     P: float, ufloat, array-like;
         The planet period in days
-    
     aR: float, ufloat, array-like;
         The scaled semi-major axis of the planet orbit
-    
     e: float, ufloat, array-like;
         The eccentricity of the orbit. Default is 0
-
     w: float, ufloat, array-like;
         The argument of periastron in degrees. Default is 90
-
     qm: float, ufloat, array-like;
         The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
-        
     Returns:
     --------
     rho: array-like;
@@ -605,15 +923,19 @@ def aR_to_rho(P,aR,e=0,w=90,qm=0):
 
     G  = (c.G.to(u.cm**3/(u.g*u.second**2))).value
     Ps = P*(u.day.to(u.second))
-    w  = np.radians(w)
+    w  = unp.radians(w)
     
     st_rho=3*np.pi*aR**3 / (G*Ps**2) * (1+qm)
 
     #eccentricity correction  eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
-    ecc_factor = (1+e*np.sin(w))**3/(1-e**2)**(3/2)
+    ecc_factor = (1+e*unp.sin(w))**3/(1-e**2)**(3/2)
     st_rho = st_rho/ecc_factor
-    return st_rho
 
+    if np.iterable(st_rho):
+        return unp.nominal_values(st_rho) if all(unp.std_devs(st_rho) == np.zeros_like(st_rho)) else st_rho
+    else:
+        return unp.nominal_values(st_rho).item() if unp.std_devs(st_rho) == 0 else st_rho
+    
 def inclination(b, a, e=0, w=90, tra_occ="tra"):
     """
     Function to convert impact parameter b to inclination in degrees.
@@ -621,26 +943,26 @@ def inclination(b, a, e=0, w=90, tra_occ="tra"):
     Parameters:
     ----------
     b: Impact parameter of the transit.
-    
     a: Scaled semi-major axis i.e. a/R*.
-
     e: float;
         eccentricity of the orbit.
-    
     w: float;
         longitude of periastron in degrees
-    
+
     Returns
     --------
-    
     inc: The inclination of the planet orbit in degrees.
     
     """
-    w = np.radians(w)
-    esinw = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    w = unp.radians(w)
+    esinw = e*unp.sin(w) if tra_occ=="tra" else -e*unp.sin(w)
     ecc_factor=(1-e**2)/(1+esinw)  
-    inc = np.degrees(np.arccos( b / (a*ecc_factor)) )
-    return inc
+    inc = unp.degrees(unp.arccos( b / (a*ecc_factor)) )
+
+    if np.iterable(inc):
+        return unp.nominal_values(inc) if all(unp.std_devs(inc) == np.zeros_like(inc)) else inc
+    else:
+        return unp.nominal_values(inc).item() if unp.std_devs(inc) == 0 else inc
 
 def impact_parameter(inc, a, e=0, w=90, tra_occ="tra"):
     """
@@ -649,12 +971,9 @@ def impact_parameter(inc, a, e=0, w=90, tra_occ="tra"):
     Parameters:
     ----------
     inc: Inclination in degrees.
-
     a: Scaled semi-major axis i.e. a/R*.
-
     e: float;
         eccentricity of the orbit.
-    
     w: float;
         longitude of periastron in degrees
     
@@ -664,15 +983,18 @@ def impact_parameter(inc, a, e=0, w=90, tra_occ="tra"):
     b: the impact parameter
     
     """
-    inc = np.radians(inc)
-    w   = np.radians(w)
+    inc = unp.radians(inc)
+    w   = unp.radians(w)
     
-    esinw      = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    esinw      = e*unp.sin(w) if tra_occ=="tra" else -e*unp.sin(w)
     ecc_factor = (1-e**2)/(1+esinw)  
 
-    b = a*np.cos(inc)*ecc_factor
-    return b
+    b = a*unp.cos(inc)*ecc_factor
 
+    if np.iterable(b):
+        return unp.nominal_values(b) if all(unp.std_devs(b) == np.zeros_like(b)) else b
+    else:
+        return unp.nominal_values(b).item() if unp.std_devs(b) == 0 else b
 
 def k_to_Mp(k, P, Ms, i, e, Mp_unit = "star"):
     """
@@ -743,16 +1065,30 @@ def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra",total=True):
     Tdur: array-like;
         The transit duration in days (same unit as P).
     """
-    w      = np.radians(w)
-    esinw  = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    #return zeros if aR is zero
+    if isinstance(aR, AffineScalarFunc):
+        if aR.n==0: 
+            return 0
+    else:
+        if any(aR == np.zeros_like(aR if np.iterable(aR) else [aR])):
+            return np.zeros_like(aR) if np.iterable(aR) else 0
+
+    w      = unp.radians(w)
+    Rp     = abs(Rp)     #allow calculation for inverted transits
+    esinw  = e*unp.sin(w) if tra_occ=="tra" else -e*unp.sin(w)
     rp     = Rp if total else -Rp
     
     ecc_fac = (1-e**2)/(1+esinw)
-    inc     = np.arccos(b/(aR*ecc_fac))
-    sini    = np.sin(inc)
+    inc     = unp.arccos(b/(aR*ecc_fac))
+    sini    = unp.sin(inc)
     
-    Tdur = P/np.pi * (ecc_fac**2/(np.sqrt(1-e**2))) * np.arcsin(np.sqrt( (1+rp)**2 - b**2 )/(aR*ecc_fac*sini))
-    return np.round(Tdur,8)
+    Tdur = P/np.pi * (ecc_fac**2/(unp.sqrt(1-e**2))) * unp.arcsin(unp.sqrt( (1+rp)**2 - b**2 )/(aR*ecc_fac*sini))
+    Tdur = unp.uarray(np.round(unp.nominal_values(Tdur),8), np.round(unp.std_devs(Tdur),8))
+
+    if np.iterable(Tdur):
+        return unp.nominal_values(Tdur) if all(unp.std_devs(Tdur) == np.zeros_like(Tdur)) else Tdur
+    else:
+        return unp.nominal_values(Tdur).item() if unp.std_devs(Tdur) == 0 else Tdur
 
 def ingress_duration(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
     """
@@ -762,22 +1098,16 @@ def ingress_duration(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
     -----------
     aR: float, ufloat, array-like;
         The scaled semi-major axis of the planet.
-        
     b: float, ufloat, array-like;
         The impact parameter.
-        
     Rp: float, ufloat, array-like;
         planet-to-star radius ratio.
-
     P: float, ufloat, array-like;
         The period of the planet in days.
-
     e: float, ufloat, array-like;
         The eccentricity of the orbit.
-
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
-
     tra_occ: str;
         select duration of transit (tra) or occultation (occ)
         
@@ -801,19 +1131,14 @@ def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     -----------
     Tdur: float, ufloat, array-like;
         The transit duration in days.
-        
     b: float, ufloat, array-like;
         The impact parameter.
-        
     Rp: float, ufloat, array-like;
         planet-to-star radius ratio.
-
     P: float, ufloat, array-like;
         The period of the planet in days.
-
     e: float, ufloat, array-like;
         The eccentricity of the orbit.
-
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
         
@@ -822,16 +1147,19 @@ def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     aR: array-like;
         The scaled semi-major axis of the planet.
     """
-    w       = np.radians(w)
-    esinw   = e*np.sin(w) if tra_occ=="tra" else -e*np.sin(w)
+    w       = unp.radians(w)
+    esinw   = e*unp.sin(w) if tra_occ=="tra" else -e*unp.sin(w)
     ecc_fac = (1-e**2)/(1+esinw)
 
-    numer =  (1+Rp)**2 - b**2
-    denom = np.sin( Tdur*np.pi*np.sqrt(1-e**2)/(P*ecc_fac**2) )**2 *ecc_fac**2
+    numer =  (1+abs(Rp))**2 - b**2
+    denom = unp.sin( Tdur*np.pi*unp.sqrt(1-e**2)/(P*ecc_fac**2) )**2 *ecc_fac**2
 
-    aR = np.sqrt(numer/denom + (b/ecc_fac)**2)
-    
-    return aR
+    aR = unp.sqrt(numer/denom + (b/ecc_fac)**2)
+
+    if np.iterable(aR):
+        return unp.nominal_values(aR) if all(unp.std_devs(aR) == np.zeros_like(aR)) else aR
+    else:
+        return unp.nominal_values(aR).item() if unp.std_devs(aR) == 0 else aR
 
 def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
     """
@@ -841,19 +1169,14 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
     -----------
     rho: float, ufloat, array-like;
         The density of the star in g/cm^3.
-
     b: float, ufloat, array-like;
         The impact parameter.
-    
     Rp: float, ufloat, array-like;
         planet-to-star radius ratio.
-
     P: float, ufloat, array-like;
         The period of the planet in days.
-
     e: float, ufloat, array-like;
         The eccentricity of the orbit.
-
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
 
@@ -862,7 +1185,7 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
     Tdur: array-like;
         The transit duration in days.
     """
-    aR = rho_to_aR(rho, P,e,w)
+    aR   = rho_to_aR(rho, P,e,w)
     Tdur = aR_to_Tdur(aR, b, Rp, P,e,w)
     return Tdur
 
@@ -874,19 +1197,14 @@ def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90):
     -----------
     Tdur: float, ufloat, array-like;
         The transit duration in days.
-
     b: float, ufloat, array-like;
         The impact parameter.
-    
     Rp: float, ufloat, array-like;
         planet-to-star radius ratio.
-
     P: float, ufloat, array-like;
         The period of the planet in days.
-
     e: float, ufloat, array-like;
         The eccentricity of the orbit.
-
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
 
@@ -903,7 +1221,7 @@ def convert_rho(rho, ecc, w, conv="true2obs"):
     """
     convert true stellar density to transit derived density or vice-versa 
 
-    Parameters
+    Parameters:
     ----------  
     rho : float 
         stellar density, true or observed
@@ -922,16 +1240,21 @@ def convert_rho(rho, ecc, w, conv="true2obs"):
 
     assert conv in ["true2obs", "obs2true"],f'conv must be one of ["true2obs", "obs2true"]'
     
-    omega = w * np.pi/180
-    phi = (1 + ecc*np.sin(omega))**3 / (1-ecc**2)**(3/2)
+    omega = w * unp.pi/180
+    phi = (1 + ecc*unp.sin(omega))**3 / (1-ecc**2)**(3/2)
 
-    return rho*phi if conv=="true2obs" else rho/phi
+    res = rho*phi if conv=="true2obs" else rho/phi
+
+    if np.iterable(res):
+        return unp.nominal_values(res) if all(unp.std_devs(res) == np.zeros_like(res)) else res
+    else:
+        return unp.nominal_values(res).item() if unp.std_devs(res) == 0 else res
 
 def sinusoid(x, A=0, x0= None, P=None, n=1,trig="sin"):
     """
     Calculate the sinusoidal function y = A*sin(2*pi*(x-x0)/P) or y = A*cos(2*pi*(x-x0)/P) given the parameters.
 
-    Parameters
+    Parameters:
     ----------
     x : array-like
         x values
@@ -970,40 +1293,6 @@ def sinusoid(x, A=0, x0= None, P=None, n=1,trig="sin"):
             sinus += A[i+(n*j)]*1e-6 * fxn((i+1)*phi)
     return sinus
 
-def cosine_atm_variation2(phi, Fd=0, A=0, delta_deg=0,cosine_order=1):
-    """
-    Calculate the phase curve of a planet approximated by a cosine function with peak-to-peak amplitude  A=F_max-F_min.
-    The equation is given as F = Fmin + A(1-cos(phi + delta)) where A is the semi-amplitude of the atmospheric phase variation  = (Fmax-Fmin)/2,
-    phi is the phase angle of the planet (true anomaly+omega-pi/2) in radians, and delta is the hotspot offset (in radians).
-    Fday and Fnight are obtained as the value of F at phi=pi and 0 respectively.
-
-
-    Parameters
-    ----------
-    phi : array-like
-        phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
-    Fd : float
-        Dayside flux/occultation depth
-    A : float
-        semi amplitude of planet phase variation
-    delta_deg : float
-        hotspot offset in degrees.
-    cosine_order: float/int;
-        order of the cosine function. Default is 1
-        
-    Returns
-    -------
-    F : array-like
-        planetary flux as a function of phase
-    """
-    res        = SimpleNamespace()
-    res.delta  = np.deg2rad(delta_deg)
-
-    res.Fmin   = Fd - A*(1-np.cos(np.pi+res.delta)**cosine_order)
-    res.Fnight = Fd - 2*A * np.cos(res.delta)**cosine_order
-    res.pc     = res.Fmin + A*(1-np.cos(phi+res.delta)**cosine_order)
-    res.Fmax   = 2*A + res.Fmin
-    return res 
 
 def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
     """
@@ -1013,7 +1302,7 @@ def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
     Fday and Fnight are obtained as the value of F at phi=pi and 0 respectively.
 
 
-    Parameters
+    Parameters:
     ----------
     phi : array-like
         phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
@@ -1058,7 +1347,7 @@ def reflection_atm_variation(phase, Fd=0, A=0, delta_deg=0):
     phi is the phase angle in radians = 2pi*phase
     delta is the hotspot offset (in radians)
 
-    Parameters
+    Parameters:
     ----------
     phase : array-like
         Phases.
@@ -1112,24 +1401,6 @@ def convert_LD(coeff1, coeff2,conv="q2u"):
         raise ValueError("LD conv must be either q2u or u2q")
 
 
-
-class celerite_cosine(terms.Term):
-    parameter_names = ("log_a", "log_P")
-
-    def get_real_coefficients(self, params):
-        log_a, log_P = params
-        return (
-            np.exp(log_a), 0.0,
-        )
-
-    def get_complex_coefficients(self, params):
-        log_a, log_P = params
-        return (
-            np.exp(log_a), 0.0,
-            0.0, 2*np.pi*np.exp(-log_P),
-        )
-
-
 class supersampling:
     def __init__(self, exp_time=0, supersample_factor=1):
         """
@@ -1165,9 +1436,12 @@ class supersampling:
         >>> f = ss.rebin_flux(f_ss)
 
         """
-        self.supersample_factor = supersample_factor
+        self.supersample_factor = int(supersample_factor)
         self.exp_time = exp_time
-        self.config   = f"x{exp_time*24*60}" if exp_time !=0 else "None"
+        if self.supersample_factor==1: 
+            self.config = "None"
+        else: 
+            self.config   = f"x{self.supersample_factor}"
 
     def supersample(self,time):
         assert isinstance(time, np.ndarray), f'time must be a numpy array and not {type(time)}'
@@ -1180,168 +1454,11 @@ class supersampling:
         rebinned_flux = np.mean(flux.reshape(-1,self.supersample_factor), axis=1)
         return rebinned_flux
 
-
-class gp_params_convert:
-    """
-    object to convert gp amplitude and lengthscale to required value for different kernels
-    """
-        
-    def get_values(self, kernels, data, pars):
-        """
-        transform pars into required values for given kernels.
-        
-        Parameters:
-        -----------
-        kernels: list,str
-            kernel for which parameter transformation is performed. Must be one of ["any_george","sho","mat32","real"]
-        data: str,
-            one of ["lc","rv"]
-        pars: iterable,
-            parameters (amplitude,lengthscale) for each kernel in kernels.
-            
-        Returns:
-        --------
-        log_pars: iterable,
-            log parameters to be used to set parameter vector of the gp object.
-            
-        """
-        assert data in ["lc","rv"],f'data can only be one of ["lc","rv"]'
-        if isinstance(kernels, str): kernels= [kernels]
-            
-        log_pars = []
-        for i,kern in enumerate(kernels):
-            assert kern in ["g_mat32","g_mat52","g_expsq","g_exp","g_cos","sho","mat32","real","cos"],  \
-                f'gp_params_convert(): kernel to convert must be one of ["any_george","sho","mat32","real"] but "{kern}" given'
-
-            # call class function with the name kern
-            p = self.__getattribute__(kern)(data,pars[i*2],pars[i*2+1])
-            log_pars.append(p)
-            
-        return np.concatenate(log_pars)
-            
-        
-    def any_george(self, data, amplitude,lengthscale):
-        """
-        simple conversion where amplitude corresponds to the standard deviation of the process
-        """        
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_var    = np.log(amplitude**2)
-        log_metric = np.log(lengthscale)
-        return log_var, log_metric
-    
-    
-    #celerite kernels  
-    def sho(self, data, amplitude, lengthscale):
-        """
-        amplitude: the standard deviation of the process
-        lengthscale: the undamped period of the oscillator
-        
-        see transformation here: https://celerite2.readthedocs.io/en/latest/api/python/#celerite2.terms.SHOTerm
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        Q  = 1/np.sqrt(2)
-        w0 = 2*np.pi/lengthscale
-        S0 = amplitude**2/(w0*Q)
-        
-        log_S0, log_w0 = np.log(S0), np.log(w0)
-        return log_S0, log_w0
-
-    def cos(self, data, amplitude, lengthscale):
-        """
-        CosineKernel implementation in celerite
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_sigma  = np.log(amplitude)
-        log_period = np.log(lengthscale)
-        return log_sigma, log_period
-
-    
-    def real(self, data, amplitude, lengthscale):
-        """
-        really an exponential kernel like in George
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        c     = 1/lengthscale
-        log_c = np.log(c)
-        log_a = np.log(amplitude**2)     #log_variance
-        return log_a, log_c
-    
-    def mat32(self, data, amplitude, lengthscale):
-        """
-        celerite mat32
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_sigma  = np.log(amplitude)
-        rho        = lengthscale
-        log_rho    = np.log(rho)
-        return log_sigma, log_rho
-    
-
-    #george kernels
-    def g_mat32(self, data, amplitude, lengthscale):
-        """
-        George mat32
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_var    = np.log(amplitude**2)
-        metric     = lengthscale**2
-        log_metric = np.log(metric)
-        return log_var, log_metric
-    
-    def g_cos(self, data, amplitude, lengthscale):
-        """
-        George CosineKernel
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_var    = np.log(amplitude**2)
-        log_period = np.log(lengthscale)
-        return log_var, log_period
-
-    def g_mat52(self, data, amplitude, lengthscale):
-        """
-        George mat52
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_var    = np.log(amplitude**2)
-        metric     = lengthscale**2
-        log_metric = np.log(metric)
-        return log_var, log_metric
-    
-    def g_expsq(self, data, amplitude, lengthscale):
-        """
-        George expsq
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_var    = np.log(amplitude**2)
-        metric     = lengthscale
-        log_metric = np.log(metric)
-        return log_var, log_metric
-    
-    def g_exp(self, data, amplitude, lengthscale):
-        """
-        George exp
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_var    = np.log(amplitude**2)
-        metric     = lengthscale**2
-        log_metric = np.log(metric)
-        return log_var, log_metric
-    
-    def g_cos(self, data, amplitude, lengthscale):
-        """
-        George cosine
-        """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        log_var    = np.log(amplitude**2)
-        period     = lengthscale
-        log_period = np.log(period)
-        return log_var, log_period
-    
     def __repr__(self):
-        return 'object to convert gp amplitude and lengthscale to required value for different kernels'
-        
-    
-
+        if self.exp_time != 0:
+            return f"Supersampling: Exp_time:{self.exp_time*24*60:.1f}mins, SS_factor:{self.supersample_factor} --> sampling of {self.exp_time*24*60/self.supersample_factor:.1f}min"
+        else:
+            return f"No Supersampling. Sampling at original cadence"
 
 def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=None, flux =None,show_plot=True):
     
@@ -1403,8 +1520,8 @@ def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=
             Phere  = [Ps[i]]
             T0here = [t0s[i]]
             plnum_here = [plnum[i]]
-            if i != len(t0s)-1:
-                for _ in range(npl):   #check if next npl transit is close to this one
+            if i != len(t0s)-1 and baseline_amount!=None: #check if next npl transit is close to this one, if so, include it in this chunk
+                for _ in range(npl):   
                     if (i+1<=len(t0s)-1) and (Ps[i+1] not in Phere) and (hi_cut > t0s[i+1]-baseline_amount*Ps[i+1]):
                         hi_cut = t0s[i+1]+baseline_amount*Ps[i+1]
                         Phere.append(Ps[i+1])
@@ -1453,7 +1570,7 @@ def get_T0s(t, t_ref, P):
     n_tot_tr = round((tr_last - tr_first)/P)                  #total nmumber of transits in data_range
     t0s      = [tr_first + P*n for n in range(n_tot_tr+1) ]        #expected tmid of transits in data (if no TTV)
     #remove tmid without sufficient transit data around it
-    t0s      = list(filter( lambda t0: ( t[ (t<t0+0.05*P) & (t>t0-0.05*P)] ).size>5, t0s))  # reserve only expected t0s where there is data around it (0.05P on each side)
+    t0s      = list(filter( lambda t0: ( t[ (t<t0+0.1*P) & (t>t0-0.1*P)] ).size>5, t0s))  # reserve only expected t0s where there is data around it (0.05P on each side)
     t0s      = [t0 for t0 in t0s if (t.min()-0.5)<t0<(t.max()+0.5)] # only t0s within the data time range +/-0.5d (this allows to take t0s of partial transits)
 
     return t0s

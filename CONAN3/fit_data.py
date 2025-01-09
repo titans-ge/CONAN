@@ -11,17 +11,19 @@ from .basecoeff_setup import *
 from .models import *
 from .logprob_multi import logprob_multi
 from .plotting import *
-from .funcs import corfac, grweights, grtest_emcee
+from .funcs import corfac, grtest_emcee
 from .utils import ecc_om_par
 from .outputs import *
 
 import george
 from george import GP
-
 import celerite
 from celerite import GP as cGP
+import spleaf
+from .geepee import gp_params_convert, celerite_kernels, george_kernels,spleaf_kernels
+
+
 from copy import deepcopy
-from .utils import gp_params_convert, celerite_cosine
 from .conf import create_configfile
 from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
@@ -37,16 +39,18 @@ __all__ = ["run_fit"]
 def prior_transform(u,prior_dst,prior_names):
     """  
     function to transform the unit cube,u, to the prior space.
-    Parameters
-    ----------
+    
+    Parameters:
+    -----------
     u : array_like;
         unit cube, array of values between 0 and 1.
     prior_dst : list;
         list of scipy.stats prior distributions for each parameter.
     prior_names : list;
         list of parameter names.
-    Returns
-    -------
+        
+    Returns:
+    --------
     x : array_like;
         array of values in the prior space.
     """
@@ -57,13 +61,14 @@ def prior_transform(u,prior_dst,prior_names):
     return x 
 
 def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_folder="output", init_only=False,progress=True,
-            rerun_result=False, verbose=False, debug=False, save_burnin_chains=True, resume_sampling=False,
+            rerun_result=False, verbose=True, debug=False, save_burnin_chains=True, resume_sampling=False,
             dyn_kwargs=dict(sample='rwalk',bound='multi'), run_kwargs=dict() ):
     """
-    function to fit the data using the light-curve object lc_obj, rv_object rv_obj, and fit_setup object fit_obj.
+    function to fit the data using the light-curve object lc_obj, rv_object rv_obj, and fit_setup 
+    object fit_obj.
 
-    Parameters
-    ----------
+    Parameters:
+    -----------
     lc_obj : lightcurve object;
         object containing lightcurve data and setup parameters. 
         see CONAN3.load_lightcurves() for more details.
@@ -74,16 +79,17 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         object containing fit setup parameters. 
         see CONAN3.fit_setup() for more details.
     statistic : str;
-        statistic to run on posteriors to obtain model parameters and create model output file ".._lcout.dat".
-        must be one of ["median", "max", "bestfit"], default is "median". 
-        "max" and "median" calculate the maximum and median of each parameter posterior respectively while "bestfit" \
-            is the parameter combination that gives the maximum joint posterior probability.
+        statistic to run on posteriors to obtain model parameters and create model output file 
+        "_\*out.dat". must be one of ["median", "max", "bestfit"], default is "median". "max" and 
+        "median" calculate the maximum and median of each parameter posterior respectively while 
+        "bestfit" is the parameter combination that gives the maximum joint posterior probability.
     progress : bool;
         if True, show MCMC progress bar, default is True.
     out_folder : str;
         path to output folder, default is "output".
     init_only : bool;
-        generate only initial models, prior display, and *out.dat files in the output folder. useful for diagnosing starting points or generating full lc and rv models
+        generate only initial models, prior display, and \*out.dat files in the output folder. 
+        useful for diagnosing starting points or generating full lc and rv models
     rerun_result : bool;
         if True, rerun CONAN with previous fit result in order to regenerate plots and files. 
         This also allows to create files compatibile with latest CONAN version. Default is False.
@@ -96,7 +102,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     save_burnin_chains : bool;
         if True, save burn-in chains to file, default is True.
     dyn_kwargs : dict;
-        other parameters sent to the dynesty.NestedSampler() or dynesty.DynamicNestedSampler() function. e.g dyn_kwargs=dict(sample='rwalk',bounds='multi')
+        other parameters sent to the dynesty.NestedSampler() or dynesty.DynamicNestedSampler() 
+        function. e.g dyn_kwargs=dict(sample='rwalk',bounds='multi')
     run_kwargs : dict;
         other parameters sent to emcee's run_mcmc() function or dynesty's run_nested() function.
         e.g., for emcee: run_kwargs=dict(thin_by=1, tune=True, skip_initial_state_check=False)
@@ -107,25 +114,29 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     --------
     result : object containing labeled mcmc chains
         Object that contains methods to plot the chains, corner, and histogram of parameters.
-        e.g result.plot_chains(), result.plot_burnin_chains(), result.plot_corner, result.plot_posterior("T_0")
+        e.g ``result.plot_chains()``, ``result.plot_burnin_chains()``, ``result.plot_corner``, 
+        ``result.plot_posterior("T_0")``
     """
 
     if not os.path.exists(out_folder):
-        print(f"Creating output folder...{out_folder}")
+        if verbose: print(f"Creating output folder...{out_folder}")
         os.mkdir(out_folder)
-        # print(f"Saving configuration to file: {out_folder}/config_save.dat")
         create_configfile(lc_obj, rv_obj, fit_obj, f"{out_folder}/config_save.dat")  #create config file
 
 
     if os.path.exists(f'{out_folder}/chains_dict.pkl'):
-        if not rerun_result:
+        if rerun_result or resume_sampling:
+            print(f'Fit result already exists in this folder: {out_folder}')
+            if rerun_result:
+                print('Rerunning CONAN with saved posterior chains to regenerate plots and files...\n')
+            if resume_sampling:
+                print('Resuming sampling from last saved position...\n')
+        else:
             print(f'Fit result already exists in this folder: {out_folder}.\n Loading results...')
             result = load_result(out_folder)
             return result
-        else:
-            print(f'Fit result already exists in this folder: {out_folder}.\nRerunning with saved posterior chains to generate plots and files...\n')
-
-    print('CONAN fit launched!!!\n') 
+        
+    if verbose: print('\nCONAN fit launched!!!\n') 
 
     
     #begin loading data from the 3 objects and calling the methods
@@ -133,7 +144,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 #============lc_obj=========================
     #from load_lightcurves()
-    if lc_obj is None: lc_obj = load_lightcurves()
+    if lc_obj is None and rv_obj is not None: lc_obj=rv_obj._lcobj
     fpath      = lc_obj._fpath
     LCnames    = lc_obj._names
     filters    = lc_obj._filters
@@ -143,6 +154,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     groups     = lc_obj._groups
     useGPphot  = lc_obj._useGPphot
     jitt_start = np.log(lc_obj._jitt_estimate)
+    jitt_start = [-25 if jt<-25 else jt for jt in jitt_start] #set lowest start jitt to -25
 
     nphot      = len(LCnames)                                                 # the number of photometry input files
     njumpphot  = np.zeros(nphot)                                            # the number of jumping parameters for each photometry input file
@@ -157,6 +169,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     s_samp        = lc_obj._ss
     custom_LCfunc = lc_obj._custom_LCfunc     # custom light curve function
     ncustom       = custom_LCfunc.npars 
+    fit_offset    = lc_obj._fit_offset if isinstance(lc_obj._fit_offset,list) else [lc_obj._fit_offset]*nphot
 
 #============rv_obj========================== 
     # from load_rvs() 
@@ -184,7 +197,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 #============transit and RV jump parameters===============
     #from load_lightcurves.planet_parameters()
 
-    CP  = deepcopy(lc_obj._config_par)    #load input transit and RV parameters from dict
+    CP  = deepcopy(lc_obj._planet_pars)    #load input transit and RV parameters from dict
     npl = lc_obj._nplanet
 
     if "rho_star" in CP[f"pl{1}"].keys():         #rho_star or Duration stored in rhoSt_Dur
@@ -313,6 +326,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     paraCNM          = DA_mc['remove_param_for_CNM']   # remove parametric model for CNM computation
     baseLSQ          = DA_mc['leastsq_for_basepar']   # do a leas-square minimization for the baseline (not jump parameters)
     cf_apply         = DA_mc['apply_CFs']  # which CF to apply
+    # fit_offset       = DA_mc['fit_LCoffset']  # fit offset for LC
 
     #limits on parametric baseline pars: auto or user-defined
     #LC
@@ -397,8 +411,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     #********************************************************************
         
     #============================= SETUP ARRAYS =======================================
-    if LCnames != []: print('Setting up photometry arrays ...')
-    if np.any([spl.use for spl in useSpline_lc]): print('Setting up Spline fitting for LCS ...')  
+    if LCnames != []: 
+        if verbose: print('Setting up photometry arrays ...')
+    if np.any([spl.use for spl in useSpline_lc.values()]): 
+        if verbose: print('Setting up Spline fitting for LCs ...')  
 
     t_arr      = np.array([])  # initializing array with all timestamps (col0)
     f_arr      = np.array([])  # initializing array with all flux values(col1)
@@ -453,7 +469,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     ttv_conf = lc_obj._ttvs.conf   #ttv configuration
     ttvYN    = lc_obj._ttvs.to_fit
     if ttvYN == "y":
-        print("Setting up TTV arrays ...")
+        if verbose: print("Setting up TTV arrays ...")
         nttv = len(lc_obj._ttvs.fit_t0s)    
         for i in range(nttv):
             params    = np.concatenate((params,   [lc_obj._ttvs.prior[i].start_value]))
@@ -576,7 +592,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if DA_ld["step2"][i] != 0.: njumpphot[k]=njumpphot[k]+1
 
     for i in range(nphot):    #add jitter
-        if (jit_LCapply=='y'):
+        if (jit_LCapply[i]=='y'):
             params      = np.concatenate((params,  [jitt_start[i]]), axis=0)    
             stepsize    = np.concatenate((stepsize,[0.1]), axis=0)
             #ensure jitt start values are within the limits else set new limits around the start value
@@ -601,7 +617,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             pnames      = np.concatenate((pnames,  [f"lc{i+1}_logjitter"]), axis=0)
     
     if custom_LCfunc.func != None: 
-        print('Setting up parameters for custom LC function ...')
+        if verbose: print('Setting up parameters for custom LC function ...')
         params     = np.concatenate((params,   [custom_LCfunc.par_dict[key].start_value    for key in custom_LCfunc.par_dict.keys()]))
         stepsize   = np.concatenate((stepsize, [custom_LCfunc.par_dict[key].step_size      for key in custom_LCfunc.par_dict.keys()]))
         pmin       = np.concatenate((pmin,     [custom_LCfunc.par_dict[key].bounds_lo      for key in custom_LCfunc.par_dict.keys()]))
@@ -628,7 +644,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     # sin_init={"lc1.dat": {"sin1_Amp": 0.01, "sin1_P": 1, "sin1_x0": 0}}
     if sine_conf.flag:
         if sine_conf.fit == "same":
-            print('Setting up same sinusoidal model for all LCs...')
+            if verbose: print('Setting up same sinusoidal model for all LCs...')
             sinus      = sine_dict["same"]
             col_alias  = sinus.par.replace("ol","").capitalize()   #column name alias e.g. col5 -> C5
             trig_funcs = ["sin","cos"] if sinus.trig=="sincos" else ["sin"] if sinus.trig==None else [sinus.trig]
@@ -652,7 +668,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             sine_conf.index["same"] = np.arange(sinus.npars)
 
         if sine_conf.fit == "filt":  
-            print('Setting up filter dependent sinusoidal model')
+            if verbose: print('Setting up filter dependent sinusoidal model')
             st_ind = 0
             for filt in filnames:
                 sinus      = sine_dict[filt]
@@ -680,7 +696,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 st_ind += sinus.npars
 
         if sine_conf.fit in ["slct","all"]:
-            print("Setting up different sinusoids for the LCs")
+            if verbose: print("Setting up different sinusoids for the LCs")
             st_ind = 0
             for nm in LCnames:
                 sinus      = sine_dict[nm]
@@ -718,7 +734,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         pnames      = np.concatenate((pnames,  [f"rv{i+1}_gamma"]), axis=0)
         if rv_dict["gamma"][i].step_size!=0: njumpRV[i]=njumpRV[i]+1
 
-        if (jit_apply=='y'):
+        if (jit_apply[i]=='y'):
             params      = np.concatenate((params,  [rvjitt_start[i]]), axis=0)
             stepsize    = np.concatenate((stepsize,[0.0001]), axis=0)
             #ensure jitt start values are within the limits else set new limits around the start value
@@ -743,7 +759,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             pnames      = np.concatenate((pnames,  [f"rv{i+1}_jitter"]), axis=0)
     
     if custom_RVfunc.func != None: 
-        print('Setting up parameters for custom RV function ...')
+        if verbose: print('Setting up parameters for custom RV function ...')
         params     = np.concatenate((params,   [custom_RVfunc.par_dict[key].start_value    for key in custom_RVfunc.par_dict.keys()]))
         stepsize   = np.concatenate((stepsize, [custom_RVfunc.par_dict[key].step_size      for key in custom_RVfunc.par_dict.keys()]))
         pmin       = np.concatenate((pmin,     [custom_RVfunc.par_dict[key].bounds_lo      for key in custom_RVfunc.par_dict.keys()]))
@@ -756,7 +772,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
     #################################### GP setup #########################################
-    if lc_obj._GP_dict != {}: print('Setting up photometry GPs ...')
+    if lc_obj._GP_dict != {}: 
+        if verbose: print('Setting up photometry GPs ...')
     
     GPobjects   = []  # list to hold the GP objects for each lc
     GPparams    = []  # list to hold the GP parameters for each lc
@@ -768,22 +785,11 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     GPlimlo     = []  # list to hold the GP lower limits for each lc
     GPnames     = []  # list to hold the GP names for each lc
     pargps      = []  # list to hold independent variables of GP for each lc
+    gp_colnames  = []  # list to hold column name of independent variable
     gpkerns     = []  # list to hold the kernel for each lc
 
     GPdict   = lc_obj._GP_dict
     sameLCgp = lc_obj._sameLCgp
-    
-    #possible kernels
-    george_kernels = dict(  expsq = george.kernels.ExpSquaredKernel, 
-                            mat32 = george.kernels.Matern32Kernel,
-                            mat52 = george.kernels.Matern52Kernel,
-                            exp   = george.kernels.ExpKernel,
-                            cos   = george.kernels.CosineKernel)
-    
-    celerite_kernel = dict(mat32  = celerite.terms.Matern32Term,
-                            sho   = celerite.terms.SHOTerm,
-                            real  = celerite.terms.RealTerm,
-                            cos   = celerite_cosine)
 
     # =================PHOTOMETRY =========================================
     nbc_tot = np.copy(0)  # total number of baseline coefficients let to vary (leastsq OR jumping)
@@ -806,7 +812,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         
         #baseline parameters
         # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
-        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dcol8, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[i],bases_init[i],lcbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
+        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dcol8, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[LCnames[i]],bases_init[i],lcbases_lims[i],fit_offset[i])  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot      = nbc_tot+nbc # add up the number of jumping baseline coeff
         njumpphot[i] = njumpphot[i]+nbc   # each LC has another jump pm
 
@@ -853,17 +859,18 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (useGPphot[i]=='n'):
             GPobjects.append([])
             pargps.append([])
-            gpkerns.append([]) 
+            gpkerns.append([])
+            gp_colnames.append([])
 
-        elif useGPphot[i] in ['y','ce']:     #George or Celerite GP
+        elif useGPphot[i] in ['ge','ce','sp']:     #George or Celerite GP
             gp_conv  = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
             thisLCgp = GPdict[LCnames[i]]        #the GP dictionary for this LC
-            gpcols   = [thisLCgp[f"amplitude{n}"].user_data[1] for n in range(thisLCgp["ngp"])]     #data column names to use for the GP
-            gpkerns.append([thisLCgp[f"amplitude{n}"].user_data[0] for n in range(thisLCgp["ngp"])]) #GP kernels of this lc
+            gpcols   = [thisLCgp[f"amplitude{n}"].user_data.col for n in range(thisLCgp["ngp"])]     #data column names to use for the GP
+            gpkerns.append([thisLCgp[f"amplitude{n}"].user_data.kernel for n in range(thisLCgp["ngp"])]) #GP kernels of this lc
 
             for n in range(thisLCgp["ngp"]):                      #loop through the number of GPs for this LC
-                gpkern = thisLCgp[f"amplitude{n}"].user_data[0]   #kernel to use for this GP
-                gpcol  = thisLCgp[f"amplitude{n}"].user_data[1]   #column of the data to use for this GP
+                gpkern = thisLCgp[f"amplitude{n}"].user_data.kernel   #kernel to use for this GP
+                gpcol  = thisLCgp[f"amplitude{n}"].user_data.col   #column of the data to use for this GP
 
                 GPparams    = np.concatenate((GPparams,    [thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value]), axis=0)
                 GPstepsizes = np.concatenate((GPstepsizes, [thisLCgp[f"amplitude{n}"].step_size, thisLCgp[f"lengthscale{n}"].step_size]), axis=0)
@@ -877,67 +884,97 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 else:
                     GPnames = np.concatenate((GPnames,     [f"GPlcSame_Amp{n+1}_{gpcol}",f"GPlcSame_len{n+1}_{gpcol}"]), axis=0)
 
-                if useGPphot[i]=="y":  #George GP
+                if useGPphot[i]=="ge":  #George GP
+                    assert gpkern in george_kernels.keys(), f"Invalid kernel '{gpkern}' for George GP, must be one of {list(george_kernels.keys())}"
                     ndim_gp  = len(set(gpcols))       #number of different columns used for the GP
                     axes_gp  = [gpcols.index(gpcol)]  #axes of the GP (0 or 1)
 
                     if n==0: 
                         kern = 100e-6 * george_kernels[gpkern](1, ndim=ndim_gp,axes=axes_gp)  #dummy initialization
                         # set the kernel parameters to the starting values after performing the conversion
-                        gppar1, gppar2 =  gp_conv.get_values(kernels="g_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ge_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
                                                                                                     thisLCgp[f"lengthscale{n}"].start_value])
                         kern.set_parameter_vector([gppar1, gppar2])  
                         gp_x = thisLCdata[gpcol]  # the x values for the GP
+                        col_name = gpcol
 
                     if n==1:                       # if this is the second GP, then add/mult the new kernel to the previous one
                         kern2 = 100e-6 * george_kernels[gpkern](1, ndim=ndim_gp,axes=axes_gp)  #dummy initialization
-                        gppar1, gppar2 =  gp_conv.get_values(kernels="g_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ge_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
                                                                                                     thisLCgp[f"lengthscale{n}"].start_value])
                         kern2.set_parameter_vector([gppar1, gppar2])
                         if thisLCgp["op"]=="+": kern += kern2
                         if thisLCgp["op"]=="*": kern *= kern2
                         
-                        if ndim_gp >1: gp_x = np.vstack((gp_x, thisLCdata[gpcol])).T  #2D array with the x values for the GP
-                    
+                        if ndim_gp >1: 
+                            gp_x = np.vstack((gp_x, thisLCdata[gpcol])).T  #2D array with the x values for the GP
+                            col_name = (col_name, gpcol)
+
                     gp = GP(kern, mean=0)
-                    gp.compute(x=gp_x, yerr=thisLCdata["col2"])
+                    col_nm = col_name
             
                 if useGPphot[i]=="ce":   #Celerite GP
+                    assert gpkern in celerite_kernels.keys(), f"Invalid kernel '{gpkern}' for Celerite GP, must be one of {list(celerite_kernels.keys())}"
                     if n==0: 
                         if gpkern=="sho":
-                            kern  = celerite_kernel[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1)  #dummy initialization
+                            kern  = celerite_kernels[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1)  #dummy initialization
                             kern.freeze_parameter("log_Q")   #freeze Q
                         else:
-                            kern  = celerite_kernel[gpkern](-10, 1)   #dummy initialization
+                            kern  = celerite_kernels[gpkern](-10, 1)   #dummy initialization
                         # set the kernel parameters to the starting values after performing the conversion
-                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ce_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
                                                                                                 thisLCgp[f"lengthscale{n}"].start_value])
                         kern.set_parameter_vector([gppar1, gppar2])
                     if n==1:
                         if gpkern=="sho": 
-                            kern2 = celerite_kernel[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1) 
+                            kern2 = celerite_kernels[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1) 
                             kern2.freeze_parameter("log_Q")
                         else:
-                            kern2 = celerite_kernel[gpkern](-10, 1)
+                            kern2 = celerite_kernels[gpkern](-10, 1)
                         #starting values of next kernel
-                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ce_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
                                                                                             thisLCgp[f"lengthscale{n}"].start_value])
                         kern2.set_parameter_vector([gppar1, gppar2])
                         
                         if thisLCgp["op"]=="+": kern += kern2
                         if thisLCgp["op"]=="*": kern *= kern2
                     
-                    gp_x = thisLCdata[gpcol] # the x values for the GP, for celerite it is always col0 for now
+                    gp_x = thisLCdata[gpcol] # the x values for the GP,
                     gp   = cGP(kern, mean=0, fit_mean = False)
-                    # gp.compute(t=gp_x, yerr=thisLCdata["col2"])
+                    col_nm = gpcol
+
+                if useGPphot[i]=="sp":   #spleaf GP
+                    assert gpkern in spleaf_kernels.keys(), f"Invalid kernel '{gpkern}' for Spleaf GP, must be one of {list(spleaf_kernels.keys())}"
+                    if n==0: 
+                        # set the kernel parameters to the starting values after performing the conversion
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
+                                                                                                thisLCgp[f"lengthscale{n}"].start_value])
+                        kern = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, 1/np.sqrt(2))
+                    if n==1:
+                        #starting values of next kernel
+                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
+                                                                                            thisLCgp[f"lengthscale{n}"].start_value])
+                        kern2 = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, 1/np.sqrt(2))
+
+                        
+                        # if thisLCgp["op"]=="+": kern += kern2
+                        # if thisLCgp["op"]=="*": kern *= kern2
+                    
+                    gp_x   = thisLCdata[gpcol] # the x values for the GP,
+                    gp     = {"k1":kern} if thisLCgp["ngp"]==1 else {"k1":kern, "k2":kern2} #spleaf kernel dictionary
+                    col_nm = gpcol
 
             GPobjects.append(gp)
             pargps.append(gp_x) 
+            gp_colnames.append(col_nm)
 
     # =================RADIAL VELOCITY =========================================
-    if rv_obj is not None: print('Setting up RV arrays ...')
+    if rv_obj is not None: 
+        if verbose: print('Setting up RV arrays ...')
+    if np.any([spl.use for spl in useSpline_rv.values()]): 
+        if verbose: print('Setting up Spline fitting for RVs ...')  
     
-    rvGPobjects,rvGPnames,rv_pargps,rv_gpkerns = [],[],[],[]
+    rvGPobjects,rvGPnames,rv_pargps,rv_gpkerns,rv_gp_colnames  = [],[],[],[],[]
     rvGPparams,rvGPstepsizes,rvGPindex,rvGPprior,rvGPpriwid,rvGPlimup,rvGPlimlo = [],[],[],[],[],[],[]
     rvGPdict = {} if rv_obj is None else rv_obj._rvGP_dict
     sameRVgp = False if rv_obj is None else rv_obj._sameRVgp                                           # use spline to interpolate the light curve
@@ -987,16 +1024,17 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             rvGPobjects.append([])
             rv_pargps.append([]) 
             rv_gpkerns.append([])
+            rv_gp_colnames.append([])
 
-        if useGPrv[i] in ["y","ce"]:         #George or Celerite GP
+        if useGPrv[i] in ["ge","ce","sp"]:         #George or Celerite GP
             gp_conv  = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
             thisRVgp = rvGPdict[RVnames[i]]
-            gpcols   = [thisRVgp[f"amplitude{n}"].user_data[1] for n in range(thisRVgp["ngp"])]
-            rv_gpkerns.append([thisRVgp[f"amplitude{n}"].user_data[0] for n in range(thisRVgp["ngp"])])
+            gpcols   = [thisRVgp[f"amplitude{n}"].user_data.col for n in range(thisRVgp["ngp"])]
+            rv_gpkerns.append([thisRVgp[f"amplitude{n}"].user_data.kernel for n in range(thisRVgp["ngp"])])
 
             for n in range(thisRVgp["ngp"]):                      #loop through the number of GPs for this RV
-                gpkern = thisRVgp[f"amplitude{n}"].user_data[0]   #kernel to use for this GP
-                gpcol  = thisRVgp[f"amplitude{n}"].user_data[1]   #column of the data to use for this GP
+                gpkern = thisRVgp[f"amplitude{n}"].user_data.kernel   #kernel to use for this GP
+                gpcol  = thisRVgp[f"amplitude{n}"].user_data.col   #column of the data to use for this GP
 
                 rvGPparams    = np.concatenate((rvGPparams,    [thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value]), axis=0)
                 rvGPstepsizes = np.concatenate((rvGPstepsizes, [thisRVgp[f"amplitude{n}"].step_size, thisRVgp[f"lengthscale{n}"].step_size]), axis=0)
@@ -1010,48 +1048,53 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 else:
                     rvGPnames = np.concatenate((rvGPnames,     [f"GPrvSame_Amp{n}_{gpcol}",f"GPrvSame_len{n}_{gpcol}"]), axis=0)
 
-                if useGPrv[i]=="y":  #George GP
+                if useGPrv[i]=="ge":  #George GP
+                    assert gpkern in george_kernels.keys(), f"Invalid kernel '{gpkern}' for George GP, must be one of {list(george_kernels.keys())}"
                     ndim_gp  = len(set(gpcols))       #number of different columns used for the GP
                     axes_gp  = [gpcols.index(gpcol)]  #axes of the GP (0 or 1)
 
                     if n==0: 
                         kern = 100e-6 * george_kernels[gpkern](1, ndim=ndim_gp,axes=axes_gp)  #dummy initialization
                         # set the kernel parameters to the starting values after performing the conversion
-                        gppar1, gppar2 =  gp_conv.get_values(kernels="g_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ge_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                                     thisRVgp[f"lengthscale{n}"].start_value])
                         kern.set_parameter_vector([gppar1, gppar2])  
                         gp_x = thisRVdata[gpcol]  # the x values for the GP
+                        col_name = gpcol
 
                     if n==1:                       # if this is the second GP, then add/mult the new kernel to the previous one
                         kern2 = 100e-6 * george_kernels[gpkern](1, ndim=ndim_gp,axes=axes_gp)  #dummy initialization
-                        gppar1, gppar2 =  gp_conv.get_values(kernels="g_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ge_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                                     thisRVgp[f"lengthscale{n}"].start_value])
                         kern2.set_parameter_vector([gppar1, gppar2])
                         if thisRVgp["op"]=="+": kern += kern2
                         if thisRVgp["op"]=="*": kern *= kern2
                         
-                        if ndim_gp >1: gp_x = np.vstack((gp_x, thisRVdata[gpcol])).T  #2D array with the x values for the GP
+                        if ndim_gp >1: 
+                            gp_x = np.vstack((gp_x, thisRVdata[gpcol])).T  #2D array with the x values for the GP
+                            col_name = (col_name, gpcol)
                     
-                        gp = GP(kern, mean=0)
-                        gp.compute(x=gp_x, yerr=thisRVdata["col2"])
+                    gp = GP(kern, mean=0)
+                    col_nm = col_name
             
                 if useGPrv[i]=="ce":   #Celerite GP
+                    assert gpkern in celerite_kernels.keys(), f"Invalid kernel '{gpkern}' for Celerite GP, must be one of {list(celerite_kernels.keys())}"
                     if n==0: 
                         if gpkern=="sho":
-                            kern  = celerite_kernel[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1)  #dummy initialization
+                            kern  = celerite_kernels[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1)  #dummy initialization
                             kern.freeze_parameter("log_Q")   #freeze Q
                         else:
-                            kern  = celerite_kernel[gpkern](-10, 1)   #dummy initialization
+                            kern  = celerite_kernels[gpkern](-10, 1)   #dummy initialization
                         # set the kernel parameters to the starting values after performing the conversion
                         gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                             thisRVgp[f"lengthscale{n}"].start_value])
                         kern.set_parameter_vector([gppar1, gppar2])
                     if n==1:
                         if gpkern=="sho": 
-                            kern2 = celerite_kernel[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1) 
+                            kern2 = celerite_kernels[gpkern](log_S0 =-10, log_Q=np.log(1/np.sqrt(2)), log_omega0=1) 
                             kern2.freeze_parameter("log_Q")
                         else:
-                            kern2 = celerite_kernel[gpkern](-10, 1)
+                            kern2 = celerite_kernels[gpkern](-10, 1)
                         #starting values of next kernel
                         gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                             thisRVgp[f"lengthscale{n}"].start_value])
@@ -1060,12 +1103,33 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         if thisRVgp["op"]=="+": kern += kern2
                         if thisRVgp["op"]=="*": kern *= kern2
                     
-                        gp_x = thisRVdata[gpcol] # the x values for the GP, for celerite it is always col0 for now
-                        gp   = cGP(kern, mean=0, fit_mean=False)
-                        gp.compute(t=gp_x, yerr=thisRVdata["col2"])
+                    gp_x = thisRVdata[gpcol] # the x values for the GP,
+                    gp   = cGP(kern, mean=0, fit_mean=False)
+                    col_nm = gpcol
+
+                if useGPrv[i]=="sp":   #spleaf GP
+                    assert gpkern in spleaf_kernels.keys(), f"Invalid kernel '{gpkern}' for Spleaf GP, must be one of {list(spleaf_kernels.keys())}"
+                    if n==0: 
+                        # set the kernel parameters to the starting values after performing the conversion
+                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
+                                                                                            thisRVgp[f"lengthscale{n}"].start_value])
+                        kern = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, 1/np.sqrt(2))
+                    if n==1:
+                        #starting values of next kernel
+                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
+                                                                                            thisRVgp[f"lengthscale{n}"].start_value])
+                        kern2 = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, 1/np.sqrt(2))
+
+                        # if thisRVgp["op"]=="+": kern += kern2
+                        # if thisRVgp["op"]=="*": kern *= kern2
+                    
+                    gp_x   = thisRVdata[gpcol]
+                    gp     = {"k1":kern} if thisRVgp["ngp"]==1 else {"k1":kern, "k2":kern2}  #dictionary with the GP kernels
+                    col_nm = gpcol
 
             rvGPobjects.append(gp)
             rv_pargps.append(gp_x) 
+            rv_gp_colnames.append(col_nm)
 
 
     inmcmc='n'
@@ -1199,10 +1263,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         jitterind = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom + nsin + i*2 + 1
 
         if (stepsize[gammaind]!=0.):           
-            temp=np.concatenate((temp,[gammaind]),axis=0)
+            # temp=np.concatenate((temp,[gammaind]),axis=0)
+            temp= np.append(temp, gammaind)
 
         if (stepsize[jitterind]!=0.):           
-            temp=np.concatenate((temp,[jitterind]),axis=0)
+            # temp=np.concatenate((temp,[jitterind]),axis=0)
+            temp=np.append(temp, jitterind)
 
         if ncustomRV>0:
             customRVind = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom + nsin + nRV*2 + np.arange(ncustomRV) # the index of the custom parameters 
@@ -1289,7 +1355,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior_distr.append(llim)
 
     ## plot the prior distributions
-    print("Plotting prior distributions")
+    if verbose: print("Plotting prior distributions")
     matplotlib.use('Agg')
     
     start_pars = initial[jumping]
@@ -1310,15 +1376,15 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
 
-    ############################## Initial guess ##################################
-    print('\nPlotting initial guess\n---------------------------')
+    ############################## Initial model ##################################
+    if verbose: print('\nPlotting initial model(s)\n---------------------------')
 
     inmcmc = 'n'
-    indparams = {   "t_arr": t_arr,"f_arr": f_arr,"col3_arr": None,"col4_arr": None,"col6_arr": None,"col5_arr": None,"col7_arr": None,"custom_RVfunc": custom_RVfunc,"custom_LCfunc": custom_LCfunc,"nphot": nphot,"nRV": nRV,"sine_conf": sine_conf,
+    indparams = {   "custom_RVfunc": custom_RVfunc,"custom_LCfunc": custom_LCfunc,"nphot": nphot,"nRV": nRV,"sine_conf": sine_conf,
                     "filters": filters,"nfilt": nfilt,"filnames": filnames,"nddf": nddf,"nocc": nocc,"nttv": nttv,"col8_arr": _,"grprs": grprs,"ttv_conf": ttv_conf,"grnames": grnames,"groups": groups,"ngroup": ngroup,"ewarr": ewarr,
                     "inmcmc": inmcmc,"paraCNM": paraCNM,"baseLSQ": baseLSQ,"bvars": bvars,"bvarsRV": bvarsRV,"model_phasevar": lc_obj._model_phasevar,"LCnames": LCnames,"RVnames": RVnames,"e_arr": e_arr,"divwhite": divwhite,"dwCNMarr": dwCNMarr,"dwCNMind": dwCNMind,
                     "params": params,"useGPphot": useGPphot,"useGPrv": useGPrv,"GPobjects": GPobjects,"GPparams": GPparams,"GPindex": GPindex,"pindices": pindices,"jumping": jumping,"jnames": jnames,"prior_distr": prior_distr,"pnames_all": pnames_all,
-                    "norm_sigma": norm_sigma,"uni_low": uni_low,"uni_up": uni_up,"pargps": pargps,"jumping_noGP": jumping_noGP,"gpkerns": gpkerns,"LTT": LTT,"jumping_GP": jumping_GP,"GPstepsizes": GPstepsizes,"sameLCgp": sameLCgp,
+                    "norm_sigma": norm_sigma,"uni_low": uni_low,"uni_up": uni_up,"rv_gp_colnames": rv_gp_colnames,"gp_colnames": gp_colnames,"gpkerns": gpkerns,"LTT": LTT,"jumping_GP": jumping_GP,"GPstepsizes": GPstepsizes,"sameLCgp": sameLCgp,
                     "npl": npl,"useSpline_lc": useSpline_lc,"useSpline_rv": useSpline_rv,"s_samp": s_samp,"rvGPobjects": rvGPobjects,"rvGPparams": rvGPparams,"rvGPindex": rvGPindex,"input_lcs": input_lcs,"input_rvs": input_rvs,
                     "RVunit": RVunit,"rv_pargps": rv_pargps,"rv_gpkerns": rv_gpkerns,"sameRVgp": sameRVgp,"fit_sampler": fit_sampler }
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
@@ -1326,12 +1392,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     debug_t1 = time.time()
     mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],indparams,make_outfile=True,verbose=False,debug=debug,out_folder=out_folder)
     if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
-    if not os.path.exists(out_folder+"/init"): os.mkdir(out_folder+"/init")    #folder to put initial plots    
     debug_t2 = time.time()
     fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
     if debug: print(f'finished fit_plots, took {(time.time() - debug_t2)} secs')
 
     if init_only:
+        print("Generation of initial models completed")
         return
     ########################### MCMC run ###########################################
     print(f'\n============ Samping started ... (using {fit_sampler} [{NS_type if fit_sampler=="dynesty" else emcee_move}])======================')
@@ -1343,6 +1409,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     print('fitting parameters: ', pnames_all[jumping])
     pool = Pool(nproc)
 
+    if debug: 
+        starting = {k:v for k,v in zip(pnames_all[jumping],initial[jumping])}
+        print(f'initial: {starting}')
+
     nplot     = int(np.ceil(ndim/15))                #number of chain and corner plots to make
     nplotpars = int(np.ceil(ndim/nplot))             #number of parameters to plot in each plot
 
@@ -1351,9 +1421,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             print('WARNING: Number of chains is less than 3 times the number of dimensions. Increasing number of chains to 3*ndim')
             nchains = 3*ndim
         print('No of chains: ', nchains)
-        if debug: 
-            starting = {k:v for k,v in zip(pnames_all[jumping],initial[jumping])}
-            print(f'initial: {starting}')
         os.environ["OMP_NUM_THREADS"] = "1"  # to avoid conflicts with multiprocessing
 
         # put starting points for all walkers, i.e. chains
@@ -1414,7 +1481,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             posterior = sampler.flatchain
             chains    = sampler.chain
             print((f"Mean acceptance fraction: {np.mean(sampler.acceptance_fraction):.3f}"))
-            # print((f"Mean autocorrelation time: {np.mean(sampler.get_autocorr_time()):.3f} steps"))
             evidence  = None
         else:
             print("\nSkipping burn-in and production. Loading chains from disk")
@@ -1579,7 +1645,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #median
     mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
-    fit_plots(nttv,nphot, nRV, filters, LCnames, RVnames, out_folder,'/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
+    fit_plots(nttv,nphot, nRV, filters, LCnames, RVnames, out_folder,'/med/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
 
     #save summary_stats and as a hidden files. 
     #can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
@@ -1590,7 +1656,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #max_posterior
     mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],indparams,make_outfile=(statistic=="max"),verbose=False)
-    fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
+    fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/max/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
 
     mod_dev = (f_arr - mval2)/merr2 if statistic != "median" else (f_arr - mval)/merr  #Akin allow statistics to be based on median of posterior
     chisq   = np.sum(mod_dev**2)
@@ -1619,14 +1685,18 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     if result.lc.names != []:
         fig = result.lc.plot_bestfit()
-        fig.savefig(out_folder+"/bestfit_LC.png", bbox_inches="tight")
+        fig.savefig(out_folder+"/bestfit_LC.png", bbox_inches="tight",dpi=200)
         fig = result.lc.plot_bestfit(detrend=True)
-        fig.savefig(out_folder+"/bestfit_LC_detrended.png", bbox_inches="tight")
+        fig.savefig(out_folder+"/bestfit_LC_detrended.png", bbox_inches="tight",dpi=200)
+        fig = result.lc.plot_bestfit(detrend=True, phase_plot=1)
+        fig.savefig(out_folder+"/bestfit_LC_detrended_phased.png", bbox_inches="tight",dpi=200)
     if result.rv.names != []:
         fig = result.rv.plot_bestfit()
-        fig.savefig(out_folder+"/bestfit_RV.png", bbox_inches="tight")
+        fig.savefig(out_folder+"/bestfit_RV.png", bbox_inches="tight",dpi=200)
         fig = result.rv.plot_bestfit(detrend=True)
-        fig.savefig(out_folder+"/bestfit_RV_detrended.png", bbox_inches="tight")
+        fig.savefig(out_folder+"/bestfit_RV_detrended.png", bbox_inches="tight",dpi=200)
+        fig = result.rv.plot_bestfit(detrend=True, phase_plot=1)
+        fig.savefig(out_folder+"/bestfit_RV_detrended_phased.png", bbox_inches="tight",dpi=200)
     matplotlib.use(__default_backend__)
 
 
@@ -1634,10 +1704,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         print("\nPlotting TTVs")
         matplotlib.use('Agg')
         fig=result.lc.plot_ttv()
-        fig.savefig(out_folder+"/TTVs.png", bbox_inches="tight")
+        fig.savefig(out_folder+"/TTVs.png", bbox_inches="tight",dpi=200)
 
         fig=result.lc.plot_lcttv()
-        fig.savefig(out_folder+"/TTVs_lc.png", bbox_inches="tight")
+        fig.savefig(out_folder+"/TTVs_lc.png", bbox_inches="tight",dpi=200)
         matplotlib.use(__default_backend__)
 
     #make print out statement in the fashion of conan the barbarian
@@ -1645,3 +1715,5 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
           "\n\tthe planetary information it hides is laid bare in the results."+\
           "\n\t\tI am super ready for another quest. \n" + _text_format.END)
     return result
+
+#TODO: a way to tie any set of paramters together so they dont need to be fitted independently e,g between lcs and rvs

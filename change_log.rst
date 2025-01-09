@@ -1,3 +1,18 @@
+6-Dec-2024: version 3.3
+~~~~~~~~~~~~~
+* conversion functions (e.g., rho_to_aR) can take uncertainties.ufloat objects as input
+* custom func can be given as a class
+* automatic linking of lc_obj and rv_obj with seamless parameter sharing
+* fix for installation on python>=3.10
+* added ``.detrend_data()`` method to remove best fit decorr model from data.
+* added option to specify whether to fit jitter and offset for each light curve
+* fixed bug in transit model for eccentric orbits
+* added spleaf for GP fitting
+* reorganized result folder: meidan and max model plots are now saved in med/ and max/ folders respectively. *out.dat files in out_data/ folder
+* ``setup_phasecurve()`` method of the lc object now changed to ``phasecurve()``
+* corrected ecc anomaly calculation to be accurate for large eccentricities
+* added tests
+
 12-July-2024: version 3.2.2dev
 ~~~~~~~~~~~~~
 * added light travel time correction to the lightcurve model, user only required to set the stellar radius

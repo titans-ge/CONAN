@@ -3,12 +3,33 @@ from types import SimpleNamespace, FunctionType
 from copy import deepcopy
 from .utils import ecc_om_par
 import numpy as np 
-import inspect
-import os
+from .VERSION import __version__
+import inspect, os, sys
 
+def new_getfile(object, _old_getfile=inspect.getfile):
+    if not inspect.isclass(object):
+        return _old_getfile(object)
+    
+    # Lookup by parent module (as in current inspect)
+    if hasattr(object, '__module__'):
+        object_ = sys.modules.get(object.__module__)
+        if hasattr(object_, '__file__'):
+            return object_.__file__
+    
+    # If parent module is __main__, lookup by methods (NEW)
+    for name, member in inspect.getmembers(object):
+        if inspect.isfunction(member) and object.__qualname__ + '.' + member.__name__ == member.__qualname__:
+            return inspect.getfile(member)
+    else:
+        raise TypeError('Source for {!r} not found'.format(object))
 
-
-
+#TODO create python config file with all parameters that can be loaded into the functions
+#e.g.
+# lc_filepath = 'data'
+# lc_files = 
+#lc_filters =
+#lc_central_wavelength = 
+# ...
 def fit_configfile(config_file = "input_config.dat", out_folder = "output", 
                    init_decorr=False, rerun_result=True, resume_sampling=False, verbose=False):
     """
@@ -99,23 +120,25 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
             whether to verify that loading from the created config file will give the same objects (lc_obj, rv_obj, fit_obj)
     """
 
-    if lc_obj is None:
-        lc_obj = load_lightcurves()
+    if lc_obj is None and rv_obj is not None:
+        lc_obj=rv_obj._lcobj
     if rv_obj is None:
         rv_obj = load_rvs()
-        if lc_obj!=None: rv_obj._lcobj = lc_obj
+    if lc_obj!=None: 
+        rv_obj._lcobj = lc_obj
     if fit_obj is None:
         fit_obj = fit_setup()
+
     dirname = os.path.dirname(filename)
     dirname = "." if dirname == "" else dirname
     f = open(filename,"w")
-    f.write("# ========================================== CONAN configuration file ============================================= \n")
+    f.write(f"# ========================================== CONAN configuration file v{__version__} ======================================== \n")
     f.write("#      *********** KEYS *****************************************************************************************\n")
-    f.write("#      PRIORS: *Fixed - F(val), *Normal - N(mu,std), *Uniform - U(min,start,max), *LogUniform - LU(min,start,max)\n")
-    f.write("#      s_samp       : supersampling - x{exp_time(mins)} e.g. x30\n")
-    f.write("#      clip_outliers: c{column_no}:W{window_width}C{clip_sigma}n{niter} e.g. c1:W11C5n1. column_no='a' to clip in all valid columns\n")
+    f.write("#      PRIORS: *Fix-F(val), *Norm-N(mu,std), *Uni-U(min,start,max), *TruncNorm–(min,max,mu,std), *LogUni-LU(min,start,max)\n")
+    f.write("#      Ssmp         : supersampling - x{factor} e.g. x30 to create 30 subexposures per point\n")
+    f.write("#      ClipOutliers : c{column_no}:W{window_width}C{clip_sigma}n{niter} e.g. c1:W11C5n1. column_no='a' to clip in all valid columns\n")
     f.write("#      scl_col      : scale data columns – ['med_sub','rs0to1','rs-1to1','None']\n")
-    f.write("#      spline_config: spline - c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 \n")
+    f.write("#      spline       : c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 \n")
     f.write("#      ***********************************************************************************************************\n")
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
     f.write(f"\tLC_filepath: {lc_obj._fpath}\n")
@@ -142,7 +165,8 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     _print_output(lc_obj,"phasecurve",file=f)
     _print_output(lc_obj,"custom_LCfunction",file=f)
     if lc_obj._custom_LCfunc.func is not None:
-        cust_func_str = inspect.getsource(lc_obj._custom_LCfunc.func)
+        inspect.getfile = new_getfile
+        cust_func_str = inspect.getsource(lc_obj._custom_LCfunc.func)  #get the source code of the custom function
         op_func_str   = inspect.getsource(lc_obj._custom_LCfunc.op_func) if lc_obj._custom_LCfunc.op_func is not None else 'None'
         with open(f"{dirname}/custom_LCfunc.py","w") as fxn:
             fxn.write(cust_func_str)
@@ -150,6 +174,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
 
     _print_output(rv_obj,"custom_RVfunction",file=f)
     if rv_obj._custom_RVfunc.func is not None:
+        inspect.getfile = new_getfile
         cust_rvfunc_str = inspect.getsource(rv_obj._custom_RVfunc.func)
         op_rvfunc_str   = inspect.getsource(rv_obj._custom_RVfunc.op_func) if rv_obj._custom_RVfunc.op_func is not None else 'None'
         with open(f"{dirname}/custom_RVfunc.py","w") as fxn:
@@ -172,6 +197,11 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
             del lc_obj1._tmodel
             del lc_obj1._bases_init 
             del lc_obj2._bases_init 
+        if "_custom_LCfunc" in vars(lc_obj1):  #delete attributes of custom function that differ in class/func names because they are read from memory or file  
+            for obj in [lc_obj1,lc_obj2]:
+                del obj._custom_LCfunc.func
+                del obj._custom_LCfunc.get_func
+                del obj._custom_LCfunc.op_func
 
         if "_decorr_result" in vars(rv_obj1):  #delete attributes gotten from the decorrelation to allow comparison of other attributes
             del rv_obj1._rvdecorr_result
@@ -180,6 +210,12 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
             del rv_obj1._RVbases_init
             del rv_obj2._RVbases_init
         del rv_obj1._lcobj, rv_obj2._lcobj
+
+        if "_custom_RVfunc" in vars(rv_obj1):  #delete attributes of custom function that differ in class/func names because they are read from memory or file  
+            for obj in [rv_obj1,rv_obj2]:
+                del obj._custom_RVfunc.func
+                del obj._custom_RVfunc.get_func
+                del obj._custom_RVfunc.op_func
 
         if compare_objs(lc_obj1,lc_obj2):   print("\nlc_obj loaded from this config file is equal to original lc_obj")
         if compare_objs(rv_obj1,rv_obj2):   print("rv_obj loaded from this config file is equal to original rv_obj")
@@ -219,7 +255,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     _file = open(configfile,"r")
     _skip_lines(_file,9)                       #remove first 2 comment lines
     fpath    = _file.readline().rstrip().split()[1]           # the path where the files are
+    if fpath.startswith("./") or fpath.startswith("../"):    
+        fpath = os.path.dirname(os.path.abspath(configfile)) + "/" + fpath
     rv_fpath = _file.readline().rstrip().split()[1]           # the path where the files are
+    if rv_fpath.startswith("./") or rv_fpath.startswith("../"):    
+        rv_fpath = os.path.dirname(os.path.abspath(configfile)) + "/" + rv_fpath
     nplanet  = int(_file.readline().rstrip().split()[1])      # the path where the files are
     _skip_lines(_file,1)                                      #remove 3 comment lines
 
@@ -249,9 +289,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     _grbases    = []
     _useGPphot  = []
     
-    _ss_lclist,_ss_exp = [],[]
+    _ss_lclist,_ss_fac = [],[]
     _clip_cols, _clip_lclist, _clip, _clip_width,_clip_niter  = [],[],[],[],[]
-    _sclcol= []
+    _offset, _sclcol= [], []
     _spl_lclist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
     
     #read baseline specification for each listed light-curve file 
@@ -267,44 +307,42 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         xt = _adump[3].split("|")[-1]
         if xt != "None":
             _ss_lclist.append(_adump[0])
-            _ss_exp.append(float(xt.split("x")[1]))
+            _ss_fac.append(float(xt.split("x")[1]))
         
         #clip_outlier
         if _adump[4]!= "None":
             _clip_lclist.append(_adump[0])
             _clip_niter.append(int(_adump[4].split("n")[1])) 
-            clip_v      = float(_adump[4].split("n")[0].split("C")[1]) 
+            clip_v = float(_adump[4].split("n")[0].split("C")[1]) 
             _clip.append(int(clip_v) if clip_v.is_integer() else clip_v)                   # outlier clip value
             _clip_width.append(int(_adump[4].split("n")[0].split("C")[0].split("W")[1])) # windown width
-            if ":" in _adump[4]:
-                col_nos = _adump[4].split(":")[0][1:]
-                if col_nos == "a": col_nos = "135678"
-                _clip_cols.append(col_nos)
-            else: _clip_cols.append("1")
-
+            col_nos = _adump[4].split(":")[0][1:]
+            if col_nos == "a": col_nos = "135678"
+            _clip_cols.append(col_nos)
         #scale columns
-        _sclcol.append(_adump[5])
+        _sclcol.append(_adump[5].split("|")[0])
+        _offset.append(_adump[7])
 
-        strbase=_adump[7:13]    #col0 - col7
-        strbase.append(_adump[13].split("|")[0])        #col8|sin. add col8 to strbase
+        strbase=_adump[8:14]    #col0 - col7
+        strbase.append(_adump[14].split("|")[0])        #col8|sin. add col8 to strbase
         base = [int(i) for i in strbase]            # convert to int
         _bases.append(base)
 
-        _bsin.append(_adump[13].split("|")[1])           #col8|sin. sin-y/n
-        group = int(_adump[14])
+        _bsin.append(_adump[14].split("|")[1])           #col8|sin. sin-y/n
+        group = int(_adump[15])
         _groups.append(group)
-        _useGPphot.append(_adump[15])
+        _useGPphot.append(_adump[16])
         
         #LC spline
-        if _adump[16] != "None": 
+        if _adump[17] != "None": 
             _spl_lclist.append(_adump[0])
-            if "|" not in _adump[16]:   #1D spline
-                k1 = _adump[16].split("k")[-1]
+            if "|" not in _adump[17]:   #1D spline
+                k1 = _adump[17].split("k")[-1]
                 _spl_knot.append((int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1)
-                _spl_deg.append(int(_adump[16].split("k")[0].split("d")[-1]))
-                _spl_par.append("col" + _adump[16].split("d")[0][1])
+                _spl_deg.append(int(_adump[17].split("k")[0].split("d")[-1]))
+                _spl_par.append("col" + _adump[17].split("d")[0][1])
             else: #2D spline
-                sp    = _adump[16].split("|")  #split the diff spline configs
+                sp    = _adump[17].split("|")  #split the diff spline configs
                 k1,k2 = sp[0].split("k")[-1], sp[1].split("k")[-1]
                 k_1   = (int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1
                 k_2   = (int(k2) if float(k2).is_integer() else float(k2)) if k2 != "r" else k2
@@ -314,10 +352,6 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         #move to next LC
         dump =_file.readline() 
     
-    #check that the elements of _clip_cols are the same
-    if len(_clip_cols) > 1:
-        assert len(set(_clip_cols)) == 1, f"all columns to clip must be the same for all files but {_clip_cols} given"
-    _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
 
     nphot = len(_names)
     _skip_lines(_file,1)                                      #remove 1 comment lines
@@ -363,22 +397,28 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         #move to next LC
         dump =_file.readline()
     
+    if _clip_cols!=[]: _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
+    #check that the elements of _clip_cols are the same
+    if len(_clip_cols) > 1:
+        assert len(set(_clip_cols)) == 1, f"all columns to clip must be the same for all files but {_clip_cols} given"
 
-    
     # instantiate light curve object
     lc_obj = load_lightcurves(_names, fpath, _filters, _wl, nplanet)
-    lc_obj.lc_baseline(*np.array(_bases).T, sin=_bsin, grp_id=None, gp=_useGPphot,verbose=False )
+    lc_obj.lc_baseline(_offset.copy(), *np.array(_bases).T, sin=_bsin, grp_id=None, gp=_useGPphot,verbose=False )
     lc_obj.add_sinusoid(lc_list=sin_lclist, trig=trig, n=sin_n, par=sin_par, Amp = sin_Amp, P=sin_Per, x0=sin_x0, verbose=False)
     lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,niter=_clip_niter, show_plot=False,verbose=False )
     lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
-    lc_obj.supersample(lc_list=_ss_lclist, exp_time=_ss_exp, verbose=False)
+    lc_obj.supersample(lc_list=_ss_lclist, ss_factor=_ss_fac, verbose=False)
     lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
                         knot_spacing=_spl_knot , verbose=False)
     if verbose: lc_obj.print("lc_baseline")
-    if gp_lclist !=[]: gp_lclist = gp_lclist[0] if gp_lclist[0]=='same' else gp_lclist
+    if gp_lclist !=[]: gp_lclist = gp_lclist[0] if gp_lclist[0] in ['same','all'] else gp_lclist
+    gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in gp_lclist]
     lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
-                    amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
-    
+                    amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
+    lc_obj._fit_offset = _offset
+
+
     ## RV ==========================================================
     #### auto decorrelation
     dump = _file.readline().rstrip()
@@ -466,8 +506,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
                         knot_spacing=_spl_knot, verbose=False)
     if verbose: rv_obj.print("rv_baseline")
     if gp_rvlist !=[]: gp_rvlist = gp_rvlist[0] if gp_rvlist[0]=='same' else gp_rvlist
+    gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in gp_rvlist]
     rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
-                    amplitude=amplitude,lengthscale=lengthscale,verbose=verbose)
+                    amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
     
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
@@ -478,6 +519,26 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     rho_dur = _adump[0]
     #select string in rho_dur with []
     rho_dur = rho_dur[rho_dur.find("[")+1:rho_dur.find("]")]
+
+    # pl_pars[rho_dur] = _prior_value(_adump[-1])
+    # par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
+    # sesinw, secosw = [],[]
+    # for p in par_names: 
+    #     pl_pars[p] = []
+    #     dump       =_file.readline()
+    #     _adump     = dump.split()
+    #     str_pars   = _adump[-1].strip("[]").split("),")
+    #     str_pars   = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
+        
+    #     for n in range(1,nplanet+1):        #load parameters for each planet
+    #         pl_pars[p].append(_prior_value(str_pars[n-1]))
+
+    # for n in range(1,nplanet+1):        #load sesinw and secosw for each planet
+    #     omega_rad = tuple(np.radians(pl_pars["omega"][n-1])) if isinstance(pl_pars["omega"][n-1],tuple) else np.radians(pl_pars["omega"][n-1])
+    #     sesinw_, secosw_ = ecc_om_par(pl_pars["Eccentricity"][n-1],omega_rad,conv_2_obj=True,return_tuple=True)
+    #     sesinw.append(sesinw_)
+    #     secosw.append(secosw_)
+
     pl_pars[rho_dur] = _prior_value(_adump[2])
     par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
     for p in par_names: pl_pars[p] = []
@@ -514,9 +575,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
     #TTVS
-    dump =_file.readline()
+    dump   =_file.readline()
     _adump = dump.split()
-    ttvs, dt, base,per_LC_T0 = _adump[0], _prior_value(_adump[1]), float(_adump[2]), True if _adump[3]=="True" else False
+    ttvs, dt, base = _adump[0], _prior_value(_adump[1]), float(_adump[2])
+    per_LC_T0, incl_partial = True if _adump[3]=="True" else False, True if _adump[4]=="True" else False
     _skip_lines(_file,2)                                      #remove 2 comment lines
 
     #phase curve
@@ -628,8 +690,8 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     lc_obj.planet_parameters(**pl_pars,verbose=verbose)
     lc_obj.limb_darkening(q1,q2,verbose=verbose)
     lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
-    lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,per_LC_T0=per_LC_T0,verbose=verbose)
-    lc_obj.setup_phasecurve(D_occ, Fn, ph_off, A_ev, A_db, verbose=verbose)
+    lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,include_partial=incl_partial,per_LC_T0=per_LC_T0,verbose=verbose,print_linear_eph=False)
+    lc_obj.phasecurve(D_occ, Fn, ph_off, A_ev, A_db, verbose=verbose)
     lc_obj.add_custom_LC_function(func=custom_lcfunc,x=func_x,func_args=func_args,extra_args=extra_args,op_func=op_func,replace_LCmodel=replace_LCmodel,verbose=verbose)
     rv_obj.add_custom_RV_function(func=custom_rvfunc,x=rvfunc_x,func_args=rvfunc_args,extra_args=rvextra_args,op_func=op_rvfunc,replace_RVmodel=replace_RVmodel,verbose=verbose)
     lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
@@ -658,8 +720,8 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     if nRV > 0:
         if use_decorrRV or init_decorr:
             if init_decorr and verbose: print("\ngetting start values for RV decorrelation parameters ...\n")
-            rv_obj.get_decorr(T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
-                                sesinw=sesinw,secosw=secosw,
+            rv_obj.get_decorr(  T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
+                                Eccentricity=pl_pars["Eccentricity"], omega=pl_pars["omega"],
                                 gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
                                 exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, delta_BIC=rvdel_BIC,
                                 plot_model=False,verbose=verbose if use_decorrRV else False)
@@ -698,49 +760,60 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     mc_move   = _file.readline().split()[1]
     dyn_samp  = _file.readline().split()[1]
     lsq_base  = _file.readline().split()[1]
-    lcjitt    = _file.readline().split()[1]
-    rvjitt    = _file.readline().split()[1]
+    lcjitt    = _file.readline().split()[1:] #get all inputs for lcjitter
+    lcjitt    = " ".join(lcjitt).replace("[","").replace("]","").replace(" ","").replace("'","").replace("\"","").split(",")
+    rvjitt    = _file.readline().split()[1:] #get all inputs for rvjitter
+    rvjitt    = " ".join(rvjitt).replace("[","").replace("]","").replace(" ","").replace("'","").replace("\"","").split(",")
+
+
     #lcjittlims
     _adump    = _file.readline().split()
+    assert len(_adump)==2, f"LCjitter_loglims: must be a list of 2 values (e.g. [0.1,0.5], with no space between limits) or 'auto' but {_adump[1:]} given" 
     if "auto" in _adump[1]:
         lcjittlim = "auto"
     else:
         jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-        jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        jitthi    = float(_adump[1][_adump[1].find(",")+1:_adump[1].find("]")])
         lcjittlim = [jittlo, jitthi]
     #rvjittlims
     _adump    = _file.readline().split()
+    assert len(_adump)==2, f"RVjitter_lims: must be a list of 2 values (e.g. [0.1,0.5], with no space between limits) or 'auto' but {_adump[1:]} given"
     if "auto" in _adump[1]:
         rvjittlim = "auto"
     else:
         jittlo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-        jitthi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        jitthi    = float(_adump[1][_adump[1].find(",")+1:_adump[1].find("]")])
         rvjittlim = [jittlo, jitthi]
     
     #LCbasecoeff_lims
     _adump    = _file.readline().split()
+    assert len(_adump)==2, f"LCbasecoeff_lims: must be a list of 2 values (e.g. [0.1,0.5], with no space between limits) or 'auto' but {_adump[1:]} given"
     if "auto" in _adump[1]:
         lcbaselim = "auto"
     else:
         baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-        basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        basehi    = float(_adump[1][_adump[1].find(",")+1:_adump[1].find("]")])
         lcbaselim = [baselo, basehi]
     #RVbasecoeff_lims
     _adump    = _file.readline().split()
+    assert len(_adump)==2, f"RVbasecoeff_lims: must be a list of 2 values (e.g. [0.1,0.5], with no space between limits) or 'auto' but {_adump[1:]} given"
     if "auto" in _adump[1]:
         rvbaselim = "auto"
     else:
         baselo    = float(_adump[1][_adump[1].find("[")+1:_adump[1].find(",")])
-        basehi    = float(_adump[2][_adump[2].find("[")+1:_adump[2].find(",")])
+        basehi    = float(_adump[1][_adump[1].find(",")+1:_adump[1].find("]")])
         rvbaselim = [baselo, basehi]
 
-    ltt   = _file.readline().split()[1]
+    ltt     = _file.readline().split()[1]
+    # fit_off = _file.readline().split()[1:]  # get all inputs for this label
+    # fit_off = " ".join(fit_off).replace("[","").replace("]","").replace(" ","").replace("'","").replace("\"","").split(",")
 
     fit_obj = fit_setup(R_st = st_rad, M_st = st_mass, par_input=par_in,
                         apply_LCjitter=lcjitt, apply_RVjitter=rvjitt,
                         leastsq_for_basepar=lsq_base, 
                         LCbasecoeff_lims=lcbaselim, RVbasecoeff_lims=rvbaselim,
                         LCjitter_loglims=lcjittlim, RVjitter_lims=rvjittlim, LTT_corr=ltt,
+                        # fit_LCoffset=fit_off,
                         verbose=verbose)
     
     fit_obj.sampling(sampler=sampler,n_cpus=ncpus, emcee_move=mc_move,
@@ -760,13 +833,14 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
 
 
-def _compare_nested_structures(obj1, obj2):
+def _compare_nested_structures(obj1, obj2, verbose=False):
     """  
     Compare two nested structures (e.g. dictionaries, lists, etc.) for equality.
     """
     
     if isinstance(obj1, dict) and isinstance(obj2, dict):
         if obj1.keys() != obj2.keys():
+            if verbose: print(f"keys differ in {set(obj1) - set(obj2)}")
             return False
         return all(_compare_nested_structures(obj1[key], obj2[key]) for key in obj1)
     

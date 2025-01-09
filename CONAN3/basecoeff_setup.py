@@ -1,7 +1,7 @@
 import sys
 import numpy as np
 
-def basecoeff(ibase,spline,init=None,lims=None):
+def basecoeff(ibase,spline,init=None,lims=None, fit_offset="y"):
     # this function returns the input arrays for the baseline coefficients
     #   only those coefficients that are used are set to be jump parameters, 
     #   all others are set == 0 value, 0 stepsize, [0,0] Boundaries.
@@ -30,7 +30,7 @@ def basecoeff(ibase,spline,init=None,lims=None):
         nbc = nbc+1
     else:
         offset[:,0]=[init["off"],0.1*np.diff(lims["off"])[0],*lims["off"]]        # no CNM: set the starting value and limits of the offset    
-        if spline.use: offset[:,0]=[init["off"],0,0,0]   # if we use a spline, fix offset to 1 or bestvalue from get_decorr fit
+        if spline.use or fit_offset=="n": offset[:,0]=[init["off"],0,0,0]   # if we use a spline, fix offset to 1 or bestvalue from get_decorr fit
         else: nbc = nbc+1
     
      # dcol0 coeff:   A0*dcol0 + B0*dcol0^2 + C0*dcol0^3 + D0*dcol0^4

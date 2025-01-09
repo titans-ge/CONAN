@@ -321,8 +321,8 @@ C  (C) Copr. 1986-92 Numerical Recipes Software 0NL&WR2.
 import numpy as np
 from numpy import sqrt, log
 
-class OccultQuadPy:
 
+class OccultQuadPy:
     def occultquad(self,z0,u1,u2,p,nz=None):
         """
         Occultquad routine
@@ -334,7 +334,7 @@ class OccultQuadPy:
 
         Produces same result as the fortran code but ~30 times slower.
         
-        Parameters
+        Parameters:
         ----------
         z0 : array
             Impact parameter in units of stellar radius
@@ -509,6 +509,7 @@ class OccultQuadPy:
         rf = (1.0+(C1*e2-C2-C3*e3)*e2+C4*e3)/sqrt(ave)
         return rf
       
+
     def rj(self,x,y,z,p,ERRTOL=0.05,TINY=2.5e-13,BIG=9.e11):
         
         assert min(x, y, z) >= 0, f"rj() in OccultQuadPy: min(x, y, z) < 0 violated (x, y, z = {x}, {y}, {z})"
@@ -571,6 +572,7 @@ class OccultQuadPy:
             rj=a*(b*rj+3.0*(rcx-self.rf(xt,yt,zt)))
         return rj
       
+
     def rc(self,x,y,SQRTNY=1.3e-19,ERRTOL=0.04,TINY=1.69e-38,BIG=3e37):
         TNBG = TINY * BIG
         COMP1 = 2.236/SQRTNY
@@ -603,6 +605,7 @@ class OccultQuadPy:
         return rc
 
       
+
     def ellk(self, k):
         m1=1.0-k*k
         a0=1.38629436112
@@ -620,6 +623,7 @@ class OccultQuadPy:
         ellk = ek1-ek2
         return ellk
     
+
     def ellec(self, k):
         m1=1.0-k*k
         a1=0.44325141463

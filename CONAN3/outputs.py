@@ -12,7 +12,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
     and derived parameters to files. It also plots the histograms of the parameters and derived parameters
     and saves them to the output folder.
 
-    Parameters
+    Parameters:
     ----------
     posterior : array
         The posterior samples from the sampling.
@@ -509,8 +509,8 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
                 sig3md[i,1] = 0.
             
         of2.write('%-25s %14.8f %14.8f %14.8f %14.8f %14.8f\n' % (derived_pnames[i], maxvalsd[i], sig1md[i,0],sig1md[i,1], sig3md[i,0], sig3md[i,1])) 
-        param_hist(vals,derived_pnames[i],medvalsd[i],sig1d[i],sig3d[i],maxvalsd[i],sig1md[i],sig3md[i],out_folder=out_folder)
-    
+        try: param_hist(vals,derived_pnames[i],medvalsd[i],sig1d[i],sig3d[i],maxvalsd[i],sig1md[i],sig3md[i],out_folder=out_folder)
+        except: pass
     of2.write('#====================================================================================================\n')
     of2.write('#Fixed parameters: \n')
     of2.write('#====================================================================================================\n')
@@ -710,7 +710,7 @@ def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF,
     ecc_PDF = ecosw_PDF**2 + esinw_PDF**2
     ome_PDF = np.arctan2(esinw_PDF, ecosw_PDF)
     ome_PDF[ome_PDF<0] = ome_PDF[ome_PDF<0] + 2*np.pi
-    ome_PDF[ecc_PDF<1e-15] = np.pi/2.
+    # ome_PDF[ecc_PDF<1e-15] = np.pi/2.
     
     # ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] = ome_PDF[(esinw_PDF<0) & (ecosw_PDF<0)] + np.pi
     # ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)] = 2. * np.pi - ome_PDF[(esinw_PDF<0) & (ecosw_PDF>0)]

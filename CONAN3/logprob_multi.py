@@ -2,18 +2,20 @@ import numpy as np
 import time
 from .models import *
 from types import SimpleNamespace
-from .utils import rho_to_tdur, gp_params_convert, rho_to_aR, Tdur_to_aR, sesinw_secosw_to_ecc_omega,get_Tconjunctions
-import matplotlib
+from .utils import rho_to_tdur, rho_to_aR, Tdur_to_aR, sesinw_secosw_to_ecc_omega,get_Tconjunctions
+from .geepee import gp_params_convert
+from spleaf import cov, term
+import matplotlib, os
 from ._classes import __default_backend__
-from os.path import splitext
+from os.path import splitext, exists
 from .utils import light_travel_time_correction,sinusoid
 
 
-def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,get_model=False,out_folder=""):
+def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,get_planet_model=False,get_model=None,out_folder=""):
     """
     calculate log probability and create output file of full model calculated using posterior parameters
 
-    Parameters
+    Parameters:
     ----------
     p : array
         model parameters 
@@ -25,8 +27,10 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
         whether to print out information during function call, by default False
     debug : bool, optional
         see debug statements, by default False
-    get_model: bool, optional
-        flag to output dictionary of model results (phot and RV) for specific input parameters.
+    get_planet_model: bool, optional
+        flag to output dictionary of planet model results (phot and RV) for specific input parameters.
+    out_folder : str, optional
+        folder to save output files, by default ""
     
     Returns
     -------
@@ -39,17 +43,25 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
     P0 : float
         period
     """
-    
+    if make_outfile and not exists(out_folder+"/out_data"): os.mkdir(out_folder+"/out_data")    #folder to put output data from the initial or fit run
+    # if not exists(out_folder+"/out_data"): os.mkdir(out_folder+"/out_data")    #folder to put output data from the initial or fit run   
+
+    if get_model is not None:
+        get_planet_model = get_model
+        print("Warning: get_model is deprecated. Use get_planet_model instead.\n")
+
     # distribute out all the input arguments
-    (   t_arr, f_arr, col3_arr, col4_arr, col6_arr, col5_arr, col7_arr, \
-        custom_RVfunc, custom_LCfunc, nphot, nRV, sine_conf, filters, nfilt, filnames,\
+    argvals = args.values()
+    if len(argvals)==72: argvals = list(argvals)[7:]  #backwards compatibility: skip the first 7 arguments
+    
+    (   custom_RVfunc, custom_LCfunc, nphot, nRV, sine_conf, filters, nfilt, filnames,\
         nddf, nocc, nttv, col8_arr, grprs, ttv_conf, grnames, groups, ngroup, \
         ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, model_phasevar, LCnames, RVnames, \
         e_arr, divwhite, dwCNMarr, dwCNMind, params, useGPphot, useGPrv, GPobjects, \
         GPparams, GPindex, pindices, jumping, jnames, prior_distr, pnames_all, norm_sigma, \
-        uni_low, uni_up, pargps, jumping_noGP, gpkerns, LTT, jumping_GP, GPstepsizes, sameLCgp, \
+        uni_low, uni_up,rv_gp_colnames, gp_colnames, gpkerns, LTT, jumping_GP, GPstepsizes, sameLCgp, \
         npl, useSpline_lc, useSpline_rv, s_samp, rvGPobjects, rvGPparams, rvGPindex, input_lcs, input_rvs, \
-        RVunit, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler) = args.values()
+        RVunit, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler) = argvals
 
     Rstar = LTT.Rstar if type(LTT) == SimpleNamespace else None   #get Rstar value to use for LTT correction
     if type(custom_LCfunc) != SimpleNamespace: custom_LCfunc = None
@@ -77,7 +89,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
     
     
     mod, emod = [], [] # output arrays in case we're not in the mcmc
-    if get_model: 
+    if get_planet_model: 
         model_outputs = SimpleNamespace(lc={},rv={})   
 
     params_all[jumping] = p   # set the jumping parameters to the values in p which are varied in mcmc 
@@ -85,10 +97,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
     nsin    = sum([v for v in sine_conf.npars.values()]) if sine_conf.flag else 0
     # sin_st  = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom    #starting index of sinuoid parameters
 
+    time_all, flux_all, err_all, full_mod_all, base_para_all, base_sine_all, base_spl_all, base_gp_all, base_total_all, transit_all, det_flux_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
     # restrict the parameters to those of the light curve
     for j in range(nphot):
-        if inmcmc == 'n':
-            if verbose: print(f'LC{j+1}', end=" ...")
+        # if inmcmc == 'n':
+        #     if verbose: print(f'LC{j+1}', end=" ...")
         
         name = LCnames[j]
         thisLCdata = input_lcs[name]
@@ -275,11 +288,10 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
         else:
             base_sine = np.zeros(len(t_in))
 
-
-        if get_model:
+        if get_planet_model:
             if nttv>0:
                 LCmod,compo = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
-                                        q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,
+                                        ddf=ddf0,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                         custom_LCfunc=custom_LCfunc if ncustom>0 else None, cst_pars=cst_pars)
             else:
                 TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
@@ -293,13 +305,14 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
         #compute transit model
         if nttv>0:
             mt0, _ = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
-                                    q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,
+                                    ddf=ddf0,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                     custom_LCfunc=custom_LCfunc if ncustom>0 else None,cst_pars=cst_pars)
         else:
             TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
                                         occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in,q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
             mt0, _ = TM.get_value(t_in,ss=s_samp[j], grprs=grprs_here, vcont=cont_in,Rstar=Rstar,model_phasevar=model_phasevar[k],
                                     custom_LCfunc=custom_LCfunc if ncustom>0 else None)   
+        
         
         if inmcmc=="n" and Rstar!=None and j==0:   #calculate light travel time correction for each planet and plot
             matplotlib.use('Agg')
@@ -345,7 +358,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
             icoeff, _   = scipy.optimize.leastsq(para_minfunc, coeffstart, args=(bvar, mt0, thisLCdata))
             coeff[bvar] = icoeff 
         
-        base_para, base_spl = basefunc_noCNM(coeff, thisLCdata, f_in/mt0,useSpline_lc[j])
+        base_para, base_spl = basefuncLC(coeff, thisLCdata, f_in/mt0,useSpline_lc[LCnames[j]])
         base_total = (base_para+base_sine)*base_spl
         trans_base = mt0  * base_total    #transit*baseline(para*spl)
         det_LC     = f_in / base_total    #detrended data   
@@ -354,101 +367,208 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
         LCjitterind = 1+7*npl + nttv + nddf + nocc*6 + nfilt*2 + j
         LCjit       = np.exp(params_all[LCjitterind])
         err_in      = (e_in**2 + LCjit**2)**0.5
-        
-        if useGPphot[j]=='n':
-            if inmcmc == 'y':
-                lnprob_thislc = -1./2. * np.sum( (trans_base-f_in)**2/err_in**2 + np.log(2*np.pi*err_in**2))
-                lnprob = lnprob + lnprob_thislc
 
-            if inmcmc == 'n':
-                mod = np.concatenate((mod,trans_base))
-                emod = np.concatenate((emod,err_in)) #error array including jitter
+        time_all.append(t_in)
+        flux_all.append(f_in)
+        err_all.append(err_in)
+        full_mod_all.append(trans_base)
+        base_para_all.append(base_para)
+        base_sine_all.append(base_sine)
+        base_spl_all.append(base_spl)
+        base_gp_all.append(np.zeros(len(t_in)))
+        base_total_all.append(base_total)
+        transit_all.append(mt0)
+        det_flux_all.append(det_LC)
+        residual_all.append(f_in-trans_base)
+    
+    if not get_planet_model and nphot>0:
+        for j in range(nphot):
+            if useGPphot[j]=='n':
+                if inmcmc == 'y':
+                    lnprob_thislc = -1./2. * np.sum( (flux_all[j] - full_mod_all[j])**2/err_all[j]**2 + np.log(2*np.pi*err_all[j]**2))
+                    lnprob = lnprob + lnprob_thislc
 
-                # write the lightcurve and the model to file or return output if we're not inside the MCMC
-                base_gp    = np.zeros(len(t_in))   #no gp for this lc
-                out_data   = np.stack((t_in,f_in,err_in,trans_base,base_para,base_sine,base_spl,base_gp,base_total,mt0,det_LC,f_in-trans_base),axis=1)
-                header     = ["time","flux","error","full_mod","base_para","base_sine","base_spl","base_gp","base_total","transit","det_flux","residual"]
-                header_fmt = "{:<16s}\t"*len(header)
-                phases     = np.zeros((len(t_in),npl))
+                if inmcmc == 'n':
+                    mod = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
+                    emod = np.concatenate((emod,err_all[j])) #error array including jitter
 
-                for n in range(npl):
-                    phases[:,n] = np.modf(np.modf( (t_in-T0in[n])/perin[n])[0]+1)[0]
-                    if mt0[np.argmin(phases[:,n])] < 1:
-                        phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
-                    header_fmt += "{:<16s}\t"
-                    header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+                    # write the lightcurve and the model to file or return output if we're not inside the MCMC
+                    out_data   = np.stack((time_all[j],flux_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_sine_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],transit_all[j],det_flux_all[j],residual_all[j]),axis=1)
+                    header     = ["time","flux","error","full_mod","base_para","base_sine","base_spl","base_gp","base_total","transit","det_flux","residual"]
+                    header_fmt = "{:<16s}\t"*len(header)
+                    phases     = np.zeros((len(time_all[j]),npl))
 
-                out_data = np.hstack((out_data,phases))
-                if make_outfile:
-                    outfile=out_folder+"/"+splitext(name)[0]+'_lcout.dat' 
-                    if verbose: print(f"Writing LC output to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
-        
-        elif useGPphot[j] in ['y','ce']: 
+                    for n in range(npl):
+                        phases[:,n] = np.modf(np.modf( (time_all[j]-T0in[n])/perin[n])[0]+1)[0]
+                        if transit_all[j][np.argmin(phases[:,n])] < 1:
+                            phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
+                        header_fmt += "{:<16s}\t"
+                        header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+
+                    out_data = np.hstack((out_data,phases))
+                    if make_outfile:
+                        outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat' 
+                        if verbose: print(f"Writing LC output to file: {outfile}")
+                        np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
+            
+            elif useGPphot[j] in ['ge','ce','sp'] and sameLCgp.flag==False: 
+                thisLCdata = input_lcs[LCnames[j]]
+
+                gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+                gpcol    = gp_colnames[j]
+                pargp    = thisLCdata[gpcol] if isinstance(gpcol, str) else np.vstack((thisLCdata[gpcol][0],thisLCdata[gpcol][1])).T
+                srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
+                unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
+                
+                #indices of the gp params for this lc file
+                thislc_gpind  = GPindex == j         #individual gp params         
+                thislc_gppars = gppars[thislc_gpind] #the gp params for this lc
+
+                #need conversion of gp pars before setting them
+                gp_conv       = gp_params_convert()
+                kernels       = [f"{useGPphot[j]}_{gpk}" for gpk in gpkerns[j]]  #prepend correct GP package symbol for the kernel
+                thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars)
+                
+                if useGPphot[j] in ['ge','ce']:
+                    gp = GPobjects[j]      #gp for this lc
+                    gp.set_parameter_vector(thislc_gppars)
+                    gp.compute(pargp[srt_gp], yerr = err_all[j][srt_gp]) #compute gp with jitter included 
+                else:
+                    gp = cov.Cov(t=pargp[srt_gp],err=term.Error(err_all[j][srt_gp]),**GPobjects[j]) #create the spleaf gp from dictionary of kernels
+                    gp.set_param(thislc_gppars)
+
+
+                if inmcmc == 'y':
+                    if useGPphot[j] in ['ge','ce']: 
+                        lnprob_thislc = gp.log_likelihood((residual_all[j])[srt_gp], quiet=True)  
+                    else:                           
+                        lnprob_thislc = gp.log_like((residual_all[j])[srt_gp])
+                    lnprob = lnprob + lnprob_thislc
+                
+                # if not in MCMC, get a prediction and append it to the output array
+                if inmcmc == 'n':
+                    which_GP = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
+
+                    if useGPphot[j] in ['ge','ce']: 
+                        base_gp_all[j] = gp.predict((residual_all[j])[srt_gp], t=pargp[srt_gp], return_cov=False, return_var=False)[unsrt_gp] #gp_fit to residual
+                    else:                           
+                        base_gp_all[j] = gp.conditional((residual_all[j])[srt_gp], pargp[srt_gp], calc_cov=False)[unsrt_gp] #gp_fit to residual
+                    
+                    full_mod_all[j]   = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [transit*baseline(para*spl) + gp]
+                    mod               = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
+                    emod              = np.concatenate((emod,err_all[j])) #error array including jitter
+
+                    # base_total = base_total/(1-base_gp/f_in)    #base_total + base_gp         #update base_total with base_gp
+                    det_flux_all[j]   = (flux_all[j] - base_gp_all[j])/( (base_para_all[j]+base_sine_all[j])*base_spl_all[j])
+                    base_total_all[j] = flux_all[j]/det_flux_all[j]
+                    residual_all[j]   = flux_all[j] - full_mod_all[j]
+                    
+                    # write the lightcurve and the model to file or return output if we're not inside the MCMC
+                    out_data     = np.stack((time_all[j],flux_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_sine_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],transit_all[j],det_flux_all[j],residual_all[j]),axis=1)
+                    header       = ["time","flux","error","full_mod","base_para","base_sine","base_spl","base_gp","base_total","transit","det_flux","residual"]
+                    header_fmt   = "{:<16s} "*len(header)
+                    phases       = np.zeros((len(time_all[j]),npl))
+
+                    for n in range(npl):
+                        phases[:,n] = np.modf(np.modf( (time_all[j]-T0in[n])/perin[n])[0]+1)[0]
+                        if transit_all[j][np.argmin(phases[:,n])] < 1: phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
+                        header_fmt += "{:<16s} "
+                        header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+
+                    out_data = np.hstack((out_data,phases))
+                    if make_outfile:
+                        outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
+                        if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
+                        np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
+
+            else:
+                pass
+
+        if sameLCgp.flag==True: #if using the same GP for multiple LCs
             gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
-            pargp    = pargps[j]
+            gpcol    = gp_colnames[0]
+            if isinstance(gpcol, str):
+                pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs])   #join column data for all datasets with useGPphot !="n"
+            else:
+                pargp = np.vstack(np.concatenate([input_lcs[nm][gpcol[0]] for nm in sameLCgp.LCs]), np.concatenate([input_lcs[nm][gpcol[1]] for nm in sameLCgp.LCs])).T
+            
             srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
             unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
 
-            #indices of the gp params for this lc file
-            if not sameLCgp.flag:
-                gp            = GPobjects[j]      #gp for this lc
-                thislc_gpind  = GPindex == j      #individual gp params 
-            else:
-                gp            = GPobjects[sameLCgp.first_index]
-                thislc_gpind  = GPindex == sameLCgp.first_index          
             
-            thislc_gppars = gppars[thislc_gpind] #the gp params for this lc
+            all_lc_gpind  = GPindex == sameLCgp.first_index          
+            all_lc_gppars = gppars[all_lc_gpind] #the gp params 
 
             #need conversion of gp pars before setting them
             gp_conv       = gp_params_convert()
-            kernels       = gpkerns[j] if useGPphot[j] == "ce" else ["g_"+ gpk for gpk in gpkerns[j]]# ["any_george"]*len(gpkerns[j])
-            thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars)
-            gp.set_parameter_vector(thislc_gppars)
-            #recompute gp with jitter included 
-            gp.compute(pargp[srt_gp], yerr = err_in[srt_gp])
+            kernels       = [f"{useGPphot[sameLCgp.first_index]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
+            all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
+            
+            if useGPphot[sameLCgp.first_index] in ['ge','ce']:
+                gp  = GPobjects[sameLCgp.first_index]
+                gp.set_parameter_vector(all_lc_gppars)
+                gp.compute(pargp[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp])
+            else:
+                gp = cov.Cov(t=pargp[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp]),
+                                **GPobjects[sameLCgp.first_index])
+                gp.set_param(all_lc_gppars)
 
 
             if inmcmc == 'y':
-                lnprob_thislc = gp.log_likelihood((f_in-trans_base)[srt_gp], quiet=True)
-                lnprob = lnprob + lnprob_thislc
-            
+                if useGPphot[sameLCgp.first_index] in ['ge','ce']: 
+                    lnprob_allLC = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], quiet=True)
+                else:
+                    lnprob_allLC = gp.log_like((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp])
+                
+                lnprob  = lnprob + lnprob_allLC
+
             # if not in MCMC, get a prediction and append it to the output array
-            if inmcmc == 'n':
-                which_GP = "George" if useGPphot[j]=='y' else "Celerite"
+            if inmcmc == 'n':      
+                for j in sameLCgp.indices:
+                    thispargp    = input_lcs[LCnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_lcs[LCnames[j]][gpcol][0],input_lcs[LCnames[j]][gpcol][1])).T
+                    thissrt_gp   = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
+                    thisunsrt_gp = np.argsort(thissrt_gp)  #indices to unsort the gp axis
+                    which_GP     = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
+                    
+                    if useGPphot[j] in ['ge','ce']:
+                        base_gp_all[j]  = gp.predict((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], 
+                                                        t=thispargp[thissrt_gp], return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
+                    else:
+                        base_gp_all[j]  = gp.conditional((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], 
+                                                            thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+                    
+                    full_mod_all[j] = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [gp + transit*baseline(para*spl)]
+                    mod             = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
+                    emod            = np.concatenate((emod,err_all[j])) #error array including jitter
 
-                base_gp    = gp.predict((f_in-trans_base)[srt_gp], t=pargp[srt_gp], return_cov=False, return_var=False)[unsrt_gp] #gp_fit to residual
-                trans_base = base_gp+trans_base    #update trans_base with base_gp [gp + transit*baseline(para*spl)]
-                
-                mod  = np.concatenate((mod,trans_base))        #append the model to the output array
-                emod = np.concatenate((emod,err_in))          #error array including jitter
+                    # base_total = base_total/(1-base_gp/f_in)    #base_total + base_gp         #update base_total with base_gp
+                    det_flux_all[j]   = (flux_all[j] - base_gp_all[j])/( (base_para_all[j]+base_sine_all[j])*base_spl_all[j])
+                    base_total_all[j] = flux_all[j]/det_flux_all[j]
+                    residual_all[j]   = flux_all[j] - full_mod_all[j]
+                    
+                    # write the lightcurve and the model to file or return output if we're not inside the MCMC
+                    out_data     = np.stack((time_all[j],flux_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_sine_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],transit_all[j],det_flux_all[j],residual_all[j]),axis=1)
+                    header       = ["time","flux","error","full_mod","base_para","base_sine","base_spl","base_gp","base_total","transit","det_flux","residual"]
+                    header_fmt   = "{:<16s} "*len(header)
+                    phases       = np.zeros((len(time_all[j]),npl))
 
-                # base_total = base_total/(1-base_gp/f_in)    #base_total + base_gp         #update base_total with base_gp
-                det_LC     = (f_in-base_gp)/((base_para+base_sine)*base_spl)    #detrended_data
-                base_total = f_in/det_LC
-                
-                # write the lightcurve and the model to file or return output if we're not inside the MCMC
-                out_data     = np.stack((t_in,f_in,err_in,trans_base,base_para,base_sine,base_spl,base_gp,base_total,mt0,det_LC,f_in-trans_base),axis=1)
-                header       = ["time","flux","error","full_mod","base_para","base_sine","base_spl","base_gp","base_total","transit","det_flux","residual"]
-                header_fmt   = "{:<16s} "*len(header)
-                phases       = np.zeros((len(t_in),npl))
+                    for n in range(npl):
+                        phases[:,n] = np.modf(np.modf( (time_all[j]-T0in[n])/perin[n])[0]+1)[0]
+                        if transit_all[j][np.argmin(phases[:,n])] < 1: phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
+                        header_fmt += "{:<16s} "
+                        header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
 
-                for n in range(npl):
-                    phases[:,n] = np.modf(np.modf( (t_in-T0in[n])/perin[n])[0]+1)[0]
-                    if mt0[np.argmin(phases[:,n])] < 1: phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
-                    header_fmt += "{:<16s} "
-                    header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
-
-                out_data = np.hstack((out_data,phases))
-                if make_outfile:
-                    outfile=out_folder+"/"+splitext(name)[0]+'_lcout.dat'
-                    if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
-
+                    out_data = np.hstack((out_data,phases))
+                    if make_outfile:
+                        outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
+                        if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
+                        np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
 
     # now do the RVs and add their probabilities to the model
+    time_all, RV_all, err_all, full_mod_all, base_para_all, base_spl_all, base_gp_all, base_total_all, rvmod_all, det_rv_all, gamma_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
+
     for j in range(nRV):
-        if verbose: print(f'RV{j+1}', end= " ...")
+        # if verbose: print(f'RV{j+1}', end= " ...")
 
         name       = RVnames[j]
         thisRVdata = input_rvs[name]
@@ -542,7 +662,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
             for kk,cst_ind in enumerate(customRVind):
                     cstRV_pars[list(custom_RVfunc.par_dict.keys())[kk]] = params_all[cst_ind]
         
-        if get_model:   #skip other calculations and return the RV model for this dataset
+        if get_planet_model:   #skip other calculations and return the RV model for this dataset
             RVmodel,compo = RadialVelocity_Model(t_in,T0in,perin,Kin,sesinwin,secoswin,Gamma=0,cst_pars=cstRV_pars,npl=npl,
                                                     custom_RVfunc=custom_RVfunc if ncustomRV>0 else None)
             model_outputs.rv[name] = RVmodel,compo
@@ -565,99 +685,199 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 icoeff, _ = scipy.optimize.leastsq(para_minfuncRV, coeffstart, args=(bvarRV, mod_RV_gamma, thisRVdata))
                 coeff[bvarRV] = np.copy(icoeff)     # and the variable ones are set to the result from the minimization
 
-        base_paraRV, base_splRV = basefuncRV(coeff, thisRVdata, res=RV_in-mod_RV_gamma,useSpline=useSpline_rv[j])
+        base_paraRV, base_splRV = basefuncRV(coeff, thisRVdata, res=RV_in-mod_RV_gamma,useSpline=useSpline_rv[RVnames[j]])
         base_totalRV = base_paraRV + base_splRV + Gamma_in
         mod_RV_base  = mod_RV + base_totalRV   #full RVmodel+baseline(para+spl+gamma)
         det_RV       = RV_in  - base_totalRV    #detrended data
 
-        
-        if useGPrv[j] == "n":
+        time_all.append(t_in)
+        RV_all.append(RV_in)
+        err_all.append(err_in)
+        full_mod_all.append(mod_RV_base)
+        base_para_all.append(base_paraRV)
+        base_spl_all.append(base_splRV)
+        base_gp_all.append(np.zeros(len(t_in)))
+        base_total_all.append(base_totalRV)
+        rvmod_all.append(mod_RV)
+        det_rv_all.append(det_RV)
+        gamma_all.append(np.ones_like(t_in)*Gamma_in)
+        residual_all.append(det_RV-mod_RV)      
+
+    if not get_planet_model and nRV>0:
+        for j in range(nRV):
+            if useGPrv[j] == "n":
+                if inmcmc == 'y':
+                    lnprob_thisRV = -1./2. * np.sum( (RV_all[j] - full_mod_all[j])**2/err_all[j]**2 + np.log(2*np.pi*err_all[j]**2))
+                    lnprob = lnprob + lnprob_thisRV
+
+                if inmcmc == 'n':
+                    mod  = np.concatenate((mod,full_mod_all[j]))
+                    emod = np.concatenate((emod,err_all[j]))
             
-            if inmcmc == 'y':
-                lnprob_thisRV = -1./2. * np.sum( (mod_RV_base-RV_in)**2/err_in**2 + np.log(2. * np.pi * err_in**2) )
-                lnprob = lnprob + lnprob_thisRV
+                    # write the RVcurve and the model to file if we're not inside the MCMC
+                    out_data   = np.stack((time_all[j],RV_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],rvmod_all[j],det_rv_all[j],gamma_all[j],residual_all[j]),axis=1)
+                    header     = ["time","RV","error","full_mod","base_para","base_spl","base_gp","base_total","Rvmodel","det_RV","gamma","residual"]
+                    header_fmt = "{:<16s}\t"*len(header)
+                    phases     = np.zeros((len(time_all[j]),npl))
 
-            if inmcmc == 'n':
-                # write the RVcurve and the model to file if we're not inside the MCMC
-                mod  = np.concatenate((mod,mod_RV_base))
-                emod = np.concatenate((emod,err_in)) #error array including jitter
+                    for n in range(npl):
+                        phases[:,n] = ((time_all[j]-T0in[n])/perin[n]) - np.round( ((time_all[j]-T0in[n])/perin[n]))
+                        header_fmt += "{:<16s}\t"
+                        header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+                    if make_outfile:   
+                        outfile  = out_folder+"/out_data/"+splitext(RVnames[j])[0]+'_rvout.dat'
+                        out_data = np.hstack((out_data,phases))
+                        if verbose: print(f"Writing RV output to file: {outfile}")
+                        np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
+                        # pd.DataFrame(out_data,columns=header).to_csv(outfile,sep="\t",index=False, float_format='%-16.6f')
 
-                base_gpRV  = np.zeros(len(t_in))   #no gp for this rv
-                out_data   = np.stack((t_in,RV_in,err_in,mod_RV_base,base_paraRV,base_splRV,base_gpRV,base_totalRV,mod_RV,det_RV,np.ones_like(t_in)*Gamma_in,det_RV-mod_RV),axis=1)
-                header     = ["time","RV","error","full_mod","base_para","base_spl","base_gp","base_total","Rvmodel","det_RV","gamma","residual"]
-                header_fmt = "{:<16s}\t"*len(header)
-                phases     = np.zeros((len(t_in),npl))
+            elif useGPrv[j] in ['ge','ce','sp'] and sameRVgp.flag==False:
+                thisRVdata = input_rvs[RVnames[j]]
 
-                for n in range(npl):
-                    phases[:,n] = ((t_in-T0in[n])/perin[n]) - np.round( ((t_in-T0in[n])/perin[n]))
-                    header_fmt += "{:<16s}\t"
-                    header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
-                if make_outfile:   
-                    outfile  = out_folder+"/"+splitext(RVnames[j])[0]+'_rvout.dat'
-                    out_data = np.hstack((out_data,phases))
-                    if verbose: print(f"Writing RV output to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
-                    # pd.DataFrame(out_data,columns=header).to_csv(outfile,sep="\t",index=False, float_format='%-16.6f')
+                rv_gppars  = params_all[len(params)+len(GPparams):]   #all rv gp parameters
+                gpcol      = rv_gp_colnames[j] 
+                rvpargp    = rv_pargps[j]            #independent axis columns
+                rvpargp    = thisRVdata[gpcol] if isinstance(gpcol, str) else np.vstack((thisRVdata[gpcol][0],thisRVdata[gpcol][1])).T
+                srt_rvgp   = np.argsort(rvpargp) if rvpargp.ndim==1 else np.argsort(rvpargp[:,0])  #indices to sort the gp axis
+                unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
+
+                #indices of the gp params for this rv file
+                thisrv_gpind  = rvGPindex == j          #individual gp params 
+                thisrv_gppars = rv_gppars[thisrv_gpind] #the gp params for this RV
+
+                #need conversion of gp pars before setting them
+                gp_conv       = gp_params_convert()
+                kernels       = [f"{useGPrv[j]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel
+                thisrv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars)
+                
+                if useGPrv[j] in ['ge','ce']:
+                    gp  = rvGPobjects[j]      #gp for this rv
+                    gp.set_parameter_vector(thisrv_gppars)
+                    gp.compute(rvpargp[srt_rvgp], yerr = err_in[srt_rvgp])
+                else:
+                    gp = cov.Cov(t=rvpargp[srt_rvgp],err=term.Error(err_in[srt_rvgp]),**rvGPobjects[j]) #create the spleaf gp from the dictionary of kernels
+                    gp.set_param(thisrv_gppars)
 
 
-        elif useGPrv[j] in ['y','ce']:
-            rv_gppars = params_all[len(params)+len(GPparams):]   #all rv gp parameters 
-            rvpargp   = rv_pargps[j]            #independent axis columns
-            
-            #indices of the gp params for this rv file
-            if not sameRVgp.flag:
-                gp            = rvGPobjects[j]      #gp for this rv
-                thisrv_gpind  = rvGPindex == j      #individual gp params 
+                if inmcmc == 'y':
+                    if useGPrv[j] in ['ge','ce']:
+                        lnprob_thisRV = gp.log_likelihood((residual_all[j])[srt_rvgp], quiet=True)
+                    else:
+                        lnprob_thisRV = gp.log_like((residual_all[j])[srt_rvgp])
+                    lnprob = lnprob + lnprob_thisRV
+
+                # if not in MCMC, get a prediction and append it to the output array
+                if inmcmc == 'n':
+                    which_GP = "George" if useGPrv[j]=='ge' else "Celerite" if useGPrv[j]=='ce' else "Spleaf"
+
+                    if useGPrv[j] in ['ge','ce']:
+                        base_gp_all[j]  = gp.predict((residual_all[j])[srt_rvgp], t=rvpargp[srt_rvgp], return_cov=False, return_var=False)[unsrt_rvgp]
+                    else:
+                        base_gp_all[j]  = gp.conditional((residual_all[j])[srt_rvgp], rvpargp[srt_rvgp], calc_cov=False)[unsrt_rvgp]
+                    
+                    full_mod_all[j] = full_mod_all[j] + base_gp_all[j] #update mod_RV_base with base_gpRV [gp + planet rv + baseline(para+spl+gamma)]
+                    mod             = np.concatenate((mod,full_mod_all[j]))
+                    emod            = np.concatenate((emod,err_all[j]))
+
+                    base_total_all[j] = base_total_all[j] + base_gp_all[j]  #update base_total with base_gp
+                    det_rv_all        = RV_all[j] - base_total_all[j]
+                    residual_all[j]   = RV_all[j] - full_mod_all[j]
+
+                    out_data   = np.stack((time_all[j],RV_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],rvmod_all[j],det_rv_all[j],gamma_all[j],residual_all[j]),axis=1)
+                    header     = ["time","RV","error","full_mod","base_para","base_spl","base_gp","base_total","Rvmodel","det_RV","gamma","residual"]
+                    header_fmt = "{:<16s}\t"*len(header)
+                    phases     = np.zeros((len(time_all[j]),npl))
+
+                    for n in range(npl):
+                        phases[:,n] = ((time_all[j]-T0in[n])/perin[n]) - np.round( ((time_all[j]-T0in[n])/perin[n]))
+                        header_fmt += "{:<16s}\t"
+                        header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+                    
+                    if make_outfile:   
+                        out_data = np.hstack((out_data,phases))
+                        outfile  = out_folder+"/out_data/"+splitext(RVnames[j])[0]+'_rvout.dat'
+                        if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
+                        np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
             else:
-                gp            = rvGPobjects[sameRVgp.first_index]
-                thisrv_gpind  = rvGPindex == sameRVgp.first_index          
-            
-            thisrv_gppars = rv_gppars[thisrv_gpind] #the gp params for this RV
+                pass
+        
+        if sameRVgp.flag==True: 
+            rv_gppars  = params_all[len(params)+len(GPparams):]   #all rv gp parameters
+            gpcol      = rv_gp_colnames[0] 
+            if isinstance(gpcol,str):
+                rvpargp = np.concatenate([input_rvs[nm][gpcol] for nm in sameRVgp.RVs])   #join column data for all datasets
+            else:
+                rvpargp = np.vstack(np.concatenate([input_rvs[nm][gpcol[0]] for nm in sameRVgp.RVs]), np.concatenate([input_rvs[nm][gpcol[1]] for nm in sameRVgp.RVs])).T
+        
+            srt_rvgp   = np.argsort(rvpargp) if rvpargp.ndim==1 else np.argsort(rvpargp[:,0])  #indices to sort the gp axis
+            unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
+        
+            #indices of the gp params for this rv file
+            all_rv_gpind  = rvGPindex == sameRVgp.first_index 
+            all_rv_gppars = rv_gppars[all_rv_gpind] #the gp params
 
             #need conversion of gp pars before setting them
             gp_conv       = gp_params_convert()
-            kernels       = rv_gpkerns[j] if useGPrv[j] == "ce" else ["g_"+ gpk for gpk in rv_gpkerns[j]]#["any_george"]*len(rv_gpkerns[j])
-            thisrv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars)
-            gp.set_parameter_vector(thisrv_gppars)
-            #recompute gp with jitter included 
-            gp.compute(rvpargp, yerr = err_in)
+            kernels       = [f"{useGPrv[sameRVgp.first_index]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
+            all_rv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=all_rv_gppars)
+            
+            if useGPrv[sameRVgp.first_index] in ['ge','ce']:
+                gp = rvGPobjects[sameRVgp.first_index]
+                gp.set_parameter_vector(all_rv_gppars)
+                gp.compute(rvpargp[srt_rvgp], yerr = np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp])
+            else:
+                gp = cov.Cov(t=rvpargp[srt_rvgp],err=term.Error(np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp]),
+                                **rvGPobjects[sameRVgp.first_index])
+                gp.set_param(all_rv_gppars)
+
 
             if inmcmc == 'y':
-                lnprob_thisRV = gp.log_likelihood(RV_in-mod_RV_base, quiet=True)
-                lnprob = lnprob + lnprob_thisRV
-
-            # if not in MCMC, get a prediction and append it to the output array
-            if inmcmc == 'n':
-                which_GP = "George" if useGPrv[j]=='y' else "Celerite"
-
-                base_gpRV   = gp.predict(RV_in-mod_RV_base, t=rvpargp, return_cov=False, return_var=False)
-                mod_RV_base = base_gpRV+mod_RV_base   #update mod_RV_base with base_gpRV [gp + planet rv + baseline(para+spl+gamma)]
-
-                mod  = np.concatenate((mod,mod_RV_base))
-                emod = np.concatenate((emod,err_in))
-
-                base_totalRV = base_gpRV+base_totalRV  #update base_totalRV with base_gp
-                det_RV       = RV_in - base_totalRV
-
-                out_data   = np.stack((t_in,RV_in,err_in,mod_RV_base,base_paraRV,base_splRV,base_gpRV,base_totalRV,mod_RV,det_RV,np.ones_like(t_in)*Gamma_in,det_RV-mod_RV),axis=1)
-                header     = ["time","RV","error","full_mod","base_para","base_spl","base_gp","base_total","Rvmodel","det_RV","gamma","residual"]
-
-                header_fmt = "{:<16s}\t"*len(header)
-                phases     = np.zeros((len(t_in),npl))
-
-                for n in range(npl):
-                    phases[:,n] = ((t_in-T0in[n])/perin[n]) - np.round( ((t_in-T0in[n])/perin[n]))
-                    header_fmt += "{:<16s}\t"
-                    header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+                if useGPrv[j] in ['ge','ce']:
+                    lnprob_allRV = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], quiet=True)
+                else:
+                    lnprob_allRV = gp.log_like((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp])
                 
-                if make_outfile:   
-                    out_data = np.hstack((out_data,phases))
-                    outfile  = out_folder+"/"+splitext(RVnames[j])[0]+'_rvout.dat'
-                    if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
-                    np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
+                lnprob       = lnprob + lnprob_allRV
 
+            if inmcmc == 'n':
+                for j in sameRVgp.indices:
+                    thisrvpargp    = input_rvs[RVnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_rvs[RVnames[j]][gpcol][0],input_rvs[RVnames[j]][gpcol][1])).T
+                    thissrt_rvgp   = np.argsort(thisrvpargp) if thisrvpargp.ndim==1 else np.argsort(thisrvpargp[:,0])  #indices to sort the gp axis
+                    thisunsrt_rvgp = np.argsort(thissrt_rvgp)  #indices to unsort the gp axis
+                    which_GP       = "George" if useGPrv[j]=='ge' else "Celerite" if useGPrv[j]=='ce' else "Spleaf"
 
-    if get_model:
+                    if useGPrv[j] in ['ge','ce']:
+                        base_gp_all[j]  = gp.predict((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], 
+                                                        t=thisrvpargp[thissrt_rvgp], return_cov=False, return_var=False)[thisunsrt_rvgp]
+                    else:
+                        base_gp_all[j]  = gp.conditional((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], 
+                                                            thisrvpargp[thissrt_rvgp], calc_cov=False)[thisunsrt_rvgp]
+                    
+                    full_mod_all[j] = full_mod_all[j] + base_gp_all[j] #update mod_RV_base with base_gpRV [gp + planet rv + baseline(para+spl+gamma)]
+                    mod             = np.concatenate((mod,full_mod_all[j]))
+                    emod            = np.concatenate((emod,err_all[j]))
+
+                    base_total_all[j] = base_total_all[j] + base_gp_all[j]  #update base_totalRV with base_gp
+                    det_rv_all[j]     = RV_all[j] - base_total_all[j]
+                    residual_all[j]   = RV_all[j] - full_mod_all[j]
+                    
+                    out_data   = np.stack((time_all[j],RV_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],rvmod_all[j],det_rv_all[j],gamma_all[j],residual_all[j]),axis=1)
+                    header     = ["time","RV","error","full_mod","base_para","base_spl","base_gp","base_total","Rvmodel","det_RV","gamma","residual"]
+                    header_fmt = "{:<16s}\t"*len(header)
+                    phases     = np.zeros((len(time_all[j]),npl))
+
+                    for n in range(npl):
+                        phases[:,n] = ((time_all[j]-T0in[n])/perin[n]) - np.round( ((time_all[j]-T0in[n])/perin[n]))
+                        header_fmt += "{:<16s}\t"
+                        header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+
+                    if make_outfile:   
+                        out_data = np.hstack((out_data,phases))
+                        outfile  = out_folder+"/out_data/"+splitext(RVnames[j])[0]+'_rvout.dat'
+                        if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
+                        np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
+
+    if get_planet_model:
         return model_outputs
     
     # ====== return total outputs ======
@@ -669,9 +889,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
         #calculate transit duration for each planet
         if "rho_star" in pnames_all:
             _e,_w = sesinw_secosw_to_ecc_omega(np.array(sesinwin),np.array(secoswin))
-            durin = list( rho_to_tdur(rhoin, np.array(bbin), np.array(RpRsin), np.array(perin),_e,np.degrees(_w)) )
+            durin = list( rho_to_tdur(rhoin, np.array(bbin), np.array(RpRsin), np.array(perin),_e,np.degrees(_w)) ) if nphot>0 else 0
                             # e=np.array(sesinwin)**2+np.array(secoswin)**2, w=np.degrees(np.arctan2(sesinwin,secoswin)) ))
 
         if isinstance(durin,(int,float)): durin = [durin]    
-        return (mod, emod, T0in, perin, durin if nphot>0 else 0)
+        return (mod, emod, T0in, perin, durin)
 
