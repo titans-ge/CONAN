@@ -7,8 +7,8 @@
 #      spline       : c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 
 #      ***********************************************************************************************************
 # -----------------------------------------------------------------------------------------------------------------------
-	LC_filepath: data/
-	RV_filepath: data/
+	LC_filepath: ./data/
+	RV_filepath: ./data/
 	n_planet: 3
 # -----------------------------------------PHOTOMETRY--------------------------------------------------------------------
 	LC_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5
@@ -37,32 +37,32 @@
 	same          col0 cos   LU(0.1,2,20)       LU(0.01,1,100)    |* | col0 expsq F(1)               LU(0.01,1,60)   
 # -----------------------------------------------------------------------------------------------------------------------
 # ============ Planet parameters (Transit and RV) setup ========================================================== 
-	name                	fit 	prior                              	note
-	[rho_star]/Duration 	y   	N(1.42,0.1)                        	#choice in []|unit(gcm^-3/days)
+	name                       fit  prior                                   note
+	[rho_star]/Duration        y    N(1.42,0.1)                             #choice in []|unit(gcm^-3/days)
 	--------repeat this line & params below for multisystem, adding '_planet_number' to the names e.g RpRs_1 for planet 1, ...
-	RpRs_1              	y   	U(0.001,0.0321,0.1)                	#range[-0.5,0.5]
-	Impact_para_1       	y   	U(0,0.28,1)                        	#range[0,2]
-	T_0_1               	y   	U(2210.4,2210.634,2210.8)          	#unit(days)
-	Period_1            	y   	U(13.6,13.63,13.7)                 	#range[0,inf]days
-	Eccentricity_1      	n   	F(0)                               	#range[0,1]
-	omega_1             	n   	F(90)                              	#range[0,360]deg
-	K_1                 	y   	U(0,2,10)                          	#unit(same as RVdata)
+	RpRs_1                     y    U(0.001,0.0321,0.1)                     #range[-0.5,0.5]
+	Impact_para_1              y    U(0,0.28,1)                             #range[0,2]
+	T_0_1                      y    U(2210.4,2210.634,2210.8)               #unit(days)
+	Period_1                   y    U(13.6,13.63,13.7)                      #range[0,inf]days
+	[Eccentricity_1]/sesinw_1  n    F(0)                                    #choice in []|range[0,1]/range[-1,1]
+	[omega_1]/secosw_1         n    F(90)                                   #choice in []|range[0,360]deg/range[-1,1]
+	K_1                        y    U(0,2,10)                               #unit(same as RVdata)
 	------------
-	RpRs_2              	y   	U(0.001,0.0146,0.1)                	#range[-0.5,0.5]
-	Impact_para_2       	y   	U(0,0.617,1)                       	#range[0,2]
-	T_0_2               	y   	U(2207.1,2207.252,2207.5)          	#unit(days)
-	Period_2            	y   	U(3.5,3.5379,3.6)                  	#range[0,inf]days
-	Eccentricity_2      	n   	F(0)                               	#range[0,1]
-	omega_2             	n   	F(90)                              	#range[0,360]deg
-	K_2                 	y   	U(0,2,10)                          	#unit(same as RVdata)
+	RpRs_2                     y    U(0.001,0.0146,0.1)                     #range[-0.5,0.5]
+	Impact_para_2              y    U(0,0.617,1)                            #range[0,2]
+	T_0_2                      y    U(2207.1,2207.252,2207.5)               #unit(days)
+	Period_2                   y    U(3.5,3.5379,3.6)                       #range[0,inf]days
+	[Eccentricity_2]/sesinw_2  n    F(0)                                    #choice in []|range[0,1]/range[-1,1]
+	[omega_2]/secosw_2         n    F(90)                                   #choice in []|range[0,360]deg/range[-1,1]
+	K_2                        y    U(0,2,10)                               #unit(same as RVdata)
 	------------
-	RpRs_3              	y   	U(0.001,0.0127,0.1)                	#range[-0.5,0.5]
-	Impact_para_3       	y   	U(0,0.273,1)                       	#range[0,2]
-	T_0_3               	y   	U(2225.1,2225.259,2225.5)          	#unit(days)
-	Period_3            	y   	U(6.4,6.42975,6.5)                 	#range[0,inf]days
-	Eccentricity_3      	n   	F(0)                               	#range[0,1]
-	omega_3             	n   	F(90)                              	#range[0,360]deg
-	K_3                 	y   	U(0,2,10)                          	#unit(same as RVdata)
+	RpRs_3                     y    U(0.001,0.0127,0.1)                     #range[-0.5,0.5]
+	Impact_para_3              y    U(0,0.273,1)                            #range[0,2]
+	T_0_3                      y    U(2225.1,2225.259,2225.5)               #unit(days)
+	Period_3                   y    U(6.4,6.42975,6.5)                      #range[0,inf]days
+	[Eccentricity_3]/sesinw_3  n    F(0)                                    #choice in []|range[0,1]/range[-1,1]
+	[omega_3]/secosw_3         n    F(90)                                   #choice in []|range[0,360]deg/range[-1,1]
+	K_3                        y    U(0,2,10)                               #unit(same as RVdata)
 # ============ Limb darkening setup ============================================================================= 
 	filters	fit	q1               	q2               
 	T      	y  	N(0.354,0.016)   	N(0.4024,0.012)  

@@ -11,7 +11,7 @@ from lmfit import minimize, Parameters, Parameter
 from os.path import splitext
 from ldtk import SVOFilter
 from CONAN3.models import RadialVelocity_Model, Transit_Model, spline_fit
-from .utils import outlier_clipping, rho_to_tdur, rescale0_1
+from .utils import outlier_clipping, rho_to_tdur, rescale0_1, ecc_om_par,sesinw_secosw_to_ecc_omega
 from .utils import rescale_minus1_1, split_transits,sinusoid
 from .geepee import gp_params_convert, celerite_kernels, george_kernels,spleaf_kernels
 from .utils import phase_fold, supersampling, get_transit_time, bin_data_with_gaps
@@ -152,7 +152,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
 
 
 def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para=0, RpRs=None, 
-                Eccentricity=0, omega=90, D_occ=0, Fn=None, ph_off=None, A_ev=0, A_db=0,q1=0, q2=0,
+                sesinw=0, secosw=0, D_occ=0, Fn=None, ph_off=None, A_ev=0, A_db=0,q1=0, q2=0,
                 mask=False, decorr_bound=(-1,1), spline=None,sinus=None,gp=None,ss_exp=None,
                 offset=None, A0=None, B0=None, A3=None, B3=None,A4=None, B4=None, 
                 A5=None, B5=None,A6=None, B6=None, A7=None, B7=None, A8=None, B8=None,
@@ -167,7 +167,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     -----------
     df : dataframe/dict;
         data file with columns 0 to 8 (col0-col8).
-    T_0, Period, rho_star, D_occ, Impact_para, RpRs, Eccentricity, omega,Fn,ph_off,A_ev,A_db : floats, None;
+    T_0, Period, rho_star, D_occ, Impact_para, RpRs, sesinw, secosw,Fn,ph_off,A_ev,A_db : floats, None;
         transit/eclipse parameters of the planet. T_0 and P must be in same units as the time axis (cols0) in the data file. rho_star is the stellar density in g/cm^3.
         if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
     q1,q2 : float  (optional);
@@ -206,7 +206,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     flux_err = (np.array(df["col2"])**2 + jitter**2)**0.5
 
     #transit variables
-    pl_vars = ["T_0", "Period", "rho_star" if rho_star!=None else "Duration", "D_occ", "Impact_para","RpRs", "Eccentricity", "omega", "Fn", "ph_off", "A_ev","A_db","q1","q2"]
+    pl_vars = ["T_0", "Period", "rho_star" if rho_star!=None else "Duration", "D_occ", "Impact_para","RpRs", "sesinw", "secosw", "Fn", "ph_off", "A_ev","A_db","q1","q2"]
     tr_pars = {}
     for p in pl_vars:
         for n in range(npl):
@@ -234,7 +234,8 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         #use periodicity of 0.5*P to catch both transits and eclipses. this does not work for eccentric orbits
         E = np.round(( col0_med - tr_pars['T_0'])/(0.5*tr_pars["Period"]) )
         Tc = E*(0.5*tr_pars["Period"]) + tr_pars['T_0']
-        duration = rho_to_tdur(tr_pars["rho_star"], tr_pars["Impact_para"], tr_pars["RpRs"],tr_pars["Period"], tr_pars["Eccentricity"], tr_pars["omega"])
+        ecc,om = sesinw_secosw_to_ecc_omega(tr_pars["sesinw"],tr_pars["secosw"], angle_unit="degrees")
+        duration = rho_to_tdur(tr_pars["rho_star"], tr_pars["Impact_para"], tr_pars["RpRs"],tr_pars["Period"], ecc, om)
         phase = phase_fold(df["col0"], 0.5*tr_pars["Period"], Tc,-0.25)
         mask = abs(phase) > 0.5*duration/(0.5*tr_pars["Period"])
         df = df[mask]
@@ -300,7 +301,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                 val = tr_pars[key]
                 tr_params.add(key, value=val[1], min=val[0], max=val[2], vary=True)
             if len(tr_pars[key])==2: #normal prior (mean, std)  
-                lo,hi = (0,1) if key in ['q1','q2','Impact_para','Eccentricity'] else (tr_pars[key][0]-10*tr_pars[key][1],tr_pars[key][0]+10*tr_pars[key][1])
+                lo,hi = (0,1) if key in ['q1','q2'] else (tr_pars[key][0]-10*tr_pars[key][1],tr_pars[key][0]+10*tr_pars[key][1])
                 tr_params[key] = Parameter(key, value=tr_pars[key][0], vary=True, min=lo, max=hi, user_data = tr_pars[key] )
             if len(tr_pars[key])==4: #trunc normal prior (min,max, mean, std) 
                 tr_params[key] = Parameter(key, value=tr_pars[key][2], vary=True, min=tr_pars[key][0],max=tr_pars[key][1], user_data = tr_pars[key][-2:] )
@@ -319,14 +320,12 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         ss = supersampling(ss_exp/(60*24),int(ss_exp)) if ss_exp is not None else None
         pl_ind = [(f"_{n}" if npl>1 else "") for n in range(1,npl+1)]
 
-        per = [tr_params["Period"+lbl].value for lbl in pl_ind]
-        t0  = [tr_params["T_0"+lbl].value for lbl in pl_ind]
-        rp  = [tr_params["RpRs"+lbl].value for lbl in pl_ind]
-        b   = [tr_params["Impact_para"+lbl].value for lbl in pl_ind]
-        ecc = [tr_params["Eccentricity"+lbl].value for lbl in pl_ind]
-        w   = [tr_params["omega"+lbl].value for lbl in pl_ind]
-        sesinw = [np.sqrt(e)*np.sin(np.deg2rad(om)) for e,om in zip(ecc,w)]
-        secosw = [np.sqrt(e)*np.cos(np.deg2rad(om)) for e,om in zip(ecc,w)]
+        per    = [tr_params["Period"+lbl].value for lbl in pl_ind]
+        t0     = [tr_params["T_0"+lbl].value for lbl in pl_ind]
+        rp     = [tr_params["RpRs"+lbl].value for lbl in pl_ind]
+        b      = [tr_params["Impact_para"+lbl].value for lbl in pl_ind]
+        sesinw = [tr_params["sesinw"+lbl].value for lbl in pl_ind]
+        secosw = [tr_params["secosw"+lbl].value for lbl in pl_ind]
 
         rho_star = tr_params["rho_star"].value if "rho_star" in tr_params.keys() else None
         dur      = tr_params["Duration"].value if "Duration" in tr_params.keys() else None 
@@ -461,7 +460,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     return out
 
 
-def _decorr_RV(df, T_0=None, Period=None, K=None, Eccentricity=0, omega=0, gamma=None, decorr_bound=(-1000,1000),
+def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None, decorr_bound=(-1000,1000),
                 A0=None, B0=None, A3=None, B3=None, A4=None, B4=None, A5=None, B5=None, npl=1,jitter=0,
                 spline=None,custom_RVfunc=None,return_models=False):
     """
@@ -472,7 +471,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, Eccentricity=0, omega=0, gamma
     -----------
     df : dataframe/dict;
         data file with columns 0 to 5 (col0-col5).
-    T_0, Period, K, Eccentricity, omega : floats, None;
+    T_0, Period, K, sesinw, secosw : floats, None;
         RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) in the data file.
         if float/int, the values are held fixed. if tuple/list of len 2 implies [min,max] while len 3 implies [min,start_val,max].
     offset, Ai, Bi; floats [-1,1] or None;
@@ -504,7 +503,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, Eccentricity=0, omega=0, gamma
 
     #add indices to parameters if npl>1
     rv_pars = {}
-    for p in ["T_0", "Period", "K", "Eccentricity", "omega"]:
+    for p in ["T_0", "Period", "K", "sesinw", "secosw"]:
         for n in range(npl):
             lbl = f"_{n+1}" if npl>1 else ""   # numbering to add to parameter names of each planet
             rv_pars[p+lbl]= DA[p][n]           # rv pars
@@ -551,10 +550,8 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, Eccentricity=0, omega=0, gamma
         per    = [rv_params["Period"+lbl].value for lbl in pl_ind]
         t0     = [rv_params["T_0"+lbl].value for lbl in pl_ind]
         K      = [rv_params["K"+lbl].value for lbl in pl_ind]
-        ecc    = [rv_params["Eccentricity"+lbl].value for lbl in pl_ind]
-        w      = [rv_params["omega"+lbl].value for lbl in pl_ind]
-        sesinw = [np.sqrt(e)*np.sin(np.deg2rad(om)) for e,om in zip(ecc,w)]
-        secosw = [np.sqrt(e)*np.cos(np.deg2rad(om)) for e,om in zip(ecc,w)]
+        sesinw = [rv_params["sesinw"+lbl].value for lbl in pl_ind]
+        secosw = [rv_params["secosw"+lbl].value for lbl in pl_ind]
 
         cst_pars = {p:rv_params[p].value for p in custom_RVfunc.func_args.keys()} if custom_RVfunc is not None else {}
 
@@ -870,7 +867,7 @@ class load_lightcurves:
         self._rescaled_data = SN(flag=True, config=method)
 
     def get_decorr(self, T_0=None, Period=None, rho_star=None, Duration=None, D_occ=0, Impact_para=0, RpRs=1e-5,
-                    Eccentricity=0, omega=90, Fn=None, ph_off=None, A_ev=0, A_db=0, K=0, q1=0, q2=0, 
+                    Eccentricity=None, omega=None, sesinw=None, secosw=None, Fn=None, ph_off=None, A_ev=0, A_db=0, K=0, q1=0, q2=0, 
                     fit_offset=None, mask=False, ss_exp=None,Rstar=None, ttv=False,delta_BIC=-5, decorr_bound =(-10,10),
                     exclude_cols=[], enforce_pars=[],show_steps=False, plot_model=True, use_jitter_est=False,
                     setup_baseline=True, setup_planet=False, custom_LCfunc=None, verbose=True):
@@ -890,7 +887,7 @@ class load_lightcurves:
 
         Parameters:
         -----------
-        T_0, Period, rho_star/Duration, D_occ, Impact_para, RpRs, Eccentricity, omega, Fn, ph_off,A_ev, A_db: floats,tuple, None;
+        T_0, Period, rho_star/Duration, D_occ, Impact_para, RpRs, Eccentricity/sesinw, omega/secosw, Fn, ph_off,A_ev, A_db: floats,tuple, None;
             transit/eclipse parameters of the planet. ``T_0`` and ``Period`` must be in same units as 
             the time axis (col0) in the data file. ``D_occ``, ``Fn``, ``A_ev`` and ``A_db`` are in ppm.
             if float/int, the values are held fixed. tuple/list of len 2 implies gaussian 
@@ -1000,9 +997,15 @@ class load_lightcurves:
             if rho_star is not None: assert Duration is None, "get_decorr(): Duration must be None if rho_star is given."
             if Duration is not None: assert rho_star is None, "get_decorr(): rho_star must be None if Duration is given."
 
-        input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
-        self._tra_occ_pars = dict(T_0=T_0, Period=Period, D_occ=D_occ, Impact_para=Impact_para, RpRs=RpRs, Eccentricity=Eccentricity,\
-                                    omega=omega, Fn=Fn, ph_off=ph_off,A_ev=A_ev,A_db=A_db) #transit/occultation parameters
+        if Eccentricity == omega == sesinw == secosw == None: 
+            sesinw, secosw = 0, 0  #set to zero if not given
+        if Eccentricity is not None and omega is not None:
+            om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
+            sesinw, secosw = ecc_om_par(Eccentricity, omega, conv_2_obj=True, return_tuple=True)
+
+        input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw, secosw=secosw, K=K)
+        self._tra_occ_pars = dict(T_0=T_0, Period=Period, D_occ=D_occ, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw,\
+                                    secosw=secosw, Fn=Fn, ph_off=ph_off,A_ev=A_ev,A_db=A_db) #transit/occultation parameters
         # add rho_star/Duration to input_pars and self._tra_occ_pars if given
         if rho_star is not None: input_pars["rho_star"] = rho_star; self._tra_occ_pars["rho_star"] = rho_star
         if Duration is not None: input_pars["Duration"] = Duration; self._tra_occ_pars["Duration"] = Duration
@@ -1200,7 +1203,7 @@ class load_lightcurves:
             if self._tra_occ_pars["Fn"]==None:     pps["Fn"]=None 
             if self._tra_occ_pars["ph_off"]==None: pps["ph_off"]=None
             #convert result transit parameters to back to a list
-            for p in ['RpRs', 'Impact_para', 'T_0', 'Period', 'Eccentricity', 'omega']:
+            for p in ['RpRs', 'Impact_para', 'T_0', 'Period', 'sesinw', 'secosw']:
                 if self._nplanet==1:
                     pps[p] = [pps[p]]  
                 else:      
@@ -1270,7 +1273,34 @@ class load_lightcurves:
             if verbose: print(_text_format.BOLD + "\nSetting-up Limb darkening pars from input values" +_text_format.END)
             self.limb_darkening(q1=q1, q2=q2, verbose=verbose)
 
+        for i in range(len(self._decorr_result)):
+            _res = self._decorr_result[i]
+            G = '(6.674299999999998e-08)'
+            for n in range(1,self._nplanet+1):
+                lbl = f"_{n}" if self._nplanet>1 else ""
+                _res.params.add(f"ecc{lbl}",expr=f'sesinw{lbl}**2+secosw{lbl}**2',min=0, max=1)
+                _res.params.add(f"w{lbl}",expr=f'(180/pi*atan2(sesinw{lbl},secosw{lbl}))%360', min=0, max=360)
+            if "Duration" in _res.params:
+                ecc_fac  = '((1-ecc**2)/(1+sesinw*sqrt(ecc)))' if _res.params["sesinw"].value!=0 else '1'
+                ecc_fac2 = f'((1+sqrt(ecc)*sesinw)**3/(1-ecc**2)**(3/2))'
 
+                numer   = '((1+abs(RpRs))**2 - Impact_para**2)'
+                denom   = f'(sin( Duration*pi*sqrt(1-ecc**2)/(Period*{ecc_fac}**2) )**2 * {ecc_fac}**2)'
+                _res.params.add("aR",expr=f'sqrt({numer}/{denom}+(Impact_para/{ecc_fac})**2)', min=0, max=np.inf)
+                _res.params.add("rho_star",expr=f'((3*pi*aR**3)/({G}*(Period*24*3600)**2))/{ecc_fac2}', min=0, max=np.inf)
+            elif "rho_star" in _res.params:
+                for n in range(1,self._nplanet+1):
+                    lbl = f"_{n}" if self._nplanet>1 else ""
+                    ecc_fac2 = f'((1+sqrt(ecc{lbl})*sesinw{lbl})**3/(1-ecc{lbl}**2)**(3/2))'
+                    _res.params.add(f"aR{lbl}", expr = f'((rho_star*{ecc_fac2}*{G}*(Period*24*3600)**2) /(3*pi))**(1/3)', min=0, max=np.inf)
+            #GP
+            for gpn in [1,2]:
+                if f"log_GP_amp{gpn}" in _res.params:
+                    _res.params.add(f"GP_amp{gpn}", expr=f'exp(log_GP_amp{gpn})',
+                        min=np.exp(_res.params[f'log_GP_amp{gpn}'].min),max=np.exp(_res.params[f'log_GP_amp{gpn}'].max))
+                    _res.params.add(f"GP_len{gpn}", expr=f'exp(log_GP_len{gpn})',
+                        min=np.exp(_res.params[f'log_GP_len{gpn}'].min),max=np.exp(_res.params[f'log_GP_len{gpn}'].max))
+            self._decorr_result[i] = _res
         return self._decorr_result
     
 
@@ -1914,7 +1944,8 @@ class load_lightcurves:
 
         elif isinstance(lc_list, str):
             if lc_list in ["all","same","filt"]:
-                for i in range(self._nphot): self._bases[i][7]="y"
+                for i in range(self._nphot): 
+                    self._bases[i][7]="y"
 
             if lc_list == "all": 
                 sin_names = self._names
@@ -1931,7 +1962,8 @@ class load_lightcurves:
                     sin_names = [lc_list] 
                     lc_list = "slct"  # one selected lc 
                 elif lc_list in self._filnames:
-                    for i in np.where(np.array(self._filters)==lc_list)[0]: self._bases[i][7]="y"
+                    for i in np.where(np.array(self._filters)==lc_list)[0]: 
+                        self._bases[i][7]="y"
                     sin_names = [lc_list]
                     lc_list = "filt"
                 else:
@@ -1941,11 +1973,13 @@ class load_lightcurves:
             for lc in lc_list: 
                 assert lc in self._names or lc in self._filnames, f"add_sinusoid(): {lc} not in loaded lc files: {self._names} or filters: {self._filnames}." 
             if all([lc in self._names for lc in lc_list]): 
-                for i in [self._names.index(lc) for lc in lc_list]: self._bases[i][7]="y"
+                for i in [self._names.index(lc) for lc in lc_list]: 
+                    self._bases[i][7]="y"
                 sin_names = lc_list
                 lc_list = "slct"    #list of selected lcs
             elif all([lc in self._filnames for lc in lc_list]):
-                for i in np.where(np.array(self._filters)==lc_list)[0]: self._bases[i][7]="y"
+                for i in np.where(np.array(self._filters)==lc_list)[0]: 
+                    self._bases[i][7]="y"
                 sin_names = lc_list
                 lc_list = "filt"
             else:
@@ -2029,6 +2063,9 @@ class load_lightcurves:
         For the cosine kernels, lengthscale is the period. This kernel should probably always be 
         multiplied by a stationary kernel (e.g. exp) to allow quasi-periodic variations.
 
+        Note: using GP on a lc sets fit_offset="n" for that lc. users can turn it back on for each lc
+        from the ._fit_offset list attribute. e.g. lc_obj._fit_offset = ["y","y","y"]
+
         Parameters:
         -----------
         lc_list : str, list;
@@ -2065,6 +2102,7 @@ class load_lightcurves:
             list of int/float or tuple of length 2/3/4
         gp_pck : str, list;
             package to use for the GP. Must be one of ["ge","ce","sp"]. Default is "ce" for celerite.
+            A str or list of str can be given to specify package for each lc file in GP lc_list.
         verbose : bool;
             print output. Default is True.   
 
@@ -2089,52 +2127,84 @@ class load_lightcurves:
         else: _raise(TypeError, f"add_GP(): gp_pck must be a str or list of str but {gp_pck} given.")
 
         self._GP_dict  = {}
-        self._sameLCgp  = SN(flag = False, first_index =None) #flag to indicate if same GP is to be used for all lcs
+        self._sameLCgp = SN(flag=False, first_index=None, filtflag=False) #flag to indicate if same GP is to be used for all lcs
+        self._allLCgp  = False
+
+        if isinstance(lc_list, str) and lc_list in self._names+list(self._filnames):
+            lc_list = [lc_list]
 
         if lc_list is None or lc_list == []:
             if self._nphot>0:
                 if len(self._gp_lcs())>0: print(f"\nWarning: GP was expected for the following lcs {self._gp_lcs()} \nMoving on ...")
                 if verbose:_print_output(self,"gp")
             return
-        elif isinstance(lc_list, str): 
-            if lc_list in ["all","same"]:
-                if isinstance(gp_pck,str): 
-                    self._useGPphot = gp_pck = [gp_pck]*self._nphot
-                elif isinstance(gp_pck, list): 
-                    assert len(gp_pck)==self._nphot, f"add_GP(): gp_pck must be a list of length {self._nphot} with one of ['n','ge','ce','sp'] for each lc but {len(gp_pck)} given."
-                    self._useGPphot = gp_pck 
+
+        elif isinstance(lc_list, str) and lc_list in ["all","same"]:
+            if isinstance(gp_pck,str): 
+                self._useGPphot = gp_pck = [gp_pck]*self._nphot
+            elif isinstance(gp_pck, list): 
+                assert len(gp_pck)==self._nphot, f"add_GP(): gp_pck must be a list of length {self._nphot} with one of ['n','ge','ce','sp'] for each lc but {len(gp_pck)} given."
+                self._useGPphot = gp_pck 
+
             if lc_list == "same":
                 assert len(set(gp_pck))<=2, f"add_GP(): gp_pck must be same for all lcs with gp, if sameGP is used."  # can be only one of the pckgs and "n"
                 self._sameLCgp.flag        = True
                 self._sameLCgp.first_index = self._names.index(self._gp_lcs()[0])
                 self._sameLCgp.LCs         = self._gp_lcs()
                 self._sameLCgp.indices     = [self._names.index(lcn) for lcn in self._sameLCgp.LCs] 
+            if lc_list == "all":
+                self._allLCgp = True
 
+            lc_list = self._gp_lcs()
 
-            if lc_list in ["all","same"]:
-                lc_list = self._gp_lcs()
-            else: 
-                lc_list=[lc_list]
         elif isinstance(lc_list, list): 
-            if isinstance(gp_pck,str): gp_pck = [gp_pck]*len(lc_list)
-            if isinstance(gp_pck, list): assert len(gp_pck)==len(lc_list), f"add_GP(): gp_pck must be a list of length {len(lc_list)} but {len(gp_pck)} given."
+            assert all([lc in self._names for lc in lc_list]) or all([lc in self._filnames for lc in lc_list]), f"add_GP(): elements of lc_list must be either all LC filenames or all filter names but {lc_list=} given."
+            self._useGPphot = ["n"]*self._nphot
+
+            if all([lc in self._filnames for lc in lc_list]):   #if all lc_list elements are filter names
+                self._sameLCgp.filtflag         = True
+                self._sameLCgp.indices          = {}
+                self._sameLCgp.LCs              = {}
+                self._sameLCgp.first_index      = {}
+                self._sameLCgp.filters          = lc_list
+
+                for filt in lc_list:
+                    self._sameLCgp.indices[filt]     = np.where(np.array(self._filters)==filt)[0]
+                    self._sameLCgp.LCs[filt]         = [self._names[i] for i in self._sameLCgp.indices[filt]]
+                    self._sameLCgp.first_index[filt] = self._sameLCgp.indices[filt][0]
+
+                if isinstance(gp_pck,str):
+                    gp_pck = [gp_pck]*len(lc_list)
+                if isinstance(gp_pck, list):
+                    if len(gp_pck) == self._nphot:
+                        self._useGPphot = gp_pck
+                    elif len(gp_pck) == len(lc_list):
+                        for i,f in enumerate(lc_list):
+                            assert f in self._filnames, f"add_GP(): {f} not in filter list. must be one of {self._filnames}."
+                            for j in np.where(np.array(self._filters)==f)[0]:
+                                self._useGPphot[j] = gp_pck[i]
+                    else:
+                        _raise(ValueError, f"add_GP(): gp_pck must be a list of length nlc={self._nphot} or nfilt={self._filnames} with one of ['n','ge','ce','sp'] for each lc/filt but {len(gp_pck)} given.")
             
-            for i,lc in enumerate(lc_list):
-                assert lc in self._names, f"add_GP(): {lc} not in loaded lc files."
-                self._useGPphot[self._names.index(lc)] = gp_pck[i]
+            elif all([lc in self._names for lc in lc_list]):    # if all lc_list elements are lc names
+                if isinstance(gp_pck,str): 
+                    gp_pck = [gp_pck]*len(lc_list)
+                if isinstance(gp_pck, list): 
+                    if len(gp_pck) == self._nphot:
+                        self._useGPphot = gp_pck
+                    elif len(gp_pck) == len(lc_list):
+                        for i,lc in enumerate(lc_list):
+                            assert lc in self._names, f"add_GP(): {lc} not in loaded lc files."
+                            for j in np.where(np.array(self._names)==lc)[0]:
+                                self._useGPphot[j] = gp_pck[i]
+                    else:
+                        _raise(ValueError, f"add_GP(): gp_pck must be a list of length nlc={self._nphot} with one of ['n','ge','ce','sp'] for each lc but {len(gp_pck)} given.")
+
+            gp_pck  = self._useGPphot
+            lc_list = self._gp_lcs()
+            
         else:
-            _raise(TypeError, f"add_GP(): lc_list must be a str or list of str but {lc_list} given.")
-
-        # for lc in self._gp_lcs(): assert lc in lc_list,f"add_GP(): GP was expected for {lc} but was not given in lc_list."
-        # for lc in lc_list: 
-        #     # assert lc in self._names,f"add_GP(): {lc} not in loaded lc files."
-        #     # assert lc in self._gp_lcs(),f"add_GP(): GP was not expected for {lc} but was given in lc_list. Use `._useGPphot` attribute to modify this list with 'y','ce' or 'n' for each loaded lc"
-        #     if lc not in self._gp_lcs():
-        #         self._useGPphot[self._names.index(lc)] = "ce"
-        #         print(f"add_GP(): GP was not expected for {lc} but was given in lc_list, but now adding 'ce' GP for this lc.")
-
-        # lc_ind = [self._names.index(lc) for lc in lc_list]
-        # gp_pck = [self._useGPphot[i] for i in lc_ind]   #gp_pck is a list of "ge","sp", or "ce" for each lc in lc_list
+            _raise(TypeError, f"add_GP(): lc_list must be one of [None, str, list of str] but {lc_list} given.")
 
         DA = locals().copy()
         _  = [DA.pop(item) for item in ["self","verbose"]]
@@ -2143,11 +2213,22 @@ class load_lightcurves:
             if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]
             if isinstance(DA[p], list): 
                 if self._sameLCgp.flag: 
-                    assert len(DA[p])==1 or len(DA[p])==len(lc_list), f"add_GP(): {p} must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs)."
-                    if len(DA[p])==2: assert DA[p][0]==DA[p][1], f"add_GP(): {p} must be same for all lc files if sameGP is used."
-                if len(DA[p])==1: DA[p] = DA[p]*len(lc_list)
+                    assert len(DA[p])==1, f"add_GP(): {p} must be a list of length 1 (if same GP is to be used for all LCs)."
+                    DA[p] = DA[p]*len(lc_list)
+                elif self._sameLCgp.filtflag:
+                    assert len(DA[p]) in [1, len(self._sameLCgp.filters)], f"add_GP(): {p} must be a list of length 1 or {len(self._sameLCgp.filters)} (if same GP per filter)."
+                    if len(DA[p])==1: DA[p] = DA[p]*len(lc_list)
+                    else:
+                        da_p = [0]*len(lc_list)
+                        for i,f in enumerate(self._sameLCgp.filters):
+                            for j in self._sameLCgp.indices[f]: 
+                                da_p[j] = DA[p][i]
+                        DA[p] = da_p
+                else:
+                    if len(DA[p])==1: 
+                        DA[p] = DA[p]*len(lc_list)
 
-            assert len(DA[p])==len(lc_list), f"add_GP(): {p} must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs)."
+            assert len(DA[p])==len(lc_list), f"add_GP(): {p} must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs) but {len(DA[p])} given."
             
         for p in ["par","kernel","operation","amplitude","lengthscale"]:
             #check if inputs for p are valid
@@ -2208,6 +2289,9 @@ class load_lightcurves:
         for i,lc in enumerate(lc_list):
             self._fit_offset[self._names.index(lc)] = "n" # do not fit offset if fitting using GP
 
+            #filter name of this lc
+            filt = self._filters[self._names.index(lc)]
+                
             self._GP_dict[lc] = {}
             ngp = 2 if isinstance(DA["kernel"][i],tuple) else 1
             self._GP_dict[lc]["ngp"] = ngp
@@ -2233,21 +2317,27 @@ class load_lightcurves:
                                                                         prior_str=f'F({v})')
                     elif isinstance(v, tuple):
                         if len(v)==2:
-                            steps = 0 if (self._sameLCgp.flag and i!=0) else 0.1*v[1]   #if sameLCgp is set, only first pars will jump and be used for all rvs
+                            if (self._sameLCgp.flag and lc!=self._sameLCgp.LCs[0]): steps=0             #only the first lc jumps and same parameter will be used for the others
+                            elif (self._sameLCgp.filtflag and lc!=self._sameLCgp.LCs[filt][0]): steps=0  #only first lc of the filter jumps
+                            else: steps = 0.1*v[1]
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[0],step_size=steps,prior="p", 
                                                                         prior_mean=v[0], prior_width_lo=v[1], prior_width_hi=v[1], 
                                                                         bounds_lo=max(v[0]-10*v[1],0.0007), bounds_hi=v[0]+10*v[1],     #10sigma cutoff
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'N({v[0]},{v[1]})')
                         elif len(v)==3:
-                            steps = 0 if (self._sameLCgp.flag and i!=0) else min(0.001,0.001*np.ptp(v))
+                            if (self._sameLCgp.flag and lc!=self._sameLCgp.LCs[0]): steps=0 
+                            elif (self._sameLCgp.filtflag and lc!=self._sameLCgp.LCs[filt][0]): steps=0
+                            else: steps = min(0.001,0.001*np.ptp(v))
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=max(v[0],0.0007), bounds_hi=v[2],   #bounds_lo has a lower limit of 1minute (0.0007d) or 0.0007ppm
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'LU({v[0]},{v[1]},{v[2]})')
                         elif len(v)==4:
-                            steps = 0 if (self._sameLCgp.flag and i!=0) else 0.1*v[3]   #if sameLCgp is set, only first pars will jump and be used for all rvs
+                            if (self._sameLCgp.flag and lc!=self._sameLCgp.LCs[0]): steps=0 
+                            elif (self._sameLCgp.filtflag and lc!=self._sameLCgp.LCs[filt][0]): steps==0
+                            else: steps = 0.1*v[3]
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[2],step_size=steps,prior="p", 
                                                                         prior_mean=v[2], prior_width_lo=v[3], prior_width_hi=v[3], 
                                                                         bounds_lo=max(v[0],0.0007), bounds_hi=v[1], 
@@ -2261,10 +2351,10 @@ class load_lightcurves:
     
     
     def planet_parameters(self, RpRs=0, Impact_para=0, rho_star=None, Duration=None, T_0=0, Period=0, 
-                            Eccentricity=0, omega=90, K=0, verbose=True):
+                            Eccentricity=None, omega=None, sesinw=None, secosw=None, K=0, verbose=True):
         """
-        Define parameters and priors of model parameters. By default, the parameters are fixed to t
-        he given values. The parameters can be defined in following ways:\n
+        Define parameters and priors of model parameters. By default, the parameters are fixed to 
+        the given values. The parameters can be defined in following ways:\n
         
         - fixed value as float or int, e.g Period = 3.4 \n
         - gaussian prior given as tuple of len 2, (mu, std) e.g. T_0 = (5678, 0.1) \n
@@ -2272,6 +2362,9 @@ class load_lightcurves:
         
         if uniform is specified for rho_star or Duration, loguniform is used instead following 
         literature convention (https://iopscience.iop.org/article/10.3847/1538-3881/ac7f2f).
+
+        Users can choose the between Eccentricity-omega or sesinw-secosw parameterization. Note that
+        Eccentricity-omega is still converted to sesinw-secosw for efficient sampling. 
 
         Parameters:
         -----------
@@ -2288,9 +2381,12 @@ class load_lightcurves:
         Period : float, tuple;
             Orbital period of the planet in days. Default is 0.
         Eccentricity : float, tuple;
-            Eccentricity of the orbit. Default is 0.
+            Eccentricity of the orbit. Default is None to use sesinw and secosw parameterization.
         omega : float, tuple;
-            Argument of periastron om degrees. Default is 90.
+            Argument of periastron in degrees. Default is None to use sesinw and secosw parameterization. 
+        sesinw, secosw: float, tuple,
+            √esinw, √ecosw. alternate parameterization of eccentricty and omega. 
+            Default is None which fixes both values to 0, which implies Eccentricity=0, omega=90
         K : float, tuple;
             Radial velocity semi-amplitude in same unit as the data. Default is 0.
         verbose : bool;
@@ -2306,13 +2402,34 @@ class load_lightcurves:
             rho_star = rho_star if rho_star is not None else 0
             assert isinstance(rho_star, (int,float,tuple)), "planet_parameters(): rho_star must be a float/int/tuple for multiplanet systems."
             assert Duration==None, "planet_parameters(): Duration must be None for multiplanet systems, since transit model uses rho_star."
-
-        DA = deepcopy(locals())         #dict of arguments (DA)
+        
+        # if eccentricity, omega, sesinw, secosw are None. set sesinw, secosw=0
+        if Eccentricity == omega == sesinw == secosw == None: 
+            Eccentricity, omega = 0, 90  
+            
+        DA = deepcopy(locals())                       #dict of arguments (DA)
         _ = DA.pop("self")                            #remove self from dictionary
         _ = DA.pop("verbose")
         if Duration==None: _ = DA.pop("Duration")
         if rho_star==None: _ = DA.pop("rho_star")
-            
+        
+        if Eccentricity == None: 
+            assert omega == None, f"planet_parameters(): both Eccentricity and omega must be None or float/tuple but {Eccentricity} and {omega} given."
+            _ = DA.pop("Eccentricity")
+            _ = DA.pop("omega")
+        else:
+            assert sesinw == secosw == None, f"planet_parameters(): sesinw and secosw must be None if Eccentricity and omega are given (and vice versa)."
+
+        if sesinw ==None: assert secosw == None, f"planet_parameters(): both sesinw and secosw must be None or float/tuple but {sesinw} and {secosw} given."
+        if secosw ==None: assert sesinw == None, f"planet_parameters(): both sesinw and secosw must be None or float/tuple but {sesinw} and {secosw} given."
+        if sesinw == None: _ = DA.pop("sesinw")
+        if secosw == None: _ = DA.pop("secosw")
+
+        #sort pars to specific order
+        key_order = [   "rho_star", "Duration", "RpRs", "Impact_para", "T_0", "Period", 
+                        "Eccentricity", "omega", "sesinw", "secosw", "K"]
+        DA = {key:DA[key] for key in key_order if key in DA} 
+        
         self._TR_RV_parnames  = [nm for nm in DA.keys()] 
         self._planet_pars = {}
 
@@ -2333,6 +2450,8 @@ class load_lightcurves:
                         elif par == "RpRs":                     lo_lim, up_lim = -1., 1.
                         elif par == "Impact_para":              lo_lim, up_lim = 0., 2.
                         elif par == "omega":                    lo_lim, up_lim = 0., 360.
+                        elif par == "sesinw":                   lo_lim, up_lim = -1, 1
+                        elif par == "secosw":                   lo_lim, up_lim = -1, 1
 
                     if len(DA[par][n]) in [3,4]:
                         if par in ["rho_star", "Duration", "Impact_para", "Eccentricity", "Period", "K"]:
@@ -2346,40 +2465,42 @@ class load_lightcurves:
         if verbose: _print_output(self,"planet_parameters")
 
         if self._show_guide: print("\nNext: use method transit_depth_variation` to include variation of RpRs for the different filters or \n``phasecurve`` to fit the occultation depth or \n`limb_darkening` for fit or fix LDCs or `contamination_factors` to add contamination.")
-        #TODO allow to choose eccentricity paremeterization of secosw, sesinw. just like rho/duration
 
     def update_planet_parameters(self, RpRs=None, Impact_para=None, rho_star=None, Duration=None, T_0=None, Period=None, 
-                                    Eccentricity=None, omega=None, K=None, verbose=True):
+                                    Eccentricity=None, omega=None, sesinw=None, secosw=None, K=None, verbose=True):
         """
-            Update parameters and priors of model parameters. By default, the parameters are all set to None for no update on them.
-            The parameters to update can be defined in following ways:
-            
-            * fixed value as float or int, e.g Period = 3.4
-            * free parameter with gaussian prior given as tuple of len 2, e.g. T_0 = (5678, 0.1)
-            * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. RpRs = (0,0.1,0.2) with 0.1 being the initial value.
+        Update parameters and priors of model parameters. By default, the parameters are all set to None for no update on them.
+        The parameters to update can be defined in following ways:
+        
+        * fixed value as float or int, e.g Period = 3.4
+        * free parameter with gaussian prior given as tuple of len 2, e.g. T_0 = (5678, 0.1)
+        * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. RpRs = (0,0.1,0.2) with 0.1 being the initial value.
 
-            Parameters:
-            -----------
-            RpRs : float, tuple;
-                Ratio of planet to stellar radius.
-            Impact_para : float, tuple;
-                Impact parameter of the transit.
-            rho_star : float, tuple;
-                density of the star in g/cm^3.
-            Duration : float, tuple;
-                Duration of the transit in days. Default is None.
-            T_0 : float, tuple;
-                Mid-transit time in days.
-            Period : float, tuple;
-                Orbital period of the planet in days.
-            Eccentricity : float, tuple;
-                Eccentricity of the orbit.
-            omega : float, tuple;
-                Argument of periastron.
-            K : float, tuple;
-                Radial velocity semi-amplitude in data unit.
-            verbose : bool;
-                print output. Default is True.
+        Parameters:
+        -----------
+        RpRs : float, tuple;
+            Ratio of planet to stellar radius.
+        Impact_para : float, tuple;
+            Impact parameter of the transit.
+        rho_star : float, tuple;
+            density of the star in g/cm^3.
+        Duration : float, tuple;
+            Duration of the transit in days. Default is None.
+        T_0 : float, tuple;
+            Mid-transit time in days.
+        Period : float, tuple;
+            Orbital period of the planet in days.
+        Eccentricity : float, tuple;
+            Eccentricity of the orbit. Default is None to use sesinw and secosw parameterization.
+        omega : float, tuple;
+            Argument of periastron in degrees. Default is None to use sesinw and secosw parameterization. 
+        sesinw, secosw: float, tuple,
+            √esinw, √ecosw. alternate parameterization of eccentricty and omega. 
+            Default is None which fixes both values to 0, which implies Eccentricity=0, omega=90
+        K : float, tuple;
+            Radial velocity semi-amplitude in data unit.
+        verbose : bool;
+            print output. Default is True.
         """
         
         DA = locals().copy()         #dict of arguments (DA)
@@ -2392,6 +2513,8 @@ class load_lightcurves:
         if "Duration" not in self._planet_pars[f"pl{1}"].keys():
             assert Duration==None, "update_planet_parameters(): cannot update 'Duration' since 'rho_star' selected in .planet_parameters()"
             _ = DA.pop("Duration")
+
+        #TODO ecc omega sesinw secosw updates
 
         rm_par= []
         for par in DA.keys():
@@ -2415,6 +2538,8 @@ class load_lightcurves:
                         elif par == "RpRs":                     lo_lim, up_lim = -1., 1.
                         elif par == "Impact_para":              lo_lim, up_lim = 0., 2.
                         elif par == "omega":                    lo_lim, up_lim = 0., 360.
+                        elif par == "sesinw":                   lo_lim, up_lim = -1, 1
+                        elif par == "secosw":                   lo_lim, up_lim = -1, 1
 
                     if len(DA[par][n]) in [3,4]:
                         if par in ["rho_star", "Duration", "Impact_para", "Eccentricity", "Period", "K"]:
@@ -3264,34 +3389,38 @@ class load_rvs:
 
         _linker.rv_obj = self   # link the RV object to the linker object
 
-    def planet_parameters(self, T_0=0, Period=0, Eccentricity=0, omega=90, K=0, verbose=True):
+    def planet_parameters(self, T_0=0, Period=0, Eccentricity=None, omega=None, sesinw=None, secosw=None, K=0, verbose=True):
         """
-            Define parameters and priors of RV model. By default, the parameters are fixed to the given values. 
-            The parameters can be defined in following ways:
-            
-            * fixed value as float or int, e.g Period = 3.4
-            * free parameter with gaussian prior given as tuple of len 2, e.g. T_0 = (5678, 0.1)
-            * free parameters with uniform prior interval and initial value given as tuple of length 3, e.g. K = (0,10,100) with 10 being the initial value.
+        Define parameters and priors of RV model. By default, the parameters are fixed to the given values. 
+        The parameters can be defined in following ways:
+        
+        * fixed value as float or int, e.g Period = 3.4
+        * gaussian prior given as tuple of len 2, e.g. T_0 = (5678, 0.1)
+        * uniform prior interval given as tuple of length 3, e.g. K = (0,10,100) with 10 being the initial value.
 
-            Parameters:
-            -----------
-            T_0 : float, tuple;
-                Mid-transit (inferior conjunction) time in days. Default is 0.
-            Period : float, tuple;
-                Orbital period of the planet in days. Default is 0.
-            Eccentricity : float, tuple;
-                Eccentricity of the orbit. Default is 0.
-            omega : float, tuple;
-                Argument of periastron om degrees. Default is 90.
-            K : float, tuple;
-                Radial velocity semi-amplitude in same unit as the data. Default is 0.
-            verbose : bool;
-                print output. Default is True.
+        Parameters:
+        -----------
+        T_0 : float, tuple;
+            Mid-transit (inferior conjunction) time in days. Default is 0.
+        Period : float, tuple;
+            Orbital period of the planet in days. Default is 0.
+        Eccentricity : float, tuple;
+            Eccentricity of the orbit. Default is None to use sesinw and secosw parameterization.
+        omega : float, tuple;
+            Argument of periastron in degrees. Default is None to use sesinw and secosw parameterization. 
+        sesinw, secosw: float, tuple,
+            √esinw, √ecosw. alternate parameterization of eccentricty and omega. 
+            Default is None which fixes both values to 0, which implies Eccentricity=0, omega=90
+        K : float, tuple;
+            Radial velocity semi-amplitude in same unit as the data. Default is 0.
+        verbose : bool;
+            print output. Default is True.
         """
         assert self._lcobj is not None, f"planet_parameters(): lightcurve object not defined. Use `lc_obj` argument in `load_rvs()` to define lightcurve object."
-        self._lcobj.planet_parameters(T_0=T_0, Period=Period, Eccentricity=Eccentricity, omega=omega, K=K, verbose=verbose)
+        self._lcobj.planet_parameters(T_0=T_0, Period=Period, Eccentricity=Eccentricity, omega=omega,sesinw=sesinw, secosw=secosw, K=K, verbose=verbose)
 
-    def update_planet_parameters(self, T_0=None, Period=None, Eccentricity=None, omega=None, K=None, verbose=True):
+    def update_planet_parameters(self, T_0=None, Period=None, Eccentricity=None, omega=None, 
+                                    sesinw=None, secosw=None, K=None, verbose=True):
         """
             Update the rv planet parameters defined in the lightcurve object. 
 
@@ -3311,16 +3440,19 @@ class load_rvs:
                 print output. Default is True.
         """
         assert self._lcobj is not None, "update_planet_parameters(): lightcurve object not defined. Use `lc_obj` argument in `load_rvs()` to define lightcurve object."
-        self._lcobj.update_planet_parameters(T_0=T_0, Period=Period, Eccentricity=Eccentricity, omega=omega, K=K, verbose=verbose)
+        self._lcobj.update_planet_parameters(T_0=T_0, Period=Period, Eccentricity=Eccentricity, omega=omega, 
+                                                sesinw=sesinw, secosw=secosw, K=K, verbose=verbose)
 
     def rescale_data_columns(self,method="med_sub", verbose=True):
 
         """
-            Function to rescale the data columns of the RVs. This can be important when decorrelating the data with polynomials.
-            The operation is not performed on columns 0,1,2. It is only performed on columns whose values do not span zero.
-            Function can only be run once on the loaded datasets but can be reset by running `load_rvs()` again. 
+            Function to rescale the data columns of the RVs. This can be important when decorrelating 
+            the data with polynomials. The operation is not performed on columns 0,1,2. It is only 
+            performed on columns whose values do not span zero. Function can only be run once on the 
+            loaded datasets but can be reset by running `load_rvs()` again. 
 
-            The method can be one of ["med_sub", "rs0to1", "rs-1to1","None"] which subtracts the median, rescales to [0,1], rescales to [-1,1], or does nothing, respectively.
+            The method can be one of ["med_sub", "rs0to1", "rs-1to1","None"] which subtracts the 
+            median, rescales to [0,1], rescales to [-1,1], or does nothing, respectively.
         
             Attributes:
             -----------
@@ -3358,8 +3490,8 @@ class load_rvs:
                         else: pass
         self._rescaled_data = SN(flag=True, config=method)
 
-    def get_decorr(self, T_0=None, Period=None, K=None, Eccentricity=0, omega=90, gamma=0,
-                    delta_BIC=-5, decorr_bound =(-1000,1000), exclude_cols=[],enforce_pars=[],
+    def get_decorr(self, T_0=None, Period=None, K=None, Eccentricity=None, omega=None, sesinw=None, secosw=None,
+                    gamma=0, delta_BIC=-5, decorr_bound =(-1000,1000), exclude_cols=[],enforce_pars=[],
                     show_steps=False, plot_model=True, use_jitter_est=False, setup_baseline=True, 
                     setup_planet=False, custom_RVfunc=None, verbose=True ):
         """
@@ -3373,7 +3505,7 @@ class load_rvs:
 
             Parameters:
             -----------
-            T_0, Period, K, Eccentricity, omega : floats, None;
+            T_0, Period, K, Eccentricity/sesinw, omega/secosw : floats, None;
                 RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) 
                 in the data file. if float/int, the values are held fixed. tuple/list of len 2 implies 
                 gaussian prior as (mean,std) while len 3 implies [min,start_val,max]
@@ -3426,8 +3558,15 @@ class load_rvs:
         self._rvmodel = []  #list to hold determined trendmodel for each rv
         gamma_init    = []  #list to update gamma prior for each rv based on the lmfit
 
-        input_pars = dict(T_0=T_0, Period=Period,  Eccentricity=Eccentricity, omega=omega, K=K)
-        self._rv_pars = dict(T_0=T_0, Period=Period, K=K, Eccentricity=Eccentricity, omega=omega, gamma=gamma) #rv parameters
+        if Eccentricity == omega == sesinw == secosw == None: 
+            sesinw, secosw = 0, 0  #set to zero if not given
+        if Eccentricity is not None and omega is not None:
+            om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
+            sesinw, secosw = ecc_om_par(Eccentricity, omega, conv_2_obj=True, return_tuple=True)
+
+
+        input_pars = dict(T_0=T_0, Period=Period, sesinw=sesinw, secosw=secosw, K=K)
+        self._rv_pars = dict(T_0=T_0, Period=Period, K=K, sesinw=sesinw, secosw=secosw, gamma=gamma) #rv parameters
         for p in self._rv_pars:
             if p != "gamma":
                 if isinstance(self._rv_pars[p], (int,float,tuple)): self._rv_pars[p] = [self._rv_pars[p]]*self._nplanet
@@ -3490,7 +3629,7 @@ class load_rvs:
             #calculate determined trend and rv model over all data
             pps = result.params.valuesdict()
             #convert result transit parameters to back to a list
-            for p in ["T_0", "Period", "K", "Eccentricity", "omega"]:
+            for p in ["T_0", "Period", "K", 'sesinw', 'secosw']:
                 if self._nplanet==1:
                     pps[p] = [pps[p]]  
                 else:      
@@ -4022,6 +4161,9 @@ class load_rvs:
         the defined knots interval and fits a spline to each section. scipy's LSQUnivariateSpline() 
         and LSQBivariateSpline() functions are used for 1D spline and 2D splines respectively.
         All arguments can be given as a list to specify config for each rv file in rv_list.
+
+        Note: using spline on a lc sets fit_offset="n" for that lc. users can turn it back on for each lc
+        from the ._fit_offset list attribute. e.g. lc_obj._fit_offset = ["y","y","y"]
 
         Parameters:
         -----------

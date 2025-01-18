@@ -1,4 +1,5 @@
 import numpy as np
+from types import SimpleNamespace, FunctionType
 
 default_LCpars_dict = dict( Duration     = 0.1,
                             rho_star     = None,
@@ -101,73 +102,84 @@ def _print_output(self, section: str, file=None):
 
     if section == "gp":
         DA = self._GP_dict
+        max_namefilt_len = max([len(n) for n in self._names+self._filters]+[9])      #max length of lcname/filtname
         _print_gp = f"""# ============ Photometry GP properties ==========================================================================="""
-        _print_gp += f"""\n{spacing}{"name":{max_name_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1_ppm':18s} {'length_scale':17s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2_ppm':18s} {'length_scale2':17s}"""
+        _print_gp += f"""\n{spacing}{"name/filt":{max_namefilt_len}s} {'par1':4s} {"kern1":5s} {'Amplitude1_ppm':18s} {'length_scale':17s} |{'op':2s}| {'par2':4s} {"kern2":5s} {'Amplitude2_ppm':18s} {'length_scale2':17s}"""
         if DA != {}: 
             #define gp print out format
-            txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:17s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:17s} "        
+            txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:4s} {2:5s} {3:18s} {4:17s} |{5:2s}| {6:4s} {7:5s} {8:18s} {9:17s} "        
+            if self._sameLCgp.filtflag:
+                for f in self._sameLCgp.filters:
+                    lc = self._sameLCgp.LCs[f][0]
 
-            for lc in DA.keys():
-                ngp = DA[lc]["ngp"]
-                if ngp == 2:
-                    t = txtfmt.format('same' if self._sameLCgp.flag else lc,
-                                        DA[lc]["amplitude0"].user_data.col, DA[lc]["amplitude0"].user_data.kernel,  
-                                        DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str, DA[lc]["op"], 
-                                        DA[lc]["amplitude1"].user_data.col, DA[lc]["amplitude1"].user_data.kernel,
-                                        DA[lc]["amplitude1"].prior_str, DA[lc]["lengthscale1"].prior_str)
+                    ngp = DA[lc]["ngp"]
+                    if ngp == 2:
+                        t = txtfmt.format(f, 
+                                            DA[lc]["amplitude0"].user_data.col, DA[lc]["amplitude0"].user_data.kernel,  
+                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str, DA[lc]["op"], 
+                                            DA[lc]["amplitude1"].user_data.col, DA[lc]["amplitude1"].user_data.kernel,
+                                            DA[lc]["amplitude1"].prior_str, DA[lc]["lengthscale1"].prior_str)
+                    else:
+                        t = txtfmt.format(f, 
+                                            DA[lc]["amplitude0"].user_data.col, DA[lc]["amplitude0"].user_data.kernel,  
+                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str, 
+                                            "--", "None", "None", "None", "None")
+                    _print_gp += t
+
+            else:
+                if self._allLCgp:  #shortcut print just one line gp config if all LCs have the same GP
+                    equal_allgp = all([_compare_nested_structures(DA[list(DA.keys())[0]],DA[lc]) for lc in list(DA.keys())[1:]])
                 else:
-                    t = txtfmt.format('same' if self._sameLCgp.flag else lc,DA[lc]["amplitude0"].user_data.col, 
-                                        DA[lc]["amplitude0"].user_data.kernel,  DA[lc]["amplitude0"].prior_str, 
-                                        DA[lc]["lengthscale0"].prior_str, "--", "None", "None", "None", "None")
-                _print_gp += t
-                if self._sameLCgp.flag:      #dont print the other lc GPs if same_GP is True
-                    break
+                    equal_allgp = False
+                for lc in DA.keys():
+                    ngp = DA[lc]["ngp"]
+                    if ngp == 2:
+                        t = txtfmt.format('same' if self._sameLCgp.flag else "all" if equal_allgp else lc, 
+                                            DA[lc]["amplitude0"].user_data.col, DA[lc]["amplitude0"].user_data.kernel,  
+                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str, DA[lc]["op"], 
+                                            DA[lc]["amplitude1"].user_data.col, DA[lc]["amplitude1"].user_data.kernel,
+                                            DA[lc]["amplitude1"].prior_str, DA[lc]["lengthscale1"].prior_str)
+                    else:
+                        t = txtfmt.format('same' if self._sameLCgp.flag else "all" if equal_allgp else lc, 
+                                            DA[lc]["amplitude0"].user_data.col, DA[lc]["amplitude0"].user_data.kernel,  
+                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str, 
+                                            "--", "None", "None", "None", "None")
+                    _print_gp += t
+                    if self._sameLCgp.flag or equal_allgp:      #dont print the other lc GPs if same_GP is True
+                        break
         print(_print_gp, file=file)
 
     if section == "planet_parameters":
         DA = self._planet_pars
         notes = dict(RpRs="#range[-0.5,0.5]",Impact_para="#range[0,2]",K="#unit(same as RVdata)",T_0="#unit(days)",Period="#range[0,inf]days",
-                        Eccentricity="#range[0,1]",omega="#range[0,360]deg")
+                        Eccentricity="#choice in []|range[0,1]/range[-1,1]",omega="#choice in []|range[0,360]deg/range[-1,1]",
+                        sesinw="#choice in []|range[0,1]/range[-1,1]",secosw="#choice in []|range[0,360]deg/range[-1,1]")
         _print_planet_parameters = f"""# ============ Planet parameters (Transit and RV) setup ========================================================== """+\
-                                    f"""\n{spacing}{'name':20s}\t{'fit':3s} \t{'prior':35s}\tnote"""
+                                    f"""\n{spacing}{'name':25s}  {'fit':3s} \t{'prior':35s}\tnote"""
         #define print out format
-        txtfmt = f"\n{spacing}"+"{0:20s}\t{1:3s} \t{2:35s}\t{3}"
+        txtfmt = f"\n{spacing}"+"{0:25s}  {1:3s} \t{2:35s}\t{3}"
         #print line for stellar density or duration
         p    = "rho_star" if "rho_star" in DA[f'pl{1}'].keys() else "Duration"
         popt = "[rho_star]/Duration" if "rho_star" in DA[f'pl{1}'].keys() else "rho_star/[Duration]"
         _print_planet_parameters +=  txtfmt.format( popt, DA[f'pl{1}'][p].to_fit, DA[f'pl{1}'][p].prior_str, "#choice in []|unit(gcm^-3/days)")
         _print_planet_parameters +=  f"\n{spacing}--------repeat this line & params below for multisystem, adding '_planet_number' to the names e.g RpRs_1 for planet 1, ..."
         #then cycle through parameters for each planet       
-        for n in range(1,self._nplanet+1):           
+        for n in range(1,self._nplanet+1):   
+            lbl = f"_{n}" if self._nplanet>1 else ""
+            ecc_w_opt = {}  
+            ecc_w_opt["Eccentricity"] = ecc_w_opt["sesinw"] = f"Eccentricity{lbl}/[sesinw{lbl}]" if "sesinw" in DA[f'pl{1}'].keys() else f"[Eccentricity{lbl}]/sesinw{lbl}"
+            ecc_w_opt["omega"]        = ecc_w_opt["secosw"] = f"omega{lbl}/[secosw{lbl}]" if "secosw" in DA[f'pl{1}'].keys() else f"[omega{lbl}]/secosw{lbl}"
+
             for i,p in enumerate(self._TR_RV_parnames):
-                if p not in ["rho_star","Duration"]:
-                    t = txtfmt.format(  p+(f"_{n}" if self._nplanet>1 else ""), DA[f'pl{n}'][p].to_fit, DA[f'pl{n}'][p].prior_str, notes[p])
-                    _print_planet_parameters += t
+                if p in ["rho_star","Duration"]: 
+                    continue
+                elif p in ["Eccentricity","omega","sesinw","secosw"]:
+                    t = txtfmt.format( ecc_w_opt[p], DA[f'pl{n}'][p].to_fit, DA[f'pl{n}'][p].prior_str, notes[p])
+                else:
+                    t = txtfmt.format(  p+lbl, DA[f'pl{n}'][p].to_fit, DA[f'pl{n}'][p].prior_str, notes[p])
+                _print_planet_parameters += t
             if n!=self._nplanet: _print_planet_parameters += f"\n{spacing}------------"
         print(_print_planet_parameters, file=file)
-
-
-    # if section == "planet_parameters":
-    #     DA = self._planet_pars
-    #     notes = dict(RpRs="#range[-0.5,0.5]",Impact_para="#range[0,2]",K="#unit(same as RVdata)",T_0="#unit(days)",Period="#range[0,inf]days",
-    #                     Eccentricity="#range[0,1]",omega="#range[0,360]deg")
-    #     _print_planet_parameters = f"""# ============ Planet parameters (Transit and RV) setup ========================================================== """+\
-    #                                 f"""\n{spacing}{'name':20s} {'description':32s} {'prior'}"""
-    #     #define print out format
-    #     txtfmt = f"\n{spacing}"+"{0:20s} {1:32s} {2}"
-    #     #print line for stellar density or duration
-    #     p    = "rho_star" if "rho_star" in DA[f'pl{1}'].keys() else "Duration"
-    #     popt = "[rho_star]/Duration" if "rho_star" in DA[f'pl{1}'].keys() else "rho_star/[Duration]"
-    #     _print_planet_parameters +=  txtfmt.format( popt, "#choice in []|unit(gcm^-3/days)", DA[f'pl{1}'][p].prior_str)
-    #     #then cycle through parameters for each planet
-    #     for i,p in enumerate(self._TR_RV_parnames):
-    #         if p not in ["rho_star","Duration"]:
-    #             if self._nplanet>1:
-    #                 t = txtfmt.format(  p, notes[p], str([DA[f'pl{n}'][p].prior_str for n in range(1,self._nplanet+1)]).replace(" ","").replace("'",""))
-    #             else:
-    #                 t = txtfmt.format(  p, notes[p], DA[f'pl{1}'][p].prior_str)
-    #             _print_planet_parameters += t
-    #     print(_print_planet_parameters, file=file)
 
     if section == "custom_LCfunction":
         DA = self._custom_LCfunc
@@ -501,3 +513,52 @@ class _text_format:
     END = '\033[0m'
 
 
+
+def _compare_nested_structures(obj1, obj2, verbose=False):
+    """  
+    Compare two nested structures (e.g. dictionaries, lists, etc.) for equality.
+    """
+    
+    if isinstance(obj1, dict) and isinstance(obj2, dict):
+        if obj1.keys() != obj2.keys():
+            if verbose: print(f"keys differ in {set(obj1) - set(obj2)}")
+            return False
+        return all(_compare_nested_structures(obj1[key], obj2[key]) for key in obj1)
+    
+    elif isinstance(obj1, list) and isinstance(obj2, list):
+        if len(obj1) != len(obj2):
+            return False
+        return all([_compare_nested_structures(item1, item2) for item1, item2 in zip(obj1, obj2)])
+    
+    elif isinstance(obj1, np.ndarray) and isinstance(obj2, np.ndarray):
+        return np.array_equal(obj1, obj2)
+    
+    elif isinstance(obj1, SimpleNamespace) and isinstance(obj2, SimpleNamespace):
+        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1)])
+    
+
+    elif isinstance(obj1, FunctionType) and isinstance(obj2, FunctionType):
+        return (obj1.__code__.co_code == obj2.__code__.co_code and
+                obj1.__code__.co_consts == obj2.__code__.co_consts and
+                obj1.__code__.co_names == obj2.__code__.co_names and
+                obj1.__code__.co_varnames == obj2.__code__.co_varnames)
+
+    elif ("CONAN" in str(type(obj1))) and ("CONAN" in str(type(obj1))):
+        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1)])
+    
+    else:
+        return obj1 == obj2
+
+
+def compare_objs(obj1,obj2):
+    """   
+    compare two objects for equality
+    """
+    res = _compare_nested_structures(obj1,obj2)
+    if res:
+        return True
+    else: 
+        for k,v in obj1.__dict__.items():
+            res = _compare_nested_structures(obj1.__dict__[k], obj2.__dict__[k])
+            if not res: print(f"{k:25s}: {res}")
+        return False

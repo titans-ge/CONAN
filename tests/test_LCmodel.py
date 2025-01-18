@@ -133,6 +133,7 @@ def test_duration(show_plot=False):
     show plot shows diagnostics comparing true anomaly and Rsky to those from batman and also,
     checking the accuracy of eccentric anomaly calculation. 
     """
+    npl      = 1
     equiv    = []
     niter    = 4
     ecc_dist = [0,0.2,0.4,0.6,0.7]#np.append(0,np.random.uniform(0.,0.8, niter))

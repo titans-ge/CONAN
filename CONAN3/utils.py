@@ -794,17 +794,14 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
 
         if isinstance(omega, (int,float)):
             omega = SimpleNamespace(to_fit="n",start_value=omega, step_size=0, prior="n", prior_mean=omega,
-                                        prior_width_lo=0, prior_width_hi=0, bounds_lo=0, bounds_hi=360)
+                                        prior_width_lo=0, prior_width_hi=0, bounds_lo=0, bounds_hi=2*np.pi)
         if isinstance(omega, tuple):
             if len(omega)==2:
                 omega = SimpleNamespace(to_fit="y",start_value=omega[0], step_size=0.1*omega[1], prior="p", prior_mean=omega[0],
-                                        prior_width_lo=omega[1], prior_width_hi=omega[1], bounds_lo=0, bounds_hi=360)
+                                        prior_width_lo=omega[1], prior_width_hi=omega[1], bounds_lo=0, bounds_hi=2*np.pi)
             elif len(omega)==3:
                 omega = SimpleNamespace(to_fit="y",start_value=omega[1], step_size=0.01, prior="n", prior_mean=omega[1],
                                         prior_width_lo=0, prior_width_hi=0, bounds_lo=omega[0], bounds_hi=omega[2])
-        for key,val in omega.__dict__.items():   #convert to radians
-            if isinstance(val, (float,int)): omega.__dict__[key] *= np.pi/180
-            
 
     sesinw=np.sqrt(ecc.start_value)*np.sin(omega.start_value)     # starting value
     secosw=np.sqrt(ecc.start_value)*np.cos(omega.start_value)     # starting value

@@ -411,7 +411,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                         if verbose: print(f"Writing LC output to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
             
-            elif useGPphot[j] in ['ge','ce','sp'] and sameLCgp.flag==False: 
+            elif useGPphot[j] in ['ge','ce','sp'] and sameLCgp.flag==False and sameLCgp.filtflag==False: 
                 thisLCdata = input_lcs[LCnames[j]]
 
                 gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
@@ -486,7 +486,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
 
         if sameLCgp.flag==True: #if using the same GP for multiple LCs
             gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
-            gpcol    = gp_colnames[0]
+            gpcol    = gp_colnames[sameLCgp.first_index]
             if isinstance(gpcol, str):
                 pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs])   #join column data for all datasets with useGPphot !="n"
             else:
@@ -497,7 +497,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
 
             
             all_lc_gpind  = GPindex == sameLCgp.first_index          
-            all_lc_gppars = gppars[all_lc_gpind] #the gp params 
+            all_lc_gppars = gppars[all_lc_gpind] #the gp params for the lcs in sameLCgp 
 
             #need conversion of gp pars before setting them
             gp_conv       = gp_params_convert()
@@ -508,7 +508,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 gp  = GPobjects[sameLCgp.first_index]
                 gp.set_parameter_vector(all_lc_gppars)
                 gp.compute(pargp[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp])
-            else:
+            else: #spleaf
                 gp = cov.Cov(t=pargp[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp]),
                                 **GPobjects[sameLCgp.first_index])
                 gp.set_param(all_lc_gppars)
@@ -533,7 +533,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                     if useGPphot[j] in ['ge','ce']:
                         base_gp_all[j]  = gp.predict((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], 
                                                         t=thispargp[thissrt_gp], return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
-                    else:
+                    else: #spleaf
                         base_gp_all[j]  = gp.conditional((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], 
                                                             thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
                     
@@ -563,6 +563,87 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                         outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
                         if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
+
+        if sameLCgp.filtflag == True: #if using the same GP for each filter
+            gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+            for filt in filnames:
+                gpcol    = gp_colnames[sameLCgp.first_index[filt]]
+                if isinstance(gpcol, str):
+                    pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs[filt]])   #join column data for all datasets of this filter with useGPphot !="n"
+                else:
+                    pargp = np.vstack(np.concatenate([input_lcs[nm][gpcol[0]] for nm in sameLCgp.LCs[filt]]), np.concatenate([input_lcs[nm][gpcol[1]] for nm in sameLCgp.LCs[filt]])).T
+                
+                srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
+                unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
+
+                
+                all_lc_gpind  = GPindex == sameLCgp.first_index[filt]          
+                all_lc_gppars = gppars[all_lc_gpind] #the gp params 
+
+                #need conversion of gp pars before setting them
+                gp_conv       = gp_params_convert()
+                kernels       = [f"{useGPphot[sameLCgp.first_index[filt]]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index[filt] ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
+                all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
+                
+                if useGPphot[sameLCgp.first_index[filt]] in ['ge','ce']:
+                    gp  = GPobjects[sameLCgp.first_index[filt]]
+                    gp.set_parameter_vector(all_lc_gppars)
+                    gp.compute(pargp[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp])
+                else: #spleaf
+                    gp = cov.Cov(t=pargp[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp]),
+                                    **GPobjects[sameLCgp.first_index[filt]])
+                    gp.set_param(all_lc_gppars)
+
+
+                if inmcmc == 'y':
+                    if useGPphot[sameLCgp.first_index[filt]] in ['ge','ce']: 
+                        lnprob_filtLC = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp], quiet=True)
+                    else:
+                        lnprob_filtLC = gp.log_like((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp])
+                    
+                    lnprob  = lnprob + lnprob_filtLC
+
+                # if not in MCMC, get a prediction and append it to the output array
+                if inmcmc == 'n':      
+                    for j in sameLCgp.indices[filt]: #loop over the LCs in this filter
+                        thispargp    = input_lcs[LCnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_lcs[LCnames[j]][gpcol][0],input_lcs[LCnames[j]][gpcol][1])).T
+                        thissrt_gp   = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
+                        thisunsrt_gp = np.argsort(thissrt_gp)  #indices to unsort the gp axis
+                        which_GP     = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
+                        
+                        if useGPphot[j] in ['ge','ce']:
+                            base_gp_all[j]  = gp.predict((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp], 
+                                                            t=thispargp[thissrt_gp], return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
+                        else:
+                            base_gp_all[j]  = gp.conditional((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp], 
+                                                                thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+                        
+                        full_mod_all[j] = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [gp + transit*baseline(para*spl)]
+                        mod             = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
+                        emod            = np.concatenate((emod,err_all[j])) #error array including jitter
+
+                        # base_total = base_total/(1-base_gp/f_in)    #base_total + base_gp         #update base_total with base_gp
+                        det_flux_all[j]   = (flux_all[j] - base_gp_all[j])/( (base_para_all[j]+base_sine_all[j])*base_spl_all[j])
+                        base_total_all[j] = flux_all[j]/det_flux_all[j]
+                        residual_all[j]   = flux_all[j] - full_mod_all[j]
+                        
+                        # write the lightcurve and the model to file or return output if we're not inside the MCMC
+                        out_data     = np.stack((time_all[j],flux_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_sine_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],transit_all[j],det_flux_all[j],residual_all[j]),axis=1)
+                        header       = ["time","flux","error","full_mod","base_para","base_sine","base_spl","base_gp","base_total","transit","det_flux","residual"]
+                        header_fmt   = "{:<16s} "*len(header)
+                        phases       = np.zeros((len(time_all[j]),npl))
+
+                        for n in range(npl):
+                            phases[:,n] = np.modf(np.modf( (time_all[j]-T0in[n])/perin[n])[0]+1)[0]
+                            if transit_all[j][np.argmin(phases[:,n])] < 1: phases[:,n][phases[:,n]>0.5] = phases[:,n][phases[:,n]>0.5]-1
+                            header_fmt += "{:<16s} "
+                            header     += [f"phase_{n+1}"] if npl>1 else ["phase"]
+
+                        out_data = np.hstack((out_data,phases))
+                        if make_outfile:
+                            outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
+                            if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
+                            np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
 
     # now do the RVs and add their probabilities to the model
     time_all, RV_all, err_all, full_mod_all, base_para_all, base_spl_all, base_gp_all, base_total_all, rvmod_all, det_rv_all, gamma_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
@@ -803,7 +884,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
         
         if sameRVgp.flag==True: 
             rv_gppars  = params_all[len(params)+len(GPparams):]   #all rv gp parameters
-            gpcol      = rv_gp_colnames[0] 
+            gpcol      = rv_gp_colnames[sameRVgp.first_index] 
             if isinstance(gpcol,str):
                 rvpargp = np.concatenate([input_rvs[nm][gpcol] for nm in sameRVgp.RVs])   #join column data for all datasets
             else:
@@ -832,7 +913,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
 
 
             if inmcmc == 'y':
-                if useGPrv[j] in ['ge','ce']:
+                if useGPrv[sameRVgp.first_index] in ['ge','ce']:
                     lnprob_allRV = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], quiet=True)
                 else:
                     lnprob_allRV = gp.log_like((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp])

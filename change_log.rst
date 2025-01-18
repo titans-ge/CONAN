@@ -1,3 +1,8 @@
+18-Jan-2025: version 3.3.1
+~~~~~~~~~~~~~
+* changed pause statement in occultquad.f to print warning so as not to pause program execution
+* added sesinw-secosw parameterization for planet model
+* added filter dependent GP fit
 6-Dec-2024: version 3.3
 ~~~~~~~~~~~~~
 * conversion functions (e.g., rho_to_aR) can take uncertainties.ufloat objects as input

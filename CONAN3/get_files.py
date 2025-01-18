@@ -972,14 +972,14 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         for p in ["ecc","w"]:
             par = params["planet"][p]
             for i in [0,1]:
-                ecc_w[p]= (np.where(np.isfinite(par[1]), par[1], 0).item(), np.where(np.isfinite(par[1]), par[1], 0).item())
+                ecc_w[p]= (np.where(np.isfinite(par[0]), par[0], 0).item(), np.where(np.isfinite(par[1]), par[1], 0).item())
 
-        tdur = rho_to_tdur(rho = ufloat(params["star"]["density"]), b= ufloat(params["planet"]["b"]),
-                            Rp = ufloat(params["planet"]["rprs"]), P = ufloat(params["planet"]["period"]), 
-                            e = ufloat(ecc_w["ecc"]), w = ufloat(ecc_w["w"]))
-        print(f"{'rho_star to Tdur:'} {tdur:.6f}\n{'T14:':17s} {ufloat(params['planet']['T14']):.6f}")
+        tdur = rho_to_tdur(rho = ufloat(*params["star"]["density"]), b= ufloat(*params["planet"]["b"]),
+                            Rp = ufloat(*params["planet"]["rprs"]), P = ufloat(*params["planet"]["period"]), 
+                            e = ufloat(*ecc_w["ecc"]), w = ufloat(*ecc_w["w"]))
+        print(f"{'rho_star to Tdur:'} {tdur:.6f}\n{'T14:':17s} {ufloat(*params['planet']['T14']):.6f}")
 
-        diff = tdur - ufloat(params["planet"]["T14"])
+        diff = tdur - ufloat(*params["planet"]["T14"])
         if diff.n/diff.s <=1:   print("rho_star conversion to Tdur is consistent with literature T14 within 1 sigma") 
         elif diff.n/diff.s <=3: print("rho_star conversion to Tdur is consistent with literature T14 within 3 sigma")
         else:                   print("rho_star conversion to Tdur is not consistent with literature T14 within 3 sigma, rho_star may be incorrect")

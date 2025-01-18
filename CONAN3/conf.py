@@ -1,9 +1,8 @@
 from ._classes import load_lightcurves, load_rvs, fit_setup,_print_output
-from types import SimpleNamespace, FunctionType
 from copy import deepcopy
-from .utils import ecc_om_par
 import numpy as np 
 from .VERSION import __version__
+from .misc import _compare_nested_structures
 import inspect, os, sys
 
 def new_getfile(object, _old_getfile=inspect.getfile):
@@ -412,8 +411,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
                         knot_spacing=_spl_knot , verbose=False)
     if verbose: lc_obj.print("lc_baseline")
-    if gp_lclist !=[]: gp_lclist = gp_lclist[0] if gp_lclist[0] in ['same','all'] else gp_lclist
-    gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in gp_lclist]
+    if gp_lclist !=[]: 
+        gp_lclist = gp_lclist[0] if gp_lclist[0] in ['same','all'] else gp_lclist
+    gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in lc_obj._gp_lcs()]
     lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
                     amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
     lc_obj._fit_offset = _offset
@@ -505,8 +505,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     rv_obj.add_spline(rv_list=_spl_rvlist ,par=_spl_par, degree=_spl_deg,
                         knot_spacing=_spl_knot, verbose=False)
     if verbose: rv_obj.print("rv_baseline")
-    if gp_rvlist !=[]: gp_rvlist = gp_rvlist[0] if gp_rvlist[0]=='same' else gp_rvlist
-    gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in gp_rvlist]
+    if gp_rvlist !=[]: 
+        gp_rvlist = gp_rvlist[0] if gp_rvlist[0]=='same' else gp_rvlist
+    gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in rv_obj._gp_rvs()]
     rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
                     amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
     
@@ -516,45 +517,27 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     dump    = _file.readline()
     _adump  = dump.split()
     pl_pars = {}
-    rho_dur = _adump[0]
+    rho_dur = _adump[0]    # rho_star/[Duration]
     #select string in rho_dur with []
     rho_dur = rho_dur[rho_dur.find("[")+1:rho_dur.find("]")]
-
-    # pl_pars[rho_dur] = _prior_value(_adump[-1])
-    # par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
-    # sesinw, secosw = [],[]
-    # for p in par_names: 
-    #     pl_pars[p] = []
-    #     dump       =_file.readline()
-    #     _adump     = dump.split()
-    #     str_pars   = _adump[-1].strip("[]").split("),")
-    #     str_pars   = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
-        
-    #     for n in range(1,nplanet+1):        #load parameters for each planet
-    #         pl_pars[p].append(_prior_value(str_pars[n-1]))
-
-    # for n in range(1,nplanet+1):        #load sesinw and secosw for each planet
-    #     omega_rad = tuple(np.radians(pl_pars["omega"][n-1])) if isinstance(pl_pars["omega"][n-1],tuple) else np.radians(pl_pars["omega"][n-1])
-    #     sesinw_, secosw_ = ecc_om_par(pl_pars["Eccentricity"][n-1],omega_rad,conv_2_obj=True,return_tuple=True)
-    #     sesinw.append(sesinw_)
-    #     secosw.append(secosw_)
-
     pl_pars[rho_dur] = _prior_value(_adump[2])
     par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
-    for p in par_names: pl_pars[p] = []
-    sesinw, secosw = [],[]
         
     for n in range(1,nplanet+1):        #load parameters for each planet
+        lbl = f"_{n}" if nplanet>1 else ""
         _skip_lines(_file,1)          #remove dashes
-        for i in range(7):
+        for pn in par_names:
             dump =_file.readline()
             _adump = dump.split()
-            pl_pars[par_names[i]].append(_prior_value(_adump[2]))
-        omega_rad = tuple(np.radians(pl_pars["omega"][-1])) if isinstance(pl_pars["omega"][-1],tuple) else np.radians(pl_pars["omega"][-1])
-        sesinw_, secosw_ = ecc_om_par(pl_pars["Eccentricity"][-1],omega_rad,
-                                conv_2_obj=True,return_tuple=True)
-        sesinw.append(sesinw_)
-        secosw.append(secosw_)
+            if pn in [ "Eccentricity"+lbl,"omega"+lbl]:
+                ecc_par = _adump[0]   # "[Eccentricity]/sesinw" or "[omega]/secosw"
+                if ecc_par == pn: ecc_par = '['+pn+']'   #backwards compatibility 
+                ecc_par = ecc_par[ecc_par.find("[")+1:ecc_par.find("]")]   #select option in []
+                if n==1: pl_pars[ecc_par] = []
+                pl_pars[ecc_par].append(_prior_value(_adump[2]))
+            else:
+                if n==1: pl_pars[pn] = []
+                pl_pars[pn].append(_prior_value(_adump[2]))
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
     ## limb darkening
@@ -805,9 +788,6 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         rvbaselim = [baselo, basehi]
 
     ltt     = _file.readline().split()[1]
-    # fit_off = _file.readline().split()[1:]  # get all inputs for this label
-    # fit_off = " ".join(fit_off).replace("[","").replace("]","").replace(" ","").replace("'","").replace("\"","").split(",")
-
     fit_obj = fit_setup(R_st = st_rad, M_st = st_mass, par_input=par_in,
                         apply_LCjitter=lcjitt, apply_RVjitter=rvjitt,
                         leastsq_for_basepar=lsq_base, 
@@ -830,54 +810,3 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     return lc_obj,rv_obj,fit_obj
 
-
-
-
-def _compare_nested_structures(obj1, obj2, verbose=False):
-    """  
-    Compare two nested structures (e.g. dictionaries, lists, etc.) for equality.
-    """
-    
-    if isinstance(obj1, dict) and isinstance(obj2, dict):
-        if obj1.keys() != obj2.keys():
-            if verbose: print(f"keys differ in {set(obj1) - set(obj2)}")
-            return False
-        return all(_compare_nested_structures(obj1[key], obj2[key]) for key in obj1)
-    
-    elif isinstance(obj1, list) and isinstance(obj2, list):
-        if len(obj1) != len(obj2):
-            return False
-        return all([_compare_nested_structures(item1, item2) for item1, item2 in zip(obj1, obj2)])
-    
-    elif isinstance(obj1, np.ndarray) and isinstance(obj2, np.ndarray):
-        return np.array_equal(obj1, obj2)
-    
-    elif isinstance(obj1, SimpleNamespace) and isinstance(obj2, SimpleNamespace):
-        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1)])
-    
-
-    elif isinstance(obj1, FunctionType) and isinstance(obj2, FunctionType):
-        return (obj1.__code__.co_code == obj2.__code__.co_code and
-                obj1.__code__.co_consts == obj2.__code__.co_consts and
-                obj1.__code__.co_names == obj2.__code__.co_names and
-                obj1.__code__.co_varnames == obj2.__code__.co_varnames)
-
-    elif ("CONAN" in str(type(obj1))) and ("CONAN" in str(type(obj1))):
-        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1)])
-    
-    else:
-        return obj1 == obj2
-
-
-def compare_objs(obj1,obj2):
-    """   
-    compare two objects for equality
-    """
-    res = _compare_nested_structures(obj1,obj2)
-    if res:
-        return True
-    else: 
-        for k,v in obj1.__dict__.items():
-            res = _compare_nested_structures(obj1.__dict__[k], obj2.__dict__[k])
-            if not res: print(f"{k:25s}: {res}")
-        return False

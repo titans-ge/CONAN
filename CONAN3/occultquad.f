@@ -161,8 +161,9 @@ C Equation 25:
      *THIRD=1.d0/3.d0,C1=.3d0,C2=1.d0/7.d0,C3=.375d0,C4=9.d0/22.d0)
       REAL*8 alamb,ave,s,w,xt,yt
       if(x.lt.0..or.y.eq.0..or.(x+abs(y)).lt.TINY.or.(x+
-     *abs(y)).gt.BIG.or.(y.lt.-COMP1.and.x.gt.0..and.x.lt.COMP2))pause 
-     *'invalid arguments in rc'
+     *abs(y)).gt.BIG.or.(y.lt.-COMP1.and.x.gt.0..and.x.lt.COMP2)) then
+        print *, 'Warning: invalid arguments in rc'
+      endif
       if(y.gt.0.d0)then
         xt=x
         yt=y
@@ -193,7 +194,9 @@ CU    USES rc,rf
       REAL*8 a,alamb,alpha,ave,b,beta,delp,delx,dely,delz,ea,eb,ec,ed,ee,
      *fac,pt,rcx,rho,sqrtx,sqrty,sqrtz,sum,tau,xt,yt,zt,rc,rf
       if(min(x,y,z).lt.0..or.min(x+y,x+z,y+z,abs(p)).lt.TINY.or.max(x,y,
-     *z,abs(p)).gt.BIG)pause 'invalid arguments in rj'
+     *z,abs(p)).gt.BIG) then
+        print *, 'Warning: invalid arguments in rj'
+      endif
       sum=0.d0
       fac=1.d0
       if(p.gt.0.d0)then
@@ -292,7 +295,9 @@ C integral of the first kind (Hasting's approximation):
      *C1=1.d0/24.d0,C2=.1d0,C3=3.d0/44.d0,C4=1.d0/14.d0)
       REAL*8 alamb,ave,delx,dely,delz,e2,e3,sqrtx,sqrty,sqrtz,xt,yt,zt
       if(min(x,y,z).lt.0.d0.or.min(x+y,x+z,y+z).lt.TINY.or.max(x,y,
-     *z).gt.BIG)pause 'invalid arguments in rf'
+     *z).gt.BIG) then 
+        print *, 'Warning: invalid arguments in rf'
+      endif
       xt=x
       yt=y
       zt=z

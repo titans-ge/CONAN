@@ -255,31 +255,44 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (CP[f"pl{n}"]['Period'].to_fit == 'n' and CP[f"pl{n}"]['Period'].prior == 'p'):
             extinpars.append('Period')
 
-        # #ecc
-        if CP[f"pl{n}"]['Eccentricity'].step_size != 0.: njumpRV=njumpRV+1
-        if (CP[f"pl{n}"]['Eccentricity'].to_fit == 'n' and CP[f"pl{n}"]['Eccentricity'].prior == 'p'):
-            _raise(ValueError, 'cant externally input eccentricity at this time!')
-
-        # #omega
-        for key,val in CP[f"pl{n}"]["omega"].__dict__.items():   #convert to radians
-            if isinstance(val, (float,int)): CP[f"pl{n}"]["omega"].__dict__[key] *= np.pi/180
-        if CP[f"pl{n}"]['omega'].step_size != 0.: njumpRV=njumpRV+1
-        if (CP[f"pl{n}"]['omega'].to_fit == 'n' and CP[f"pl{n}"]['omega'].prior == 'p'):
-            _raise(ValueError, 'cant externally input eccentricity at this time!')
-            
         # #K 
         if CP[f"pl{n}"]['K'].step_size != 0.: njumpRV=njumpRV+1
         if (CP[f"pl{n}"]['K'].to_fit == 'n' and CP[f"pl{n}"]['K'].prior == 'p'):
             extinpars.append('K')
 
-        # adapt the eccentricity and omega jump parameters sqrt(e)*sin(o), sqrt(e)*cos(o)
-        if ((CP[f"pl{n}"]['Eccentricity'].prior == 'y' and CP[f"pl{n}"]['omega'].prior == 'n') or (CP[f"pl{n}"]['Eccentricity'].prior == 'n' and CP[f"pl{n}"]['omega'].prior == 'y')):
-            _raise(ValueError,'priors on eccentricity and omega: either both on or both off')
-            
-        CP[f"pl{n}"]["sesin(w)"], CP[f"pl{n}"]["secos(w)"] = ecc_om_par(CP[f"pl{n}"]["Eccentricity"], CP[f"pl{n}"]["omega"])
+        # #ecc
+        if "Eccentricity" in CP[f"pl{n}"].keys():
+            if CP[f"pl{n}"]['Eccentricity'].step_size != 0.: njumpRV=njumpRV+1
+            if (CP[f"pl{n}"]['Eccentricity'].to_fit == 'n' and CP[f"pl{n}"]['Eccentricity'].prior == 'p'):
+                _raise(ValueError, 'cant externally input eccentricity at this time!')
 
-        #now remove rho_star, Eccentricty and omega from the dictionary 
-        _ = [CP[f"pl{n}"].pop(key) for key in ["rho_star" if "rho_star" in CP[f"pl{n}"] else "Duration","Eccentricity", "omega"]]
+            # #omega
+            for key,val in CP[f"pl{n}"]["omega"].__dict__.items():   #convert to radians
+                if isinstance(val, (float,int)): CP[f"pl{n}"]["omega"].__dict__[key] *= np.pi/180
+            if CP[f"pl{n}"]['omega'].step_size != 0.: njumpRV=njumpRV+1
+            if (CP[f"pl{n}"]['omega'].to_fit == 'n' and CP[f"pl{n}"]['omega'].prior == 'p'):
+                _raise(ValueError, 'cant externally input eccentricity at this time!')
+        
+            # adapt the eccentricity and omega jump parameters sqrt(e)*sin(o), sqrt(e)*cos(o)
+            if ((CP[f"pl{n}"]['Eccentricity'].prior == 'y' and CP[f"pl{n}"]['omega'].prior == 'n') or (CP[f"pl{n}"]['Eccentricity'].prior == 'n' and CP[f"pl{n}"]['omega'].prior == 'y')):
+                _raise(ValueError,'priors on eccentricity and omega: either both on or both off')
+                
+            CP[f"pl{n}"]["sesin(w)"], CP[f"pl{n}"]["secos(w)"] = ecc_om_par(CP[f"pl{n}"]["Eccentricity"], CP[f"pl{n}"]["omega"])
+
+            #now remove Eccentricty and omega from the dictionary 
+            _ = [CP[f"pl{n}"].pop(key) for key in ["Eccentricity", "omega"]]
+        else:
+            #sesinw
+            if CP[f"pl{n}"]["sesin(w)"].step_size != 0.: njumpRV=njumpRV+1
+            if (CP[f"pl{n}"]["sesin(w)"].to_fit == 'n' and CP[f"pl{n}"]["sesin(w)"].prior == 'p'):
+                _raise(ValueError, 'cant externally input sesinw at this time!')
+
+            #secosw
+            if CP[f"pl{n}"]["secos(w)"].step_size != 0.: njumpRV=njumpRV+1
+            if (CP[f"pl{n}"]["secos(w)"].to_fit == 'n' and CP[f"pl{n}"]["secos(w)"].prior == 'p'):
+                _raise(ValueError, 'cant externally input secosw at this time!')
+
+        _ = CP[f"pl{n}"].pop("rho_star" if "rho_star" in CP[f"pl{n}"] else "Duration")  #remove rho_star or Duration from the dictionary
 
     
 #============ddfs ==========================
@@ -879,10 +892,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 GPpriwid    = np.concatenate((GPpriwid,    [thisLCgp[f"amplitude{n}"].prior_width_lo, thisLCgp[f"lengthscale{n}"].prior_width_lo]), axis=0)
                 GPlimup     = np.concatenate((GPlimup,     [thisLCgp[f"amplitude{n}"].bounds_hi, thisLCgp[f"lengthscale{n}"].bounds_hi]), axis=0)
                 GPlimlo     = np.concatenate((GPlimlo,     [thisLCgp[f"amplitude{n}"].bounds_lo, thisLCgp[f"lengthscale{n}"].bounds_lo]), axis=0)
-                if not sameLCgp.flag:
-                    GPnames = np.concatenate((GPnames,     [f"GPlc{i+1}_Amp{n+1}_{gpcol}",f"GPlc{i+1}_len{n+1}_{gpcol}"]), axis=0)
-                else:
+                if sameLCgp.flag:
                     GPnames = np.concatenate((GPnames,     [f"GPlcSame_Amp{n+1}_{gpcol}",f"GPlcSame_len{n+1}_{gpcol}"]), axis=0)
+                elif sameLCgp.filtflag:
+                    GPnames = np.concatenate((GPnames,     [f"GPlcFilt_{lc_obj._filters[i]}_Amp{n+1}_{gpcol}",f"GPlcFilt_{lc_obj._filters[i]}_len{n+1}_{gpcol}"]), axis=0)
+                else:
+                    GPnames = np.concatenate((GPnames,     [f"GPlc{i+1}_Amp{n+1}_{gpcol}",f"GPlc{i+1}_len{n+1}_{gpcol}"]), axis=0)
 
                 if useGPphot[i]=="ge":  #George GP
                     assert gpkern in george_kernels.keys(), f"Invalid kernel '{gpkern}' for George GP, must be one of {list(george_kernels.keys())}"
@@ -1396,9 +1411,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
     if debug: print(f'finished fit_plots, took {(time.time() - debug_t2)} secs')
 
-    if init_only:
-        print("Generation of initial models completed")
-        return
     ########################### MCMC run ###########################################
     print(f'\n============ Samping started ... (using {fit_sampler} [{NS_type if fit_sampler=="dynesty" else emcee_move}])======================')
 
@@ -1411,7 +1423,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     if debug: 
         starting = {k:v for k,v in zip(pnames_all[jumping],initial[jumping])}
-        print(f'initial: {starting}')
+        print(f'\ninitial: {starting}')
+
+    if init_only:
+        print("Generation of initial models completed")
+        return
+    
 
     nplot     = int(np.ceil(ndim/15))                #number of chain and corner plots to make
     nplotpars = int(np.ceil(ndim/nplot))             #number of parameters to plot in each plot
