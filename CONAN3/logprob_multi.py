@@ -11,7 +11,8 @@ from os.path import splitext, exists
 from .utils import light_travel_time_correction,sinusoid
 
 
-def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,get_planet_model=False,get_model=None,out_folder=""):
+def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
+                    get_planet_model=False, get_model=None,out_folder=""):
     """
     calculate log probability and create output file of full model calculated using posterior parameters
 
@@ -57,11 +58,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
     (   custom_RVfunc, custom_LCfunc, nphot, nRV, sine_conf, filters, nfilt, filnames,\
         nddf, nocc, nttv, col8_arr, grprs, ttv_conf, grnames, groups, ngroup, \
         ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, model_phasevar, LCnames, RVnames, \
-        e_arr, divwhite, dwCNMarr, dwCNMind, params, useGPphot, useGPrv, GPobjects, \
+        lc_Qsho, rv_Qsho, dwCNMarr, dwCNMind, params, useGPphot, useGPrv, GPobjects, \
         GPparams, GPindex, pindices, jumping, jnames, prior_distr, pnames_all, norm_sigma, \
         uni_low, uni_up,rv_gp_colnames, gp_colnames, gpkerns, LTT, jumping_GP, GPstepsizes, sameLCgp, \
         npl, useSpline_lc, useSpline_rv, s_samp, rvGPobjects, rvGPparams, rvGPindex, input_lcs, input_rvs, \
-        RVunit, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler) = argvals
+        RVunit, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler, shared_params) = argvals if 'shared_params' in args.keys() else argvals+[{}]
 
     Rstar = LTT.Rstar if type(LTT) == SimpleNamespace else None   #get Rstar value to use for LTT correction
     if type(custom_LCfunc) != SimpleNamespace: custom_LCfunc = None
@@ -90,9 +91,13 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
     
     mod, emod = [], [] # output arrays in case we're not in the mcmc
     if get_planet_model: 
-        model_outputs = SimpleNamespace(lc={},rv={})   
+        model_outputs = SimpleNamespace(lc={},rv={})  
 
     params_all[jumping] = p   # set the jumping parameters to the values in p which are varied in mcmc 
+    for sp in shared_params:
+        for s_recip in shared_params[sp]:
+            params_all[pnames_all == s_recip] = params_all[pnames_all == sp]
+
     ncustom = custom_LCfunc.npars if custom_LCfunc!=None else 0# number of custom function parameters
     nsin    = sum([v for v in sine_conf.npars.values()]) if sine_conf.flag else 0
     # sin_st  = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom    #starting index of sinuoid parameters
@@ -100,21 +105,19 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
     time_all, flux_all, err_all, full_mod_all, base_para_all, base_sine_all, base_spl_all, base_gp_all, base_total_all, transit_all, det_flux_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
     # restrict the parameters to those of the light curve
     for j in range(nphot):
-        # if inmcmc == 'n':
-        #     if verbose: print(f'LC{j+1}', end=" ...")
         
-        name = LCnames[j]
+        name       = LCnames[j]
         thisLCdata = input_lcs[name]
-
-        t_in      = thisLCdata["col0"] if t is None else t
-        f_in      = thisLCdata["col1"]
-        e_in      = thisLCdata["col2"]
+        t_in       = thisLCdata["col0"] if t is None else t
+        f_in       = thisLCdata["col1"]
+        e_in       = thisLCdata["col2"]
 
         if baseLSQ == "y": bvar = bvars[j][0]
         else: bvar=[]
 
-        pp=p[pindices[j]]  # the elements of the p array jumping in this LC, pp is the array of non-GP jumping parameters for this LC
-
+        pp      = p[pindices[j]]                    # the elements of the p array jumping in this LC, pp is the array of non-GP jumping parameters for this LC
+        ppnames = pnames_all[jumping][pindices[j]]  # the names of the parameters jumping in this LC
+        
         # extract the parameters input to the modeling function from the input array
         # specify the LD and ddf correctly
         # identify the filter index of this LC
@@ -146,50 +149,50 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 rhoin = pp[ppcount]
                 ppcount = ppcount+1
             else:
-                rhoin = params[0]
+                rhoin = params_all[0]
         else:  #using duration for transit model
             if 0 in jumping[0]:
                 durin = pp[ppcount]
                 ppcount = ppcount+1
             else:
-                durin = params[0]
+                durin = params_all[0]
 
         for n in range(npl):
             if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 T0in.append(pp[ppcount])        # the first element of pp is the T0 value
                 ppcount = ppcount+1 
             else:
-                T0in.append(params[1+7*n])
+                T0in.append(params_all[1+7*n])
                 
             if (2+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 RpRsin.append(pp[ppcount])
                 ppcount = ppcount+1   
             else:
-                RpRsin.append(params[2+7*n])
+                RpRsin.append(params_all[2+7*n])
 
             if (3+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 bbin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                bbin.append(params[3+7*n])
+                bbin.append(params_all[3+7*n])
                     
             if (4+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 perin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                perin.append(params[4+7*n])
+                perin.append(params_all[4+7*n])
 
             if (5+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 sesinwin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                sesinwin.append(params[5+7*n])
+                sesinwin.append(params_all[5+7*n])
 
             if (6+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 secoswin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                secoswin.append(params[6+7*n])
+                secoswin.append(params_all[6+7*n])
         
         #ttv
         if nttv>0:
@@ -211,37 +214,37 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
             occin = pp[ppcount]
             ppcount = ppcount+1
         else:
-            occin = params[occind]
+            occin = params_all[occind]
 
         if (Fn_ind in jumping[0]):   
             Fn_in = pp[ppcount]
             ppcount = ppcount+1
         else:
-            Fn_in = params[Fn_ind]
+            Fn_in = params_all[Fn_ind]
 
         if (phoff_ind in jumping[0]):   
             phoff_in = pp[ppcount]
             ppcount = ppcount+1
         else:
-            phoff_in = params[phoff_ind]
+            phoff_in = params_all[phoff_ind]
 
         if (Aev_ind in jumping[0]):   
             Aev_in = pp[ppcount]
             ppcount = ppcount+1
         else:
-            Aev_in = params[Aev_ind]
+            Aev_in = params_all[Aev_ind]
 
         if (Adb_ind in jumping[0]):   
             Adb_in = pp[ppcount]
             ppcount = ppcount+1
         else:
-            Adb_in = params[Adb_ind]
+            Adb_in = params_all[Adb_ind]
 
         if (cont_ind in jumping[0]):   
             cont_in = pp[ppcount]
             ppcount = ppcount+1
         else:
-            cont_in = params[cont_ind]
+            cont_in = params_all[cont_ind]
             
         #########
         #now check the correct LD coeffs
@@ -249,13 +252,13 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
             q1in    = pp[ppcount]
             ppcount = ppcount + 1
         else:
-            q1in = params[q1ind]
+            q1in = params_all[q1ind]
 
         if (q2ind in jumping[0]):   # index of specific LC LD in jumping array -> check in jumping array
             q2in    = pp[ppcount]
             ppcount = ppcount + 1
         else:
-            q2in = params[q2ind]
+            q2in = params_all[q2ind]
 
         if (LCjitterind in jumping[0]):   # index of specific LC jitter in jumping array -> check in jumping array
             ppcount = ppcount + 1
@@ -279,7 +282,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                     sine_conf.pars[file_slct][kk]  = pp[ppcount]
                     ppcount = ppcount + 1
                 else:
-                    sine_conf.pars[file_slct][kk] = params[s_ind]
+                    sine_conf.pars[file_slct][kk] = params_all[s_ind]
             #compute sinusoidal model
             x      = thisLCdata[sine_conf.x[file_slct]]
             amp    = sine_conf.pars[file_slct][:-2]
@@ -350,7 +353,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 basesin[jj] = pp[ppcount]
                 ppcount = ppcount + 1
             else:
-                basesin[jj]=params[basein]
+                basesin[jj]=params_all[basein]
 
         coeff = np.copy(basesin)
         if (baseLSQ == 'y'):
@@ -427,7 +430,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 #need conversion of gp pars before setting them
                 gp_conv       = gp_params_convert()
                 kernels       = [f"{useGPphot[j]}_{gpk}" for gpk in gpkerns[j]]  #prepend correct GP package symbol for the kernel
-                thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars)
+                thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars,fixed_arg=lc_Qsho)
                 
                 if useGPphot[j] in ['ge','ce']:
                     gp = GPobjects[j]      #gp for this lc
@@ -502,7 +505,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
             #need conversion of gp pars before setting them
             gp_conv       = gp_params_convert()
             kernels       = [f"{useGPphot[sameLCgp.first_index]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-            all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
+            all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars,fixed_arg=lc_Qsho)
             
             if useGPphot[sameLCgp.first_index] in ['ge','ce']:
                 gp  = GPobjects[sameLCgp.first_index]
@@ -523,7 +526,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 lnprob  = lnprob + lnprob_allLC
 
             # if not in MCMC, get a prediction and append it to the output array
-            if inmcmc == 'n':      
+            if inmcmc == 'n':
+                resid_cctn = np.concatenate([residual_all[i] for i in sameLCgp.indices])
                 for j in sameLCgp.indices:
                     thispargp    = input_lcs[LCnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_lcs[LCnames[j]][gpcol][0],input_lcs[LCnames[j]][gpcol][1])).T
                     thissrt_gp   = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
@@ -531,11 +535,10 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                     which_GP     = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
                     
                     if useGPphot[j] in ['ge','ce']:
-                        base_gp_all[j]  = gp.predict((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], 
-                                                        t=thispargp[thissrt_gp], return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
+                        base_gp_all[j]  = gp.predict(resid_cctn[srt_gp], t=thispargp[thissrt_gp], 
+                                                        return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
                     else: #spleaf
-                        base_gp_all[j]  = gp.conditional((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], 
-                                                            thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+                        base_gp_all[j]  = gp.conditional(resid_cctn[srt_gp], thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
                     
                     full_mod_all[j] = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [gp + transit*baseline(para*spl)]
                     mod             = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
@@ -565,8 +568,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
 
         if sameLCgp.filtflag == True: #if using the same GP for each filter
-            gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+            gppars = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
             for filt in filnames:
+                resid_cctn_filt = np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]])
                 gpcol    = gp_colnames[sameLCgp.first_index[filt]]
                 if isinstance(gpcol, str):
                     pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs[filt]])   #join column data for all datasets of this filter with useGPphot !="n"
@@ -583,7 +587,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 #need conversion of gp pars before setting them
                 gp_conv       = gp_params_convert()
                 kernels       = [f"{useGPphot[sameLCgp.first_index[filt]]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index[filt] ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-                all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
+                all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars,fixed_arg=lc_Qsho)
                 
                 if useGPphot[sameLCgp.first_index[filt]] in ['ge','ce']:
                     gp  = GPobjects[sameLCgp.first_index[filt]]
@@ -597,26 +601,25 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
 
                 if inmcmc == 'y':
                     if useGPphot[sameLCgp.first_index[filt]] in ['ge','ce']: 
-                        lnprob_filtLC = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp], quiet=True)
+                        lnprob_filtLC = gp.log_likelihood(resid_cctn_filt[srt_gp], quiet=True)
                     else:
-                        lnprob_filtLC = gp.log_like((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp])
+                        lnprob_filtLC = gp.log_like(resid_cctn_filt[srt_gp])
                     
                     lnprob  = lnprob + lnprob_filtLC
 
                 # if not in MCMC, get a prediction and append it to the output array
                 if inmcmc == 'n':      
                     for j in sameLCgp.indices[filt]: #loop over the LCs in this filter
-                        thispargp    = input_lcs[LCnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_lcs[LCnames[j]][gpcol][0],input_lcs[LCnames[j]][gpcol][1])).T
-                        thissrt_gp   = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
-                        thisunsrt_gp = np.argsort(thissrt_gp)  #indices to unsort the gp axis
-                        which_GP     = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
+                        thispargp       = input_lcs[LCnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_lcs[LCnames[j]][gpcol][0],input_lcs[LCnames[j]][gpcol][1])).T
+                        thissrt_gp      = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
+                        thisunsrt_gp    = np.argsort(thissrt_gp)  #indices to unsort the gp axis
+                        which_GP        = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
                         
                         if useGPphot[j] in ['ge','ce']:
-                            base_gp_all[j]  = gp.predict((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp], 
-                                                            t=thispargp[thissrt_gp], return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
+                            base_gp_all[j]  = gp.predict(resid_cctn_filt[srt_gp], t=thispargp[thissrt_gp], 
+                                                            return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
                         else:
-                            base_gp_all[j]  = gp.conditional((np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]]))[srt_gp], 
-                                                                thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+                            base_gp_all[j]  = gp.conditional(resid_cctn_filt[srt_gp], thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
                         
                         full_mod_all[j] = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [gp + transit*baseline(para*spl)]
                         mod             = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
@@ -675,56 +678,56 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 rhoin = pp[ppcount]
                 ppcount = ppcount+1
             else:
-                rhoin = params[0]
+                rhoin = params_all[0]
         else:  #using duration for transit model
             if 0 in jumping[0]:
                 durin = pp[ppcount]
                 ppcount = ppcount+1
             else:
-                durin = params[0]
+                durin = params_all[0]
 
         for n in range(npl):
             if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 T0in.append(pp[ppcount])        # the first element of pp is the T0 value
                 ppcount = ppcount+1 
             else:
-                T0in.append(params[1+7*n])
+                T0in.append(params_all[1+7*n])
                 
             if (2+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 RpRsin.append(pp[ppcount])
                 ppcount = ppcount+1   
             else:
-                RpRsin.append(params[2+7*n])
+                RpRsin.append(params_all[2+7*n])
 
             if (3+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 bbin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                bbin.append(params[3+7*n])
+                bbin.append(params_all[3+7*n])
                     
             if (4+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 perin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                perin.append(params[4+7*n])
+                perin.append(params_all[4+7*n])
 
             if (5+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 sesinwin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                sesinwin.append(params[5+7*n])
+                sesinwin.append(params_all[5+7*n])
 
             if (6+7*n in jumping[0]):   # same for all LCs -> check in jumping array
                 secoswin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                secoswin.append(params[6+7*n])
+                secoswin.append(params_all[6+7*n])
 
             if (7+7*n in jumping[0]):   # same for all data -> check in jumping array
                 Kin.append(pp[ppcount])
                 ppcount = ppcount+1
             else:
-                Kin.append(params[7+7*n])
+                Kin.append(params_all[7+7*n])
         
 
         gammaind = 1+7*npl + nttv+nddf + nocc*6 + nfilt*2 + nphot + ncustom + nsin + j*2   #pass the right gamma index for each file (Akin)
@@ -829,7 +832,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 #need conversion of gp pars before setting them
                 gp_conv       = gp_params_convert()
                 kernels       = [f"{useGPrv[j]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel
-                thisrv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars)
+                thisrv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars,fixed_arg=rv_Qsho)
                 
                 if useGPrv[j] in ['ge','ce']:
                     gp  = rvGPobjects[j]      #gp for this rv
@@ -900,7 +903,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
             #need conversion of gp pars before setting them
             gp_conv       = gp_params_convert()
             kernels       = [f"{useGPrv[sameRVgp.first_index]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-            all_rv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=all_rv_gppars)
+            all_rv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=all_rv_gppars,fixed_arg=rv_Qsho)
             
             if useGPrv[sameRVgp.first_index] in ['ge','ce']:
                 gp = rvGPobjects[sameRVgp.first_index]
@@ -921,6 +924,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                 lnprob       = lnprob + lnprob_allRV
 
             if inmcmc == 'n':
+                resid_cctn = np.concatenate([residual_all[i] for i in sameRVgp.indices])
                 for j in sameRVgp.indices:
                     thisrvpargp    = input_rvs[RVnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_rvs[RVnames[j]][gpcol][0],input_rvs[RVnames[j]][gpcol][1])).T
                     thissrt_rvgp   = np.argsort(thisrvpargp) if thisrvpargp.ndim==1 else np.argsort(thisrvpargp[:,0])  #indices to sort the gp axis
@@ -928,11 +932,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,ge
                     which_GP       = "George" if useGPrv[j]=='ge' else "Celerite" if useGPrv[j]=='ce' else "Spleaf"
 
                     if useGPrv[j] in ['ge','ce']:
-                        base_gp_all[j]  = gp.predict((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], 
-                                                        t=thisrvpargp[thissrt_rvgp], return_cov=False, return_var=False)[thisunsrt_rvgp]
+                        base_gp_all[j]  = gp.predict(resid_cctn[srt_rvgp],t=thisrvpargp[thissrt_rvgp], return_cov=False, return_var=False)[thisunsrt_rvgp]
                     else:
-                        base_gp_all[j]  = gp.conditional((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], 
-                                                            thisrvpargp[thissrt_rvgp], calc_cov=False)[thisunsrt_rvgp]
+                        base_gp_all[j]  = gp.conditional(resid_cctn[srt_rvgp], thisrvpargp[thissrt_rvgp], calc_cov=False)[thisunsrt_rvgp]
                     
                     full_mod_all[j] = full_mod_all[j] + base_gp_all[j] #update mod_RV_base with base_gpRV [gp + planet rv + baseline(para+spl+gamma)]
                     mod             = np.concatenate((mod,full_mod_all[j]))

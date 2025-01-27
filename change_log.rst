@@ -1,3 +1,12 @@
+20-Jan-2025: version 3.3.2
+~~~~~~~~~~~~~
+* added capability for different parameters to share the same value. 
+e.g. shared_params = {'lc1_logjitter': ['lc2_logjitter', 'lc3_logjitter', 'lc4_logjitter']}
+* Quality factor Q of the SHO kernel can be fixed to a value using lc_obj._Qsho or rv_obj._Qsho
+* when multiplying Gp kernels, amplitude of the second kernel should be set to -1 to deactivate it
+* fixed bug in post-sampling GP prediction when "same" GP is used for lcs
+* added reflective boundary condition for impact parameter when sampling with dynesty 
+
 18-Jan-2025: version 3.3.1
 ~~~~~~~~~~~~~
 * changed pause statement in occultquad.f to print warning so as not to pause program execution

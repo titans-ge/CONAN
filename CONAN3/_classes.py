@@ -639,6 +639,31 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
     return out
 
 
+def get_parameter_names(lc_obj=None, rv_obj=None):
+    """
+    get the parameter names of the lightcurve and radial velocity objects.
+    
+    Parameters:
+    -----------
+    lc_obj : lightcurve object;
+        lightcurve object created by the load_lightcurves class.
+    rv_obj : radial velocity object;
+        radial velocity object created by the load_rvs class.
+
+    Returns:
+    --------
+    par_names : list;
+        list of lightcurve parameter names.
+    """
+    from .fit_data import run_fit
+    par_names, vary_indices  = run_fit(lc_obj, rv_obj, get_parameter_names=True, verbose=False)
+    
+    varying_pars = par_names[vary_indices]
+    all_pars     = par_names
+
+    return varying_pars, all_pars
+
+
 class _obj_linker:
     """
     class to link lightcurve and radial velocity objects created by the `load_lightcurves()` and `load_rvs()` classes.
@@ -998,12 +1023,18 @@ class load_lightcurves:
             if Duration is not None: assert rho_star is None, "get_decorr(): rho_star must be None if Duration is given."
 
         if Eccentricity == omega == sesinw == secosw == None: 
-            sesinw, secosw = 0, 0  #set to zero if not given
+            Eccentricity, omega = 0, 90
+            # sesinw, secosw = 0, 0  #set to zero if not given
+
         if Eccentricity is not None and omega is not None:
             om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
-            sesinw, secosw = ecc_om_par(Eccentricity, omega, conv_2_obj=True, return_tuple=True)
+            sesinw, secosw = ecc_om_par(Eccentricity, om_rad, conv_2_obj=True, return_tuple=True)
+            input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
+        elif sesinw is not None and secosw is not None:
+            input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw, secosw=secosw, K=K)
+        else:
+            _raise(ValueError, "get_decorr(): Either Eccentricity–omega or sesinw–secosw combination must be given, not both.")
 
-        input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw, secosw=secosw, K=K)
         self._tra_occ_pars = dict(T_0=T_0, Period=Period, D_occ=D_occ, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw,\
                                     secosw=secosw, Fn=Fn, ph_off=ph_off,A_ev=A_ev,A_db=A_db) #transit/occultation parameters
         # add rho_star/Duration to input_pars and self._tra_occ_pars if given
@@ -2056,15 +2087,19 @@ class load_lightcurves:
         lengthscale corresponds to the characteristic timescale of the noise process. lengthscale 
         has a lower bound of 1minute (0.0007d)
         
-        For the celerite sho kernel, the quality factor Q has been fixed to 1/sqrt(2) which is 
-        commonly used to model stellar oscillations/granulation noise (eqn 24 celerite paper). 
-        This lengthscale here is the undamped period of the oscillator. 
+        For the celerite sho kernel, the quality factor Q is fixed and the value is set to 1/sqrt(2) 
+        which is commonly used to model stellar oscillations/granulation noise (eqn 24 celerite paper).  
+        The value can be modified e.g. with `lc_obj._Qsho = 1`. This lengthscale here is the undamped 
+        period of the oscillator. 
 
         For the cosine kernels, lengthscale is the period. This kernel should probably always be 
         multiplied by a stationary kernel (e.g. exp) to allow quasi-periodic variations.
 
         Note: using GP on a lc sets fit_offset="n" for that lc. users can turn it back on for each lc
         from the ._fit_offset list attribute. e.g. lc_obj._fit_offset = ["y","y","y"]
+
+        if multiplying two Gp kernels together, the amplitudes are degenerate and only one amplitude is 
+        required. set the second amplitude to –1 to deactivate it.
 
         Parameters:
         -----------
@@ -2120,7 +2155,8 @@ class load_lightcurves:
         george_allowed   = dict(kernels=list(george_kernels.keys()),   columns=["col0","col3","col4","col5","col6","col7","col8"])
         celerite_allowed = dict(kernels=list(celerite_kernels.keys()), columns=["col0","col3","col4","col5","col6","col7","col8"])
         spleaf_allowed   = dict(kernels=list(spleaf_kernels.keys()),   columns=["col0","col3","col4","col5","col6","col7","col8"])
-        
+        self._Qsho = 1/np.sqrt(2)
+
         if isinstance(gp_pck, str): assert gp_pck in ["ge","ce","sp"], f"add_GP(): gp_pck must be one of ['ge','ce','sp'] but {gp_pck} given."
         elif isinstance(gp_pck, list): 
             for gg in gp_pck: assert gg in ["n","ge","ce","sp"], f"add_GP(): gp_pck must be a list of ['n','ge','ce','sp'] but {gp_pck} given."
@@ -2135,7 +2171,8 @@ class load_lightcurves:
 
         if lc_list is None or lc_list == []:
             if self._nphot>0:
-                if len(self._gp_lcs())>0: print(f"\nWarning: GP was expected for the following lcs {self._gp_lcs()} \nMoving on ...")
+                self._useGPphot = ["n"]*self._nphot
+                # if len(self._gp_lcs())>0: print(f"\nWarning: GP was expected for the following lcs {self._gp_lcs()} \nMoving on ...")
                 if verbose:_print_output(self,"gp")
             return
 
@@ -2298,7 +2335,7 @@ class load_lightcurves:
             self._GP_dict[lc]["op"]  = DA["operation"][i]
 
             if self._GP_dict[lc]["op"] == "*" and self._GP_dict[lc]["ngp"] == 2:
-                assert DA["amplitude"][i][1] == 1, f"add_GP(): for multiplication of 2 kernels, the second amplitude must be fixed to 1 but {DA['amplitude'][i][1]} given."
+                assert DA["amplitude"][i][1] == -1, f"add_GP(): for multiplication of 2 kernels, the second amplitude must be fixed to -1 to deactivate it but {DA['amplitude'][i][1]} given."
 
             for p in ["amplitude", "lengthscale"]:
                 for j in range(ngp):
@@ -2318,7 +2355,7 @@ class load_lightcurves:
                     elif isinstance(v, tuple):
                         if len(v)==2:
                             if (self._sameLCgp.flag and lc!=self._sameLCgp.LCs[0]): steps=0             #only the first lc jumps and same parameter will be used for the others
-                            elif (self._sameLCgp.filtflag and lc!=self._sameLCgp.LCs[filt][0]): steps=0  #only first lc of the filter jumps
+                            elif (self._sameLCgp.filtflag and lc!=self._sameLCgp.LCs[filt][0]): steps=0  #only first lc of the filter jumps #TODO can set value to None or nan
                             else: steps = 0.1*v[1]
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[0],step_size=steps,prior="p", 
                                                                         prior_mean=v[0], prior_width_lo=v[1], prior_width_hi=v[1], 
@@ -2344,7 +2381,6 @@ class load_lightcurves:
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'TN({v[0]},{v[1]},{v[2]},{v[3]})')
                     else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {v} given.")
-        #TODO set a fixed value for clerite shoterm_Q
         if verbose: 
             _print_output(self,"lc_baseline")
             _print_output(self,"gp")
@@ -3279,7 +3315,6 @@ class load_lightcurves:
         else: print("No data to plot")
     
 
-
 #rv data
 class load_rvs:
     """
@@ -3559,13 +3594,17 @@ class load_rvs:
         gamma_init    = []  #list to update gamma prior for each rv based on the lmfit
 
         if Eccentricity == omega == sesinw == secosw == None: 
-            sesinw, secosw = 0, 0  #set to zero if not given
+            Eccentricity, omega = 0, 90 #set if None given
+
         if Eccentricity is not None and omega is not None:
             om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
-            sesinw, secosw = ecc_om_par(Eccentricity, omega, conv_2_obj=True, return_tuple=True)
+            sesinw, secosw = ecc_om_par(Eccentricity, om_rad, conv_2_obj=True, return_tuple=True)
+            input_pars = dict(T_0=T_0, Period=Period, Eccentricity=Eccentricity, omega=omega, K=K)
+        elif sesinw is not None and secosw is not None:
+            input_pars = dict(T_0=T_0, Period=Period, sesinw=sesinw, secosw=secosw, K=K)
+        else:
+            _raise(ValueError, "get_decorr(): Either Eccentricity–omega or sesinw–secosw combination must be given, not both.")
 
-
-        input_pars = dict(T_0=T_0, Period=Period, sesinw=sesinw, secosw=secosw, K=K)
         self._rv_pars = dict(T_0=T_0, Period=Period, K=K, sesinw=sesinw, secosw=secosw, gamma=gamma) #rv parameters
         for p in self._rv_pars:
             if p != "gamma":
@@ -3912,9 +3951,10 @@ class load_rvs:
         lengthscale corresponds to the characteristic timescale of the noise process. lengthscale 
         has a lower bound of 1minute (0.0007d)
         
-        For the celerite sho kernel, the quality factor Q has been fixed to 1/sqrt(2) which is 
-        commonly used to model stellar oscillations/granulation noise (eqn 24 celerite paper).
-        This lengthscale here is the undamped period of the oscillator. 
+        For the celerite sho kernel, the quality factor Q is fixed and the value is set to 1/sqrt(2) 
+        which is commonly used to model stellar oscillations/granulation noise (eqn 24 celerite paper).  
+        The value can be modified e.g. with `rv_obj._Qsho = 1`. This lengthscale here is the undamped 
+        period of the oscillator. 
 
         For the cosine kernels, lengthscale is the period. This kernel should probably always be 
         multiplied by a stationary kernel (e.g. ExpSquaredKernel) to allow quasi-periodic variations.
@@ -3969,6 +4009,7 @@ class load_rvs:
         george_allowed   = dict(kernels=list(george_kernels.keys()),   columns=["col0","col3","col4","col5"])
         celerite_allowed = dict(kernels=list(celerite_kernels.keys()), columns=["col0"])
         spleaf_allowed   = dict(kernels=list(spleaf_kernels.keys()),   columns=["col0","col3","col4","col5"])
+        self._Qsho = 1/np.sqrt(2)
 
         if isinstance(gp_pck, str): assert gp_pck in ["ge","ce","sp"], f"add_GP(): gp_pck must be one of ['ge','ce','sp'] but {gp_pck} given."
         elif isinstance(gp_pck, list): 
@@ -3980,7 +4021,8 @@ class load_rvs:
 
         if rv_list is None or rv_list == []:
             if self._nRV>0:
-                if len(self._gp_rvs())>0: print(f"\nWarning: GP was expected for the following rvs {self._gp_rvs()} \nMoving on ...")
+                self._useGPrv = ["n"]*self._nRV
+                # if len(self._gp_rvs())>0: print(f"\nWarning: GP was expected for the following rvs {self._gp_rvs()} \nMoving on ...")
                 if verbose:_print_output(self,"rv_gp")
             return
         elif isinstance(rv_list, str):
@@ -4547,6 +4589,7 @@ class fit_setup:
         
         self._fit_dict = DA
         self.sampling(verbose=False)
+        self._fitobj = self
 
     def sampling(self, sampler="dynesty", n_cpus=4,
                     n_chains=64, n_steps=2000, n_burn=500, emcee_move="stretch",  

@@ -92,6 +92,7 @@ def _prior_value(str_prior):
     str_prior = str_prior.replace(" ","")   #remove spaces
     if "None" in str_prior: 
         return None
+    assert '(' in  str_prior and str_prior.endswith(')'), f"prior value must be one of ['N(mu,std)','F(val)','U(min,start,max)','LU(min,start,max)'] but {str_prior} given. check parenthesis/spaces"
     str_prior = str_prior[str_prior.find("(")+1:str_prior.find(")")].split(",")
     tuple_prior = [float(v) for v in str_prior]
     tuple_prior = [(int(v) if v.is_integer() else float(v)) for v in tuple_prior]

@@ -28,3 +28,8 @@ This class has a number of methods to access the results.
     :members:
     :undoc-members:
 
+Results of different runs can be compared using the ``compare_results`` class.  
+
+.. autoclass:: CONAN3._classes.compare_results
+    :members:
+    :undoc-members:

@@ -39,7 +39,7 @@ class gp_params_convert:
                                         sp_ = ["sp_mat32","sp_mat52","sp_exp","sp_cos","sp_expsq","sp_sho"]
                                     )
         
-    def get_values(self, kernels, data, pars):
+    def get_values(self, kernels, data, pars,fixed_arg=None):
         """
         transform pars into required values for given kernels.
         
@@ -51,6 +51,8 @@ class gp_params_convert:
             one of ["lc","rv"]
         pars: iterable,
             parameters (amplitude,lengthscale) for each kernel in kernels.
+        fixed_arg: float,
+            fixed argument for the kernels with more than 2 pars. e.g Q for SHO kernel
             
         Returns:
         --------
@@ -67,7 +69,10 @@ class gp_params_convert:
             assert kern in self._allowed_kernels[kern[:3]], f'gp_params_convert(): `{kern[:2]}` kernel to convert must be one of {self._allowed_kernels[kern[:3]]} but "{kern}" given'
 
             # call class function with the name kern
-            p = self.__getattribute__(kern)(data,pars[i*2],pars[i*2+1])
+            if kern=="ce_sho":
+                p = self.__getattribute__(kern)(data,pars[i*2],pars[i*2+1], Q=fixed_arg)
+            else:
+                p = self.__getattribute__(kern)(data,pars[i*2],pars[i*2+1])
             conv_pars.append(p)
             
         return np.concatenate(conv_pars)
@@ -77,7 +82,10 @@ class gp_params_convert:
         """
         simple conversion where amplitude corresponds to the standard deviation of the process
         """        
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
+
         log_var    = np.log(amplitude**2)
         log_metric = np.log(lengthscale)
         return log_var, log_metric
@@ -87,7 +95,9 @@ class gp_params_convert:
         """
         exponential sine kernel
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+
         sig        = amplitude
         rho        = lengthscale
         return sig, rho
@@ -96,7 +106,9 @@ class gp_params_convert:
         """
         exponential kernel
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+    
         a          = amplitude**2  #variance
         la         = 1/lengthscale
         return a, la
@@ -105,7 +117,8 @@ class gp_params_convert:
         """
         simple harmonic oscillator kernel
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
         sig        = amplitude
         P0         = lengthscale
         return sig, P0
@@ -114,7 +127,9 @@ class gp_params_convert:
         """
         Matern32 kernel
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         sig        = amplitude
         rho        = lengthscale
         return sig, rho
@@ -123,7 +138,9 @@ class gp_params_convert:
         """
         Matern52 kernel
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+                
         sig        = amplitude
         rho        = lengthscale
         return sig, rho
@@ -132,24 +149,29 @@ class gp_params_convert:
         """
         Cosine kernel built from the quasiperiodic kernel with b and la set to 0
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+                
         variance   = amplitude**2
         nu         = 2*np.pi/lengthscale
         return variance, 0, 0, nu  
         
     #celerite kernels  
-    def ce_sho(self, data, amplitude, lengthscale):
+    def ce_sho(self, data, amplitude, lengthscale, Q=1/np.sqrt(2)):
         """
         amplitude: the standard deviation of the process
         lengthscale: the undamped period of the oscillator
+
+        for quality factor Q > 1/2, the characteristic oscillation freq(or period) is not equal to 
+        the freq(period) of the undamped oscillator, ω0
         
         see transformation here: https://celerite2.readthedocs.io/en/latest/api/python/#celerite2.terms.SHOTerm
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        Q  = 1/np.sqrt(2)
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         w0 = 2*np.pi/lengthscale
         S0 = amplitude**2/(w0*Q)
-        
         log_S0, log_w0 = np.log(S0), np.log(w0)
         return log_S0, log_w0
 
@@ -157,7 +179,9 @@ class gp_params_convert:
         """
         CosineKernel implementation in celerite
         """
-        amplitude = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         log_var   = np.log(amplitude**2)
         log_nu    = np.log(2*np.pi/lengthscale)
         return log_var, log_nu
@@ -166,7 +190,9 @@ class gp_params_convert:
         """
         really an exponential kernel like in George
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         c     = 1/lengthscale
         log_c = np.log(c)
         log_a = np.log(amplitude**2)     #log_variance
@@ -176,7 +202,9 @@ class gp_params_convert:
         """
         celerite mat32
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+
         log_sigma  = np.log(amplitude)
         rho        = lengthscale
         log_rho    = np.log(rho)
@@ -187,7 +215,10 @@ class gp_params_convert:
         """
         George mat32
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+
         log_var    = np.log(amplitude**2)
         metric     = lengthscale**2
         log_metric = np.log(metric)
@@ -197,7 +228,9 @@ class gp_params_convert:
         """
         George CosineKernel
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         log_var    = np.log(amplitude**2)
         log_period = np.log(lengthscale)
         return log_var, log_period
@@ -206,7 +239,9 @@ class gp_params_convert:
         """
         George mat52
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         log_var    = np.log(amplitude**2)
         metric     = lengthscale**2
         log_metric = np.log(metric)
@@ -216,7 +251,9 @@ class gp_params_convert:
         """
         George expsq
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         log_var    = np.log(amplitude**2)
         metric     = lengthscale**2
         log_metric = np.log(metric)
@@ -226,7 +263,9 @@ class gp_params_convert:
         """
         George exp
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         log_var    = np.log(amplitude**2)
         metric     = lengthscale**2
         log_metric = np.log(metric)
@@ -236,7 +275,9 @@ class gp_params_convert:
         """
         George cosine
         """
-        amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        if amplitude==-1: amplitude = 1
+        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
+        
         log_var    = np.log(amplitude**2)
         period     = lengthscale
         log_period = np.log(period)

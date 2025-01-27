@@ -1,6 +1,7 @@
 __all__ = ["load_lightcurves", "load_rvs", "fit_setup", "run_fit", "create_configfile","load_configfile","fit_configfile"]
 
-from ._classes import load_lightcurves, load_rvs, fit_setup, load_result, compare_results,__default_backend__
+from ._classes import (load_lightcurves, load_rvs, fit_setup, load_result, 
+                       get_parameter_names, compare_results, __default_backend__)
 from .conf import create_configfile, load_configfile,fit_configfile
 from .fit_data import run_fit
 from .VERSION import __version__

@@ -13,7 +13,7 @@ In this documentation, we will show you how to install and use ``CONAN`` to fit 
 
 .. toctree::
    :maxdepth: 2
-   :caption: Usage:
+   :caption: Contents
 
    installation.rst
    classes.rst
@@ -23,12 +23,12 @@ In this documentation, we will show you how to install and use ``CONAN`` to fit 
    :maxdepth: 1
    :caption: Tutorials
 
-   tutorial/CONAN_WASP-127_LC_RV_tutorial/CONAN_WASP-127_LC_RV_tutorial
-   tutorial/CONAN_WASP127_EULER/CONAN_WASP127_EULER
-   tutorial/CONAN_WASP-127_RV_tutorial/CONAN_WASP-127_RV_tutorial
-   tutorial/TOI469_multiplanet_LC_RV/TOI469_multiplanet_LC_RV
-   tutorial/kelt-20_cheops_roll_compare/kelt-20_cheops_roll_compare
-   tutorial/TOI-216_TTV_fit/TOI-216_TTV_fit.rst
+   tutorial/CONAN_WASP-127_LC_RV_tutorial
+   tutorial/CONAN_WASP127_EULER
+   tutorial/CONAN_WASP-127_RV_tutorial
+   tutorial/TOI469_multiplanet_LC_RV
+   tutorial/kelt-20_cheops_roll_compare
+   tutorial/TOI-216_TTV_fit
 
 
 Indices and tables
