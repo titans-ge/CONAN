@@ -5414,8 +5414,8 @@ class load_result:
 
     def make_output_file(self, stat="median",out_folder=None):
         """
-        make output model file ('_\*out.dat') from parameters obtained using different summary 
-        statistics on the posterior. if a '_\*out.dat' file already exists in the out_folder, 
+        make output model file ('_\\*out.dat') from parameters obtained using different summary 
+        statistics on the posterior. if a '_\\*out.dat' file already exists in the out_folder, 
         it is overwritten (so be sure!!!).
 
         Parameters:
@@ -5839,7 +5839,6 @@ class compare_results:
         """
         Compare the results of multiple CONAN3 fits.
 
-
         Parameters:
         -----------
         result_list : list of CONAN3 objects or result folder names;
@@ -5935,7 +5934,7 @@ class compare_results:
         logz= np.array([r.evidence for r in self.results_list])
         dlogz = (logz-logz[0]) if all(logz) else None
         
-        f.suptitle(f"Comparing all results to {self.results_list[0]._folder} gives $\Delta$logZ={list(dlogz)}", fontsize=20)
+        f.suptitle(f"Comparing all results to {self.results_list[0]._folder} gives $\\Delta$logZ={list(dlogz)}", fontsize=20)
         f.subplots_adjust(top=0.95)
 
         return f

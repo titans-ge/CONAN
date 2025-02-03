@@ -17,7 +17,7 @@ def test_kernels(show_plot=False):
     ge_mat32 = 1*george_kernels["mat32"](1)
     ge_mat32.set_parameter_vector(gp_conv.get_values("ge_mat52", data="lc", pars = [amp, len_sc]))
     ge_mat32 = ge_mat32.get_value(np.atleast_2d(t).T)[0]
-    plt.plot(t,ce_mat32,"--"); plt.plot(t,ge_mat32,":"); plt.axvline(len_sc); plt.show()
+    # plt.plot(t,ce_mat32,"--"); plt.plot(t,ge_mat32,":"); plt.axvline(len_sc); plt.show()
 
     equiv.append( ce_mat32 == pytest.approx(ge_mat32,abs=0.01*1e-6) )    #same within 0.01ppm
 
