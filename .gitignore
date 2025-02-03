@@ -189,6 +189,6 @@ cython_debug/
 .vscode/
 
 #ignore folder
-docs/tutorial/
+# docs/tutorial/
 
 example/

@@ -11,7 +11,7 @@ To avoid requirement conflicts with other packages, it is better to create a new
 
 .. code-block:: bash
 
-    conda create -n conan_env numpy python=3.10
+    conda create -n conan_env python=3.10
     conda activate conan_env
 
 ``CONAN`` can be installed in this new environment by: 
@@ -20,7 +20,7 @@ To avoid requirement conflicts with other packages, it is better to create a new
 
 .. code-block:: bash
 
-    git clone https://github.com/mlendl42/CONAN3.git
+    git clone https://github.com/tundeakins/CONAN3.git
 .. code-block:: bash
 
     cd CONAN3    
@@ -29,7 +29,7 @@ To avoid requirement conflicts with other packages, it is better to create a new
 - or directly using pip to install from the github repository:
 .. code-block:: bash
 
-    pip install -e git+https://github.com/mlendl42/CONAN3.git#egg=CONAN3
+    pip install -e git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3
 
 Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 

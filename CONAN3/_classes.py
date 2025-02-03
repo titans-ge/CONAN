@@ -2842,8 +2842,7 @@ class load_lightcurves:
         
         >>> def catwoman_func(t, rp2, phi, extra_args=dict(ld_law="quadratic"), LC_pars=dict(Duration=0,
         >>>                     rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,omega=90,
-        >>>                     q1=0,q2=0,D_occ=0,Fn=0,ph_off=0,A_ev=0,A_db=0)
-        >>>                     ):
+        >>>                     q1=0,q2=0,D_occ=0,Fn=0,ph_off=0,A_ev=0,A_db=0) ):
         >>>     import catwoman 
         >>>     import numpy as np
         >>>     import astropy.constants as c
