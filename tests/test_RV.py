@@ -1,4 +1,4 @@
-from CONAN3.models import RadialVelocity_Model, Transit_Model
+from CONAN.models import RadialVelocity_Model, Transit_Model
 import radvel
 import matplotlib.pyplot as plt
 import numpy as np

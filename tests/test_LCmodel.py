@@ -2,9 +2,9 @@ import pytest
 import batman
 import ellc
 import numpy as np
-from CONAN3.utils import (rho_to_aR, convert_LD, Tdur_to_aR, inclination,sesinw_secosw_to_ecc_omega,
+from CONAN.utils import (rho_to_aR, convert_LD, Tdur_to_aR, inclination,sesinw_secosw_to_ecc_omega,
                             rho_to_tdur, get_orbital_elements, get_Tconjunctions)
-from CONAN3.models import Transit_Model
+from CONAN.models import Transit_Model
 import matplotlib.pyplot as plt
 
 rho_star = 1.5
@@ -275,8 +275,8 @@ def test_orbital_elements(show_plot=False):
 
 def test_LTT(show_plot=False):
     #test light travel time
-    from CONAN3.utils import light_travel_time_correction
-    from CONAN3.get_files import get_parameters
+    from CONAN.utils import light_travel_time_correction
+    from CONAN.get_files import get_parameters
     
     
     # sys_params = get_parameters("WASP-121 b")

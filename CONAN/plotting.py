@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib, os
 from matplotlib.ticker import FormatStrFormatter    
 import matplotlib.pyplot as plt    
-from CONAN3.logprob_multi import logprob_multi
+from CONAN.logprob_multi import logprob_multi
 import dill as pickle
 from os.path import splitext,dirname
 

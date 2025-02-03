@@ -10,7 +10,7 @@ from lmfit import minimize, Parameters, Parameter
 
 from os.path import splitext
 from ldtk import SVOFilter
-from CONAN3.models import RadialVelocity_Model, Transit_Model, spline_fit
+from CONAN.models import RadialVelocity_Model, Transit_Model, spline_fit
 from .utils import outlier_clipping, rho_to_tdur, rescale0_1, ecc_om_par,sesinw_secosw_to_ecc_omega
 from .utils import rescale_minus1_1, split_transits,sinusoid
 from .geepee import gp_params_convert, celerite_kernels, george_kernels,spleaf_kernels
@@ -4522,7 +4522,7 @@ class fit_setup:
         print output. Default is True.
 
     Other keyword arguments to the emcee or dynesty sampler functions (`run_mcmc()` or 
-    `run_nested()`) can be given in the call to `CONAN3.run_fit()`.
+    `run_nested()`) can be given in the call to `CONAN.run_fit()`.
     
     Attributes:
     -----------
@@ -4543,7 +4543,7 @@ class fit_setup:
 
     Examples:
     ---------
-    >>> fit_obj = CONAN3.fit_setup(R_st=(1,0.01), M_st=(1,0.01), par_input="Rrho", 
+    >>> fit_obj = CONAN.fit_setup(R_st=(1,0.01), M_st=(1,0.01), par_input="Rrho", 
     >>>                             apply_LCjitter="y", apply_RVjitter="y")
     >>> fit_obj.sampling(sampler="emcee", ncpus=2,n_chains=64, n_steps=2000, n_burn=500)
     """
@@ -4754,7 +4754,7 @@ class load_result:
 
         Examples:
         ---------
-        >>> result = CONAN3.load_result(folder="output")
+        >>> result = CONAN.load_result(folder="output")
         
         different plots from the result object
         
@@ -5356,7 +5356,7 @@ class load_result:
     
     def _load_result_array(self, data=["lc","rv"],verbose=True):
         """
-            Load result array from CONAN3 fit allowing for customised plots.
+            Load result array from CONAN fit allowing for customised plots.
             All files with '_**out.dat' are loaded. 
 
             Parameters:
@@ -5373,8 +5373,8 @@ class load_result:
             
             Examples:
             ---------
-            >>> import CONAN3
-            >>> res=CONAN3.load_result()
+            >>> import CONAN
+            >>> res=CONAN.load_result()
             >>> results = res._load_result_array()
             >>> list(results.keys())
             >>> #['lc8det_lcout.dat', 'lc6bjd_lcout.dat']
@@ -5429,8 +5429,8 @@ class load_result:
             folder to save the output files. Default is None to save in the current result directory.
         """
         
-        from CONAN3.logprob_multi import logprob_multi
-        from CONAN3.plotting import fit_plots
+        from CONAN.logprob_multi import logprob_multi
+        from CONAN.plotting import fit_plots
 
         assert stat in ["median","max","bestfit"],f'make_output_file: stat must be of ["median","max","bestfit"] but {stat} given'
         if   stat == "median":  stat = "med"
@@ -5467,7 +5467,7 @@ class load_result:
             sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
         """
 
-        from CONAN3.logprob_multi import logprob_multi
+        from CONAN.logprob_multi import logprob_multi
         
         if params is None: params = self.params.median
         if file is None:
@@ -5497,7 +5497,7 @@ class load_result:
                 
     def _evaluate_rv(self, file=None, time=None,params=None, nsamp=500,return_std=False):
         """
-        Compute planet RV model from CONAN3 fit for a given input file at the given times using specified parameters.
+        Compute planet RV model from CONAN fit for a given input file at the given times using specified parameters.
 
         Parameters:
         -----------
@@ -5520,7 +5520,7 @@ class load_result:
             sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
         """
 
-        from CONAN3.logprob_multi import logprob_multi
+        from CONAN.logprob_multi import logprob_multi
 
         if params is None: params = self.params.median
         if file is None:
@@ -5570,7 +5570,7 @@ class load_result:
             sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
         """
 
-        from CONAN3.logprob_multi import logprob_multi
+        from CONAN.logprob_multi import logprob_multi
 
         if params is None: 
             params = self.params.median
@@ -5636,7 +5636,7 @@ class load_result:
             sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
         """
 
-        from CONAN3.logprob_multi import logprob_multi
+        from CONAN.logprob_multi import logprob_multi
 
         if params is None: 
             params = self.params.median
@@ -5837,30 +5837,30 @@ class load_result:
 class compare_results:
     def __init__(self,result_list):
         """
-        Compare the results of multiple CONAN3 fits.
+        Compare the results of multiple CONAN fits.
 
         Parameters:
         -----------
-        result_list : list of CONAN3 objects or result folder names;
-            list of CONAN3 objects to compare.
+        result_list : list of CONAN objects or result folder names;
+            list of CONAN objects to compare.
 
         Examples:
         ---------
         load the result objects before comparing
 
-        >>> import CONAN3
-        >>> res1 = CONAN3.load_result("result1")
-        >>> res2 = CONAN3.load_result("result2")
-        >>> res3 = CONAN3.load_result("result3")
-        >>> comp = CONAN3.compare_results([res1,res2,res3])
+        >>> import CONAN
+        >>> res1 = CONAN.load_result("result1")
+        >>> res2 = CONAN.load_result("result2")
+        >>> res3 = CONAN.load_result("result3")
+        >>> comp = CONAN.compare_results([res1,res2,res3])
 
         or load the result folders directly for comparing
 
-        >>> comp = CONAN3.compare_results(["result1","result2","result3"])
+        >>> comp = CONAN.compare_results(["result1","result2","result3"])
 
         """
         for r in result_list:
-            assert isinstance(r, (load_result,str)), "compare_results(): all elements in result_list must be CONAN3 objects or strings of folder names."
+            assert isinstance(r, (load_result,str)), "compare_results(): all elements in result_list must be CONAN objects or strings of folder names."
         
         if isinstance(result_list[0],str):
             assert len(set(result_list))==len(result_list), f"compare_results(): folder repeated in result_list. cannot compare a result with itself"
@@ -6052,7 +6052,7 @@ class compare_results:
         
         Examples:
         ---------
-        >>> comp = CONAN3.compare_results(["results1_folder","results2_folder"])
+        >>> comp = CONAN.compare_results(["results1_folder","results2_folder"])
         >>> fig  = comp.plot_lc(plot_cols=(0,1,2),detrend=False)
         >>> fig.savefig("compare_LC.png", dpi=200)
         """

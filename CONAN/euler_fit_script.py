@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import os, sys
 from astropy.io import fits
 
-import CONAN3
-from CONAN3.get_files import get_parameters
-print(f"CONAN version: {CONAN3.__version__}")
+import CONAN
+from CONAN.get_files import get_parameters
+print(f"CONAN version: {CONAN.__version__}")
 
 # In[29]:
 
@@ -56,7 +56,7 @@ else:
 # In[4]:
 
 
-lc_obj = CONAN3.load_lightcurves(file_list        = lc_list, 
+lc_obj = CONAN.load_lightcurves(file_list        = lc_list, 
                                     data_filepath = path, 
                                     filters       = [filt], 
                                     wl        = [0.6],

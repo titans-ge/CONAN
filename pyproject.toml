@@ -10,7 +10,7 @@ requires = ["setuptools", "numpy==2.1.3"
 # ]
 
 [project]
-name = "CONAN3"
+name = "CONAN"
 version = "3.3.3"
 authors = [
     {name = "Monika Lendl", email = "monika.lendl@unige.ch"},
@@ -51,10 +51,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mlendl42/CONAN3"
-Documentation = "https://conan3.readthedocs.io/en/latest/"
-Changelog = "https://github.com/tundeakins/CONAN3/blob/main/change_log.rst"
-Issues = "https://github.com/tundeakins/CONAN3/issues"
+Homepage = "https://github.com/mlendl42/CONAN"
+Documentation = "https://CONAN.readthedocs.io/en/latest/"
+Changelog = "https://github.com/tundeakins/CONAN/blob/main/change_log.rst"
+Issues = "https://github.com/tundeakins/CONAN/issues"
 
 
 #optional dpendency for tests

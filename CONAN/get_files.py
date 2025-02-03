@@ -34,7 +34,7 @@ class get_TESS_data(object):
 
     Examples
     --------
-    >>> from CONAN3.get_files import get_TESS_data
+    >>> from CONAN.get_files import get_TESS_data
     >>> df = get_TESS_data("WASP-121")
     >>> df.search(author="SPOC", exptime=120)
     >>> df.download(sectors= [7,33,34,61], author="SPOC", exptime=120)
@@ -275,7 +275,7 @@ class get_Kepler_data(object):
 
     Examples
     --------
-    >>> from CONAN3.get_files import get_TESS_data
+    >>> from CONAN.get_files import get_TESS_data
     >>> df = get_TESS_data("`Kepler-1658")
     >>> df.search(quarter=[2,4,7], exptime=60)
     >>> df.download(quarter=[2,4,7], exptime=60)
@@ -522,7 +522,7 @@ class get_CHEOPS_data(object):
 
     Examples
     --------
-    >>> from CONAN3.get_files import get_CHEOPS_data
+    >>> from CONAN.get_files import get_CHEOPS_data
     >>> df = get_CHEOPS_data("KELT-20")
     >>> df.search( filters = { "pi_name":{"contains":["LENDL"]}, "data_arch_rev":{"equal":[3]} })
     >>> df.download(file_keys="all", aperture="DEFAULT")
@@ -674,7 +674,7 @@ class get_JWST_data(object):
 
     Examples
     --------
-    >>> from CONAN3.get_files import get_JWST_data
+    >>> from CONAN.get_files import get_JWST_data
     >>> df = get_JWST_data("WASP-39")
     >>> df.search(instrument="NIRSPEC/SLIT", filters="G395H", proposal_id="1366")
     >>> df.download()   #download white light curves
@@ -800,7 +800,7 @@ class get_EULER_data_from_server(object):
 
     Examples
     --------
-    >>> from CONAN3.get_files import get_EULER_data
+    >>> from CONAN.get_files import get_EULER_data
     >>> df = get_EULER_data("WASP-121")
     >>> df.search(dates=["2020-09-01","2020-09-30"])
     >>> df.download(aperture="DEFAULT")

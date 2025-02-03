@@ -71,13 +71,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     -----------
     lc_obj : lightcurve object;
         object containing lightcurve data and setup parameters. 
-        see CONAN3.load_lightcurves() for more details.
+        see CONAN.load_lightcurves() for more details.
     rv_obj : rv object
         object containing radial velocity data and setup parameters. 
-        see CONAN3.load_rvs() for more details.
+        see CONAN.load_rvs() for more details.
     fit_obj : fit_setup object;
         object containing fit setup parameters. 
-        see CONAN3.fit_setup() for more details.
+        see CONAN.fit_setup() for more details.
     statistic : str;
         statistic to run on posteriors to obtain model parameters and create model output file 
         "_\*out.dat". must be one of ["median", "max", "bestfit"], default is "median". "max" and 
@@ -95,7 +95,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         This also allows to create files compatibile with latest CONAN version. Default is False.
     shared_params: dict, optional
         dict specifying parameters that shared a value. Defualt is empty dict {}. 
-        use `CONAN3.get_parameter_names(lc_obj, rv_obj)` to see all parameter names.
+        use `CONAN.get_parameter_names(lc_obj, rv_obj)` to see all parameter names.
     resume_sampling : bool;
         resume sampling from last saved position 
     verbose : bool;
@@ -1558,7 +1558,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         for ch in range(chains.shape[2]):
             chains_dict[jnames[ch]] = chains[:,:,ch]
         pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
-        print(f"\nEmcee production chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.\n")  
+        print(f"\nEmcee production chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN.load_result()` to load it.\n")  
     
         GRvals = grtest_emcee(chains)
         gr_print(jnames,GRvals,out_folder)
@@ -1622,7 +1622,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         for ch in range(chains.shape[1]):
             chains_dict[jnames[ch]] = chains[:,ch]
         pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
-        print(f"\nDynesty chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN3.load_result()` to load it.\n")  
+        print(f"\nDynesty chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN.load_result()` to load it.\n")  
         
     pool.close()  #close the pool
     pool.join()   #wait for the processes to finish

@@ -170,7 +170,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
         op_func_str   = inspect.getsource(lc_obj._custom_LCfunc.op_func) if lc_obj._custom_LCfunc.op_func is not None else 'None'
         with open(f"{dirname}/custom_LCfunc.py","w") as fxn:
             if lc_obj._custom_LCfunc.replace_LCmodel: 
-                fxn.write("from CONAN3.misc import default_LCpars_dict as LC_pars\n")
+                fxn.write("from CONAN.misc import default_LCpars_dict as LC_pars\n")
             fxn.write(cust_func_str)
             if op_func_str!='None': fxn.write(op_func_str)
 
@@ -181,7 +181,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
         op_rvfunc_str   = inspect.getsource(rv_obj._custom_RVfunc.op_func) if rv_obj._custom_RVfunc.op_func is not None else 'None'
         with open(f"{dirname}/custom_RVfunc.py","w") as fxn:
             if rv_obj._custom_RVfunc.replace_RVmodel:
-                fxn.write("from CONAN3.misc import default_RVpars_dict as RV_pars\n")
+                fxn.write("from CONAN.misc import default_RVpars_dict as RV_pars\n")
             fxn.write(cust_rvfunc_str)
             if op_rvfunc_str!='None': fxn.write(op_rvfunc_str)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")
@@ -247,11 +247,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         --------
         lc_obj, rv_obj, fit_obj. if return_fit is True, the result object of fit is also returned
         lc_obj: object;
-            light curve data object generated from `conan3.load_lighturves()`.
+            light curve data object generated from `CONAN.load_lighturves()`.
         rv_obj: object;
-            rv data object generated from `conan3.load_rvs()`
+            rv data object generated from `CONAN.load_rvs()`
         fit_obj: object;
-            fitting object generated from `conan3.fit_setup()`.
+            fitting object generated from `CONAN.fit_setup()`.
         result: object;
             result object containing chains of the mcmc fit.
     """

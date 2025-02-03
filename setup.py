@@ -5,7 +5,7 @@ from  numpy.distutils.core import setup, Extension
 # os.system("f2py -c -m occultquad occultquad.f")
 # os.system("f2py -c -m occultnl occultnl.f")
 
-# with open('CONAN3/VERSION.dat') as version_file:
+# with open('CONAN/VERSION.dat') as version_file:
 #       __version__ = version_file.read().strip()
 
 # # Check if the NO_FORTRAN environment variable is set
@@ -16,22 +16,22 @@ if no_fortran:
       ext_modules = []
 else:
       print("Compiling fortran code")     
-      extOccultnl = Extension('CONAN3.occultnl', sources=['CONAN3/occultnl.f'])
-      extOccultquad = Extension('CONAN3.occultquad', sources=['CONAN3/occultquad.f'])
+      extOccultnl = Extension('CONAN.occultnl', sources=['CONAN/occultnl.f'])
+      extOccultquad = Extension('CONAN.occultquad', sources=['CONAN/occultquad.f'])
       ext_modules = [extOccultnl, extOccultquad]
 
 
 setup(
-      # name='CONAN3',
+      # name='CONAN',
       # version='3.3.2',
       # description='COde for exoplaNet ANalysis',
       # long_description=open("README.md").read(),
       # long_description_content_type='text/markdown',
-      # url='https://github.com/mlendl42/CONAN3',
+      # url='https://github.com/mlendl42/CONAN',
       # author='Monika Lendl, Babatunde Akinsanmi',
       # author_email='monika.lendl@unige.ch',
       # license='MIT',
-      packages=['CONAN3'],
+      packages=['CONAN'],
       # python_requires=">=3.10",
       ext_modules=ext_modules,
       # install_requires=['chainconsumer==1.1.2','scipy','pandas','lmfit','dynesty', 'astropy',

@@ -7,7 +7,7 @@
 #      spline       : c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 
 #      ***********************************************************************************************************
 # -----------------------------------------------------------------------------------------------------------------------
-	LC_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/postdoc_work/conan3_tutorial/WASP-127/WASP-127_RV/
+	LC_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/postdoc_work/CONAN_tutorial/WASP-127/WASP-127_RV/
 	RV_filepath: ../data/
 	n_planet: 1
 # -----------------------------------------PHOTOMETRY--------------------------------------------------------------------

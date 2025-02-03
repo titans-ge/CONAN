@@ -1,6 +1,6 @@
 import pytest
-from CONAN3 import load_lightcurves,load_rvs,fit_setup, load_configfile, run_fit
-from CONAN3.get_files import get_parameters
+from CONAN import load_lightcurves,load_rvs,fit_setup, load_configfile, run_fit
+from CONAN.get_files import get_parameters
 import os
 
 

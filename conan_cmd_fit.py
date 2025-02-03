@@ -1,5 +1,5 @@
 import argparse
-import CONAN3
+import CONAN
 
 # Create the parser
 parser = argparse.ArgumentParser(description="Run CONAN fit from configuration file.")
@@ -21,5 +21,5 @@ args = parser.parse_args()
 print(f"\nLoading config file: '{args.config_file}' and saving result to directory: '{args.out_folder}'")
 
 # Now you can use the arguments
-result = CONAN3.fit_configfile(args.config_file, out_folder=args.out_folder, init_decorr=False,
+result = CONAN.fit_configfile(args.config_file, out_folder=args.out_folder, init_decorr=False,
 rerun_result=args.rerun_result, resume_sampling=args.resume_sampling, verbose= args.verbose)

@@ -50,7 +50,7 @@ e.g. shared_params = {'lc1_logjitter': ['lc2_logjitter', 'lc3_logjitter', 'lc4_l
 * added gp component to get_decorr function
 * contamination factors can now be setup as fitting parameters. 
 * minor correction for TTV model of multiplanet sysyem when transits overlap
-* new CONAN3.compare_results() class with methods that allows to compare results from different fits.
+* new CONAN.compare_results() class with methods that allows to compare results from different fits.
 * implemented cosine kernel in celerite
 
 3-Jun-2024: version 3.2.1

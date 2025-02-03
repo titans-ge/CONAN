@@ -20,15 +20,15 @@ To avoid requirement conflicts with other packages, it is better to create a new
 
 .. code-block:: bash
 
-    git clone https://github.com/tundeakins/CONAN3.git
+    git clone https://github.com/tundeakins/CONAN.git
 .. code-block:: bash
 
-    cd CONAN3    
+    cd CONAN    
     pip install .
 
 - or pip installing directly from the github repository:
 .. code-block:: bash
 
-    pip install -e git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3
+    pip install -e git+https://github.com/tundeakins/CONAN.git#egg=CONAN
 
 Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.

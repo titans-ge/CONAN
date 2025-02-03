@@ -24,15 +24,15 @@ CONAN can be installed by:
 
 - (1) downloading the source files from github: 
 ```
-git clone https://github.com/tundeakins/CONAN3.git
-cd CONAN3 
+git clone https://github.com/tundeakins/CONAN.git
+cd CONAN 
 ```
 
 then running
 ```pip install .```
 
 - (2) directly using pip to install from github
-```pip install git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3```
+```pip install git+https://github.com/tundeakins/CONAN.git#egg=CONAN```
 
 Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 
@@ -40,7 +40,7 @@ if having troubles compiling the fortran code used for the transit model, set `N
 
 ```
 export NO_FORTRAN=True
-pip install git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3
+pip install git+https://github.com/tundeakins/CONAN.git#egg=CONAN
 ```
 
 -------------------------
@@ -53,7 +53,7 @@ Fit can be launched from config file within `python` or from the `command line`
 - Within `python`
 
 ```
-from CONAN3 import fit_configfile
+from CONAN import fit_configfile
 result = fit_configfile("input_config.dat", out_folder="output")
 ```
 - from `command line`: 

@@ -78,8 +78,8 @@ def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, pe
 
     Examples
     --------
-    >>> from CONAN3.models import TTV_Model
-    >>> from CONAN3.utils import split_transits
+    >>> from CONAN.models import TTV_Model
+    >>> from CONAN.utils import split_transits
     >>> import numpy as np
     >>> spt = split_transits(t, P=[0.9414526], t_ref=[1375.1698], flux=f)
     >>> trans_mod,_ = TTV_Model(t, rho_star = rho_star, T0=spt.t0_list, RpRs=[RpRs], b =[b], 
@@ -159,7 +159,7 @@ class Transit_Model:
 
     Examples
     --------
-    >>> from CONAN3.models import Transit_Model
+    >>> from CONAN.models import Transit_Model
     >>> TM  = Transit_Model(rho_star= 0.565, T0=0, RpRs=0.1, b=0.1, per=3, sesinw=0, sesinw=0, q1=0.2, q2=0.3)
     >>> flux,_ = TM.get_value(time)
     """
@@ -476,7 +476,7 @@ def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=N
 
     Examples
     --------
-    >>> from CONAN3.models import RadialVelocity_Model
+    >>> from CONAN.models import RadialVelocity_Model
     >>> import matplotlib.pyplot as plt
     >>> import numpy as np   
 

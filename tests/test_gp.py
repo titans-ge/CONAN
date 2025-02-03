@@ -1,4 +1,4 @@
-from CONAN3.geepee import spleaf_cosine, gp_params_convert, celerite_kernels, george_kernels, spleaf_kernels, celerite_cosine, spleaf_cosine
+from CONAN.geepee import spleaf_cosine, gp_params_convert, celerite_kernels, george_kernels, spleaf_kernels, celerite_cosine, spleaf_cosine
 import pytest
 import numpy as np
 import matplotlib.pyplot as plt

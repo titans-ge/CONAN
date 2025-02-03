@@ -8,7 +8,7 @@
 #      ***********************************************************************************************************
 # -----------------------------------------------------------------------------------------------------------------------
 	LC_filepath: ../data/
-	RV_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/postdoc_work/conan3_tutorial/WASP-127/WASP-127_EULER_LC/
+	RV_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/postdoc_work/CONAN_tutorial/WASP-127/WASP-127_EULER_LC/
 	n_planet: 1
 # -----------------------------------------PHOTOMETRY--------------------------------------------------------------------
 	LC_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5
