@@ -397,8 +397,8 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                     time_smooth       = tsm, 
                     phase_smooth      = phase_sm,
                     planet_mod_smooth = transit_occ_model(tr_params,tsm,npl=npl), 
-                    residual          = df["col1"] - fl_mod*spl_mod - gp_mod
-                                ) 
+                    residual          = df["col1"] - fl_mod*spl_mod - gp_mod,
+                    params            = tr_params) 
         return mods
     
     #perform fitting 
@@ -1276,9 +1276,6 @@ class load_lightcurves:
                 #         self._sine_dict[file].init_pars[p] = pps[p]
 
 
-        if plot_model:
-            _plot_data(self,plot_cols=(0,1,2),col_labels=("time","flux"),model_overplot=self._tmodel)
-
         #prefill other light curve setup from the results here or inputs given here.
         if setup_baseline:       
             if verbose: print(_text_format.BOLD + "\nSetting-up parametric baseline model from decorr result" +_text_format.END)
@@ -1304,6 +1301,7 @@ class load_lightcurves:
             if verbose: print(_text_format.BOLD + "\nSetting-up Limb darkening pars from input values" +_text_format.END)
             self.limb_darkening(q1=q1, q2=q2, verbose=verbose)
 
+        #derive other planet parameters from fit
         for i in range(len(self._decorr_result)):
             _res = self._decorr_result[i]
             G = '(6.674299999999998e-08)'
@@ -1311,7 +1309,7 @@ class load_lightcurves:
                 lbl = f"_{n}" if self._nplanet>1 else ""
                 _res.params.add(f"ecc{lbl}",expr=f'sesinw{lbl}**2+secosw{lbl}**2',min=0, max=1)
                 _res.params.add(f"w{lbl}",expr=f'(180/pi*atan2(sesinw{lbl},secosw{lbl}))%360', min=0, max=360)
-            if "Duration" in _res.params:
+            if "Duration" in _res.params:     #one duration for single planet system
                 ecc_fac  = '((1-ecc**2)/(1+sesinw*sqrt(ecc)))' if _res.params["sesinw"].value!=0 else '1'
                 ecc_fac2 = f'((1+sqrt(ecc)*sesinw)**3/(1-ecc**2)**(3/2))'
 
@@ -1319,11 +1317,17 @@ class load_lightcurves:
                 denom   = f'(sin( Duration*pi*sqrt(1-ecc**2)/(Period*{ecc_fac}**2) )**2 * {ecc_fac}**2)'
                 _res.params.add("aR",expr=f'sqrt({numer}/{denom}+(Impact_para/{ecc_fac})**2)', min=0, max=np.inf)
                 _res.params.add("rho_star",expr=f'((3*pi*aR**3)/({G}*(Period*24*3600)**2))/{ecc_fac2}', min=0, max=np.inf)
+                _res.params.add(f"inc", expr=f'(180/pi*acos(Impact_para/(aR*{ecc_fac})))')
+
             elif "rho_star" in _res.params:
                 for n in range(1,self._nplanet+1):
                     lbl = f"_{n}" if self._nplanet>1 else ""
+                    ecc_fac  = f'((1-ecc{lbl}**2)/(1+sesinw{lbl}*sqrt(ecc{lbl})))' if _res.params[f"sesinw{lbl}"].value!=0 else '1'
                     ecc_fac2 = f'((1+sqrt(ecc{lbl})*sesinw{lbl})**3/(1-ecc{lbl}**2)**(3/2))'
-                    _res.params.add(f"aR{lbl}", expr = f'((rho_star*{ecc_fac2}*{G}*(Period*24*3600)**2) /(3*pi))**(1/3)', min=0, max=np.inf)
+                    numer    = f'sqrt( ((1+abs(RpRs{lbl}))**2 - Impact_para{lbl}**2) )'
+                    _res.params.add(f"aR{lbl}", expr = f'((rho_star*{ecc_fac2}*{G}*(Period{lbl}*24*3600)**2) /(3*pi))**(1/3)', min=0, max=np.inf)
+                    _res.params.add(f"inc{lbl}", expr=f'(180/pi*acos(Impact_para{lbl}/(aR{lbl}*{ecc_fac})))')
+                    _res.params.add(f"Duration{lbl}", expr=f'( Period{lbl}/pi * ({ecc_fac}**2/(sqrt(1-ecc**2))) * asin({numer}/(aR{lbl}*{ecc_fac}*sin(pi/180*inc{lbl}))))', min=0, max=np.inf)
             #GP
             for gpn in [1,2]:
                 if f"log_GP_amp{gpn}" in _res.params:
@@ -1332,6 +1336,12 @@ class load_lightcurves:
                     _res.params.add(f"GP_len{gpn}", expr=f'exp(log_GP_len{gpn})',
                         min=np.exp(_res.params[f'log_GP_len{gpn}'].min),max=np.exp(_res.params[f'log_GP_len{gpn}'].max))
             self._decorr_result[i] = _res
+
+
+        if plot_model:
+            binsize = min([_res.params[f"Duration_{n}" if self._nplanet>1 else "Duration"]/10 for n in range(1, self._nplanet+1)])
+            _plot_data(self,plot_cols=(0,1,2),col_labels=("time","flux"),model_overplot=self._tmodel, binsize=binsize)
+
         return self._decorr_result
     
 
@@ -2891,7 +2901,7 @@ class load_lightcurves:
                 assert len(inspect.signature(op_func).parameters)==2, f"add_custom_LC_function(): op_func must take two arguments but {len(inspect.signature(op_func).parameters)} given."
                 #assert that number of arguments in fxn() is equal to the number of parameters in func_args + the independent variable x + extra_args dict
                 assert len_fxnpars==len(func_args)+2, f"add_custom_LC_function(): number of arguments in func must be equal to number of parameters in func_args + the independent variable + extra_args."
-            else:
+            else:  #TODO: LC_pars can be loaded from misc
                 assert x=="time", "add_custom_LC_function(): x must be 'time' if replace_LCmodel=True."
                 # assert LC_pars argument in fxn
                 assert "LC_pars" in inspect.signature(fxn).parameters, "add_custom_LC_function(): LC_pars dictionary argument must be in func in order to replace native transit model."
@@ -3282,7 +3292,7 @@ class load_lightcurves:
             hspace, wspace: float;
                 height and width space between subplots. Default is None to use matplotlib defaults.
             binsize : float;
-                binsize to use for binning the data in time. Default is 0.0104 (15mins).
+                binsize (in days) to use for binning the data in time. Default is None, 10 points are created in transit.
             figsize: tuple of length 2;
                 Figure size. If None, (8,5) is used for a single input file and optimally determined for more inputs.
 
@@ -3307,6 +3317,9 @@ class load_lightcurves:
         if col_labels is None:
             col_labels = ("time", "flux") if plot_cols[:2] == (0,1) else (f"column[{plot_cols[0]}]",f"column[{plot_cols[1]}]")
         
+        # if binsize==None:
+        #     binsize = self._tmodel.params[]/10
+        # if phase_plot>0: binsize = binsize/self._tmodel[]    #TODO
         if self._names != []:
             fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, figsize=figsize, fit_order=fit_order,
                             hspace=hspace, wspace=wspace, model_overplot=self._tmodel if show_decorr_model else None, detrend=detrend,
@@ -3530,56 +3543,56 @@ class load_rvs:
                     show_steps=False, plot_model=True, use_jitter_est=False, setup_baseline=True, 
                     setup_planet=False, custom_RVfunc=None, verbose=True ):
         """
-            Function to obtain best decorrelation parameters for each rv file using the forward 
-            selection method. It compares a model with only an offset to a polynomial model constructed 
-            with the other columns of the data. It uses columns 0,3,4,5 to construct the polynomial 
-            trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order in column i.
-            Decorrelation parameters that reduces the BIC by 5(i.e delta_BIC = -5, 12X more probable) 
-            are iteratively selected. The result can then be used to populate the `rv_baseline()` 
-            method, if use_result is set to True.
+        Function to obtain best decorrelation parameters for each rv file using the forward 
+        selection method. It compares a model with only an offset to a polynomial model constructed 
+        with the other columns of the data. It uses columns 0,3,4,5 to construct the polynomial 
+        trend model. The temporary decorr parameters are labelled Ai,Bi for 1st & 2nd order in column i.
+        Decorrelation parameters that reduces the BIC by 5(i.e delta_BIC = -5, 12X more probable) 
+        are iteratively selected. The result can then be used to populate the `rv_baseline()` 
+        method, if use_result is set to True.
 
-            Parameters:
-            -----------
-            T_0, Period, K, Eccentricity/sesinw, omega/secosw : floats, None;
-                RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) 
-                in the data file. if float/int, the values are held fixed. tuple/list of len 2 implies 
-                gaussian prior as (mean,std) while len 3 implies [min,start_val,max]
-            delta_BIC : float (negative);
-                BIC improvement a parameter needs to provide in order to be considered relevant for 
-                decorrelation. Default is conservative and set to -5 i.e, parameters needs to lower 
-                the BIC by 5 to be included as decorrelation parameter.
-            decorr_bound: tuple of size 2;
-                bounds when fitting decorrelation parameters. Default is (-1000,1000)
-            exclude_cols : list of int;
-                list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is [].
-            enforce_pars : list of int;
-                list of decorr params (e.g. ['B3', 'A5']) to enforce in decorrelation. Default is [].
-            show_steps : Bool, optional;
-                Whether to show the steps of the forward selection of decorr parameters. Default is False
-            plot_model : Bool, optional;
-                Whether to plot data and suggested trend model. Defaults to True.
-            use_jitter_est : Bool, optional;
-                Whether to use the jitter estimate to setup the baseline model. Default is False.
-            setup_baseline : Bool, optional;
-                whether to use result to setup the baseline model. Default is True.
-            setup_planet : Bool, optional;
-                whether to use input to setup the planet parameters. Default is False.
-            verbose : Bool, optional;
-                Whether to show the table of baseline model obtained. Defaults to True.
+        Parameters:
+        -----------
+        T_0, Period, K, Eccentricity/sesinw, omega/secosw : floats, None;
+            RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) 
+            in the data file. if float/int, the values are held fixed. tuple/list of len 2 implies 
+            gaussian prior as (mean,std) while len 3 implies [min,start_val,max]
+        delta_BIC : float (negative);
+            BIC improvement a parameter needs to provide in order to be considered relevant for 
+            decorrelation. Default is conservative and set to -5 i.e, parameters needs to lower 
+            the BIC by 5 to be included as decorrelation parameter.
+        decorr_bound: tuple of size 2;
+            bounds when fitting decorrelation parameters. Default is (-1000,1000)
+        exclude_cols : list of int;
+            list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is [].
+        enforce_pars : list of int;
+            list of decorr params (e.g. ['B3', 'A5']) to enforce in decorrelation. Default is [].
+        show_steps : Bool, optional;
+            Whether to show the steps of the forward selection of decorr parameters. Default is False
+        plot_model : Bool, optional;
+            Whether to plot data and suggested trend model. Defaults to True.
+        use_jitter_est : Bool, optional;
+            Whether to use the jitter estimate to setup the baseline model. Default is False.
+        setup_baseline : Bool, optional;
+            whether to use result to setup the baseline model. Default is True.
+        setup_planet : Bool, optional;
+            whether to use input to setup the planet parameters. Default is False.
+        verbose : Bool, optional;
+            Whether to show the table of baseline model obtained. Defaults to True.
 
-            Attributes:
-            -----------
-            _rvdecorr_result : list;
-                list of decorr result for each rv.
-            _rvmodel : list;
-                list to hold determined trendmodel for each rv.
-            _rv_pars : dict;
-                dictionary of RV parameters
+        Attributes:
+        -----------
+        _rvdecorr_result : list;
+            list of decorr result for each rv.
+        _rvmodel : list;
+            list to hold determined trendmodel for each rv.
+        _rv_pars : dict;
+            dictionary of RV parameters
 
-            Returns
-            -------
-            decorr_result: list of result object
-                list containing result object for each lc.
+        Returns
+        -------
+        decorr_result: list of result object
+            list containing result object for each lc.
         """
         assert isinstance(exclude_cols, list), f"get_decorr(): exclude_cols must be a list of column numbers to exclude from decorrelation but {exclude_cols} given."
         for c in exclude_cols: assert isinstance(c, int), f"get_decorr(): column number to exclude from decorrelation must be an integer but {c} given in exclude_cols."
@@ -4778,7 +4791,8 @@ class load_result:
     """
 
     def __init__(self, folder="output",chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl",verbose=True):
-
+        
+        if folder[-1] == "/": folder = folder[:-1]
         chain_file        = folder+"/"+chain_file
         burnin_chain_file = folder+"/"+burnin_chain_file
         self._folder      = folder
@@ -4805,7 +4819,7 @@ class load_result:
         if self._ind_para["custom_LCfunc"].func is not None:   # must reload the saved custom_func from the result folder 
             import importlib
             func_name = self._ind_para["custom_LCfunc"].func.__name__              #get_func_name
-            module    = importlib.import_module(f"{self._folder}.custom_LCfunc")   #import module from result folder
+            module    = importlib.import_module(f"{self._folder.replace('/','.')}.custom_LCfunc")   #import module from result folder
             
             self._ind_para["custom_LCfunc"].func = getattr(module, func_name)      # get the function from the module
             if inspect.isclass(self._ind_para["custom_LCfunc"].func):              # if the function is a class,use the get_model method
@@ -4867,7 +4881,7 @@ class load_result:
                 else:
                     tmin, tmax = input_lcs[lc]["col0"].min(), input_lcs[lc]["col0"].max()
 
-                self._lc_smooth_time_mod[lc].time    = np.linspace(tmin,tmax,max(2000, len(input_lcs[lc]["col0"])))
+                self._lc_smooth_time_mod[lc].time    = np.linspace(tmin,tmax, int((tmax-tmin)*24*60))
                 self._lc_smooth_time_mod[lc].model   = self._evaluate_lc(file=lc, time=self._lc_smooth_time_mod[lc].time).planet_model
 
 
@@ -4885,23 +4899,25 @@ class load_result:
         
 
             #LC data and functions
-            self.lc = SN(   names     = self._lcnames,
-                            filters   = self._ind_para["filters"],
-                            evaluate  = self._evaluate_lc,
-                            outdata   = self._load_result_array(["lc"],verbose=verbose),
+            self.lc = SN(   names        = self._lcnames,
+                            filters      = self._ind_para["filters"],
+                            evaluate     = self._evaluate_lc,
+                            get_baseline = self._get_lcbaseline,
+                            outdata      = self._load_result_array(["lc"],verbose=verbose),
                             #load each lcfile as a pandas dataframe and store all in dictionary
-                            indata    = {fname:pd.DataFrame(df) for fname,df in input_lcs.items()}, 
-                            _obj_type = "lc_obj"
+                            indata       = {fname:pd.DataFrame(df) for fname,df in input_lcs.items()}, 
+                            _obj_type    = "lc_obj"
                                         )
             self.lc.plot_bestfit = self._plot_bestfit_lc
             self.lc.plot_ttv     = self._ttvplot
             self.lc.plot_lcttv   = self._ttv_lcplot
             
             #RV data and functions
-            self.rv = SN(   names     = self._rvnames,
-                            filters   = self._ind_para["filters"],
-                            evaluate  = self._evaluate_rv,
-                            outdata   = self._load_result_array(["rv"],verbose=verbose),
+            self.rv = SN(   names        = self._rvnames,
+                            filters      = self._ind_para["filters"],
+                            evaluate     = self._evaluate_rv,
+                            get_baseline = self._get_rvbaseline,
+                            outdata      = self._load_result_array(["rv"],verbose=verbose),
                             #load each rvfile as a pandas dataframe and store all in dictionary
                             indata    = {fname:pd.DataFrame(df) for fname,df in input_rvs.items()},
                             _obj_type = "rv_obj"
@@ -5151,7 +5167,7 @@ class load_result:
         return fig
 
     def _plot_bestfit_lc(self, plot_cols=(0,1,2), detrend=False, col_labels=None, phase_plot=0,nrow_ncols=None, figsize=None, 
-                        hspace=None, wspace=None, binsize=0.0104, return_fig=True):
+                        hspace=None, wspace=None, binsize=None, return_fig=True):
         """
             Plot the best-fit model of the input data. 
 
@@ -5181,7 +5197,11 @@ class load_result:
             return_fig  : bool;
                 return figure object for saving to file.
         """
-        if binsize==None: binsize = min(self.params.dur)/10
+        if binsize==None: 
+            binsize = self.params.dur[0]/10 if phase_plot==0 else self.params.dur[phase_plot-1]/10
+        
+        if phase_plot>0: 
+            binsize = binsize/self.params.P[phase_plot-1]
 
         obj = self.lc
         if col_labels is None:
@@ -5425,7 +5445,7 @@ class load_result:
         
     def _evaluate_lc(self, file=None, time=None,params=None, nsamp=500,return_std=False):
         """
-        Compute transit model from fit for a given input file at the given times using specified parameters.
+        Compute planet transit model from fit for a given input file at the given times using specified parameters.
 
         Parameters:
         -----------
@@ -5478,7 +5498,7 @@ class load_result:
                 
     def _evaluate_rv(self, file=None, time=None,params=None, nsamp=500,return_std=False):
         """
-        Compute RV model from CONAN3 fit for a given input file at the given times using specified parameters.
+        Compute planet RV model from CONAN3 fit for a given input file at the given times using specified parameters.
 
         Parameters:
         -----------
@@ -5527,6 +5547,135 @@ class load_result:
             
             output = SN(time=time if time is not None else self._ind_para["input_lcs"][file]["col0"],
                         planet_model=mod.rv[file][0], components=mod.rv[file][1], sigma_low=qs[0], sigma_high=qs[2])
+            return output
+
+    def _get_lcbaseline(self, file=None, params=None, nsamp=500,return_std=False):
+        """
+        Compute LC baseline model from CONAN fit for a given input file using specified parameters.
+
+        Parameters:
+        -----------
+        file : str, None;
+            name of the LC file for which to evaluate the baseline model. If None, model for all input files is returned
+        params : array-like;
+            Parameters: to evaluate the model at. The median posterior parameters from the fit are used if params is None
+        nsamp : int;    
+            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 500.
+        return_std : bool;
+            if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
+
+        Returns:
+        --------
+        object : SimpleNamespace;
+            base_model: LC baseline model array evaluated at the input file times, for a specific file. 
+            sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
+        """
+
+        from CONAN3.logprob_multi import logprob_multi
+
+        if params is None: 
+            params = self.params.median
+
+        mod  = logprob_multi(params,self._ind_para,get_base_model=True)
+
+        if not return_std:     #return only the model
+            if file is None:
+                output = {f:SN(time=self._ind_para["input_lcs"][f]["col0"],base_model=mod.lc, 
+                                sigma_low=None, sigma_high=None) for f in self._lcnames}
+            else:
+                output = SN(time=self._ind_para["input_lcs"][file]["col0"],
+                                base_model=mod.lc[file], sigma_low=None, sigma_high=None)
+            return output
+        
+        else:                 #return model and quantiles
+            lenpost = len(self.flat_posterior)
+            mods_dict = {f:[] for f in self._lcnames} if file is None else {file:[]}
+
+            for p in self.flat_posterior[np.random.randint(0,lenpost,int(min(nsamp,0.2*lenpost)))]:   #at most 5000 random posterior samples
+                temp = logprob_multi(p,self._ind_para,get_base_model=True)
+                if file is None:
+                    for f in self._lcnames: 
+                        mods_dict[f].append(temp.lc[f])
+                else:
+                    mods_dict[file].append(temp.lc[file])
+
+            if file is None:
+                qs = {}
+                for f in self._lcnames:
+                    qs[f] = np.quantile(mods_dict[f],q=[0.16,0.5,0.84],axis=0)
+
+                output = {f:SN(time=self._ind_para["input_lcs"][f]["col0"],base_model=mod.lc[f], 
+                                stdev = np.mean(np.diff(qs[f],axis=0),axis=0),
+                                sigma_low=qs[f][0], sigma_high=qs[f][2]) for f in self._lcnames}
+
+            else:
+                qs = np.quantile(mods_dict[file],q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
+                output = SN(time=self._ind_para["input_lcs"][file]["col0"],
+                            base_model=mod.lc[file], stdev=np.mean(np.diff(qs,axis=0),axis=0), 
+                            sigma_low=qs[0], sigma_high=qs[2])
+            return output
+
+    def _get_rvbaseline(self, file=None, params=None, nsamp=500,return_std=False):
+        """
+        Compute RV baseline model from CONAN fit for a given input file using specified parameters.
+
+        Parameters:
+        -----------
+        file : str, None;
+            name of the RV file for which to evaluate the baseline model. If None, model for all input files is returned
+        params : array-like;
+            Parameters: to evaluate the model at. The median posterior parameters from the fit are used if params is None
+        nsamp : int;    
+            number of posterior samples to use for computing the 1sigma quantiles of the model. Default is 500.
+        return_std : bool;
+            if True, return the 1sigma quantiles of the model as well as the model itself. If False, return only the model.
+
+        Returns:
+        --------
+        object : SimpleNamespace;
+            base_model: RV baseline model array evaluated at the input file times, for a specific file. 
+            sigma_low, sigma_high: if return_std is True, 1sigma quantiles of the model is returned.
+        """
+
+        from CONAN3.logprob_multi import logprob_multi
+
+        if params is None: 
+            params = self.params.median
+
+        mod  = logprob_multi(params,self._ind_para,get_base_model=True)
+
+        if not return_std:     #return only the model
+            if file is None:
+                output = {f:SN(time=self._ind_para["input_rvs"][f]["col0"], base_model=mod.rv, 
+                            sigma_low=None, sigma_high=None) for f in self._rvnames}
+            else:
+                output = SN(time=self._ind_para["input_rvs"][file]["col0"],
+                                base_model=mod.rv[file], sigma_low=None, sigma_high=None)
+            return output
+        
+        else:                 #return model and quantiles
+            lenpost = len(self.flat_posterior)
+            mods_dict = {f:[] for f in self._rvnames} if file is None else {file:[]}
+
+            for p in self.flat_posterior[np.random.randint(0,lenpost,int(min(nsamp,0.2*lenpost)))]:   #at most 5000 random posterior samples
+                temp = logprob_multi(p,self._ind_para,get_base_model=True)
+                if file is None:
+                    for f in self._rvnames: 
+                        mods_dict[f].append(temp.rv[f])
+                else:
+                    mods_dict[file].append(temp.rv[file])
+
+            if file is None:
+                qs = {}
+                for f in self._rvnames:
+                    qs[f] = np.quantile(mods_dict[f],q=[0.16,0.5,0.84],axis=0)
+                output = {f: SN(time=self._ind_para["input_rvs"][f]["col0"], base_model=mod.rv[f],
+                                sigma_low=qs[f][0], sigma_high=qs[f][2]) for f in self._rvnames}
+
+            else:
+                qs = np.quantile(mods_dict[file],q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
+                output = SN(time=self._ind_para["input_rvs"][file]["col0"],
+                            base_model=mod.rv[file], sigma_low=qs[0], sigma_high=qs[2])
             return output
 
     def _ttvplot(self,figsize=None):
@@ -5646,13 +5795,16 @@ class load_result:
                 ph_sm        = phase_fold(t_sm,per,t0,-0.25)*per
 
                 ind    = abs(ph)<1.2*dur  #cut the data to 1.2 transit duration
-                t,f,e  = ph[ind],f[ind],e[ind]
+                t,f,e  = np.array(ph[ind]),np.array(f[ind]),np.array(e[ind])
+                t_srt  = np.argsort(t)
+                t,f,e  = t[t_srt],f[t_srt],e[t_srt]
                 ind_sm = abs(ph_sm)<1.2*dur 
                 ts, ms = ph_sm[ind_sm], mod_sm[ind_sm]
 
-                if offset[n-1]==None: offset[n-1] = 5* np.std(np.diff(f))/np.sqrt(2)
+                if offset[n-1]==None: offset[n-1] = np.ptp(f)#5* np.std(np.diff(f))/np.sqrt(2)
                 if binsize[n-1]==None: binsize[n-1] = dur/10
-                t_,f_,e_ = bin_data_with_gaps(t,f,e,binsize=binsize[n-1])
+
+                t_,f_,e_ = bin_data_with_gaps(t,f,e,binsize=binsize[n-1],gap_threshold=1)
 
                 # to hrs
                 x  = t  * 24
@@ -5660,7 +5812,7 @@ class load_result:
                 x_ = t_ * 24
                 srt_xs = np.argsort(xs)
 
-                ax[n-1].plot(x,f+i*offset[n-1],".",ms=3)
+                ax[n-1].plot(x,f+i*offset[n-1],".",ms=3,alpha=0.3)
                 ax[n-1].errorbar(x_,f_+i*offset[n-1],e_,fmt="k.",ms=8,mfc="w",label=f"{binsize[n-1]*24*60:.0f}min bins") 
 
                 ax[n-1].plot(xs[srt_xs],ms[srt_xs]+i*offset[n-1],"k")

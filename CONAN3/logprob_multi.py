@@ -12,7 +12,7 @@ from .utils import light_travel_time_correction,sinusoid
 
 
 def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
-                    get_planet_model=False, get_model=None,out_folder=""):
+                    get_planet_model=False, get_model=None,get_base_model=False,out_folder=""):
     """
     calculate log probability and create output file of full model calculated using posterior parameters
 
@@ -30,6 +30,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         see debug statements, by default False
     get_planet_model: bool, optional
         flag to output dictionary of planet model results (phot and RV) for specific input parameters.
+    get_base_model: bool, optional
+        flag to output dictionary of baseline model results (phot and RV) for specific input parameters.
     out_folder : str, optional
         folder to save output files, by default ""
     
@@ -91,7 +93,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
     
     mod, emod = [], [] # output arrays in case we're not in the mcmc
     if get_planet_model: 
-        model_outputs = SimpleNamespace(lc={},rv={})  
+        model_outputs = SimpleNamespace(lc={},rv={}) 
+    if get_base_model:
+        basemodel_outputs = SimpleNamespace(lc={},rv={}) 
 
     params_all[jumping] = p   # set the jumping parameters to the values in p which are varied in mcmc 
     for sp in shared_params:
@@ -647,6 +651,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                             outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
                             if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
                             np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
+    
+        if get_base_model:
+            for j in range(nphot):
+                basemodel_outputs.lc[LCnames[j]] = base_total_all[j]
+
 
     # now do the RVs and add their probabilities to the model
     time_all, RV_all, err_all, full_mod_all, base_para_all, base_spl_all, base_gp_all, base_total_all, rvmod_all, det_rv_all, gamma_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
@@ -960,8 +969,15 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                         if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
 
+        if get_base_model:
+            for j in range(nRV):
+                basemodel_outputs.rv[RVnames[j]] = base_total_all[j]
+
     if get_planet_model:
         return model_outputs
+
+    if get_base_model:
+        return basemodel_outputs
     
     # ====== return total outputs ======
     if inmcmc == 'y':

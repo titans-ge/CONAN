@@ -2,7 +2,7 @@ from ._classes import load_lightcurves, load_rvs, fit_setup,_print_output
 from copy import deepcopy
 import numpy as np 
 from .VERSION import __version__
-from .misc import _compare_nested_structures
+from .misc import _compare_nested_structures, compare_objs
 import inspect, os, sys
 
 def new_getfile(object, _old_getfile=inspect.getfile):
@@ -169,6 +169,8 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
         cust_func_str = inspect.getsource(lc_obj._custom_LCfunc.func)  #get the source code of the custom function
         op_func_str   = inspect.getsource(lc_obj._custom_LCfunc.op_func) if lc_obj._custom_LCfunc.op_func is not None else 'None'
         with open(f"{dirname}/custom_LCfunc.py","w") as fxn:
+            if lc_obj._custom_LCfunc.replace_LCmodel: 
+                fxn.write("from CONAN3.misc import default_LCpars_dict as LC_pars\n")
             fxn.write(cust_func_str)
             if op_func_str!='None': fxn.write(op_func_str)
 
@@ -178,6 +180,8 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
         cust_rvfunc_str = inspect.getsource(rv_obj._custom_RVfunc.func)
         op_rvfunc_str   = inspect.getsource(rv_obj._custom_RVfunc.op_func) if rv_obj._custom_RVfunc.op_func is not None else 'None'
         with open(f"{dirname}/custom_RVfunc.py","w") as fxn:
+            if rv_obj._custom_RVfunc.replace_RVmodel:
+                fxn.write("from CONAN3.misc import default_RVpars_dict as RV_pars\n")
             fxn.write(cust_rvfunc_str)
             if op_rvfunc_str!='None': fxn.write(op_rvfunc_str)
     f.write("# -----------------------------------------------------------------------------------------------------------------------\n")

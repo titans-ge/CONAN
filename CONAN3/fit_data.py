@@ -123,7 +123,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if not get_parameter_names:
         if not os.path.exists(out_folder):
             if verbose: print(f"Creating output folder...{out_folder}")
-            os.mkdir(out_folder)
+            os.makedirs(out_folder)
             create_configfile(lc_obj, rv_obj, fit_obj, f"{out_folder}/config_save.dat")  #create config file
 
 
@@ -132,6 +132,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 print(f'Fit result already exists in this folder: {out_folder}')
                 if rerun_result:
                     print('Rerunning CONAN with saved posterior chains to regenerate plots and files...\n')
+                    create_configfile(lc_obj, rv_obj, fit_obj, f"{out_folder}/config_save.dat")  #create config file
                 if resume_sampling:
                     print('Resuming sampling from last saved position...\n')
             else:
@@ -677,7 +678,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         prior      = np.concatenate((prior,    [sinus.__dict__[p].prior_mean]),     axis=0)
                         priorlow   = np.concatenate((priorlow, [sinus.__dict__[p].prior_width_hi]), axis=0)
                         priorup    = np.concatenate((priorup,  [sinus.__dict__[p].prior_width_hi]), axis=0)
-                        pnames     = np.concatenate((pnames,   [f'{trig}({f"{n}*" if n>1 else ""}{col_alias})_{p}_same']))  #e.g Same_sin(2*C5)_Amp
+                        pnames     = np.concatenate((pnames,   [f'{trig}_{f"{n}*" if n>1 else ""}{col_alias}_{p}_same']))  #e.g Same_sin(2*C5)_Amp
                         # if sinus.__dict__[p].step_size>0: njumpphot  = njumpphot + 1
                         sine_conf.pars["same"].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars list
                         if p!="Amp": break # only continue the n loop for Amp and not for P and x0 which remain same
@@ -703,7 +704,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             prior      = np.concatenate((prior,    [sinus.__dict__[p].prior_mean]),     axis=0)
                             priorlow   = np.concatenate((priorlow, [sinus.__dict__[p].prior_width_hi]), axis=0)
                             priorup    = np.concatenate((priorup,  [sinus.__dict__[p].prior_width_hi]), axis=0)
-                            pnames     = np.concatenate((pnames,   [f'{filt}_{trig}({f"{n}*" if n>1 else ""}{col_alias})_{p}']))  #e.g V_sin(2*C5)_Amp
+                            pnames     = np.concatenate((pnames,   [f'{filt}_{trig}_{f"{n}*" if n>1 else ""}{col_alias}_{p}']))  #e.g V_sin(2*C5)_Amp
                             sine_conf.pars[filt].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars list
                             if p!="Amp": break # only continue the n loop for Amp and not for P and x0 which remain same
                         if p!="Amp": break # only continue the trig loop for Amp and not for P and x0 which remain same for sin and cos
@@ -732,7 +733,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             prior      = np.concatenate((prior,    [sinus.__dict__[p].prior_mean]),     axis=0)
                             priorlow   = np.concatenate((priorlow, [sinus.__dict__[p].prior_width_hi]), axis=0)
                             priorup    = np.concatenate((priorup,  [sinus.__dict__[p].prior_width_hi]), axis=0)
-                            pnames     = np.concatenate((pnames,   [f'{lc_alias}_{trig}({f"{n}*" if n>1 else ""}{col_alias})_{p}']))  #e.g lc1_sin(2*C5)_Amp
+                            pnames     = np.concatenate((pnames,   [f'{lc_alias}_{trig}_{f"{n}*" if n>1 else ""}{col_alias}_{p}']))  #e.g lc1_sin(2*C5)_Amp
                             sine_conf.pars[nm].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars_dict
                             if p!="Amp": break # only continue the n loop for Amp and not for P and x0 which remain same
                         if p!="Amp": break # only continue the trig loop for Amp and not for P and x0 which remain same for sin and cos
@@ -998,7 +999,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             gp_colnames.append(col_nm)
 
     # =================RADIAL VELOCITY =========================================
-    if rv_obj is not None: 
+    if nRV > 0: 
         if verbose: print('Setting up RV arrays ...')
     if np.any([spl.use for spl in useSpline_rv.values()]): 
         if verbose: print('Setting up Spline fitting for RVs ...')  
@@ -1333,7 +1334,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     # for each shared parameter, update the value of the recipient and make sure it is not jumping (step=0)
     for sp in shared_params:
         for s_recip in shared_params[sp]:
-            initial[pnames_all == s_recip] = np.nan#initial[pnames_all == sp]
+            initial[pnames_all == s_recip] = f"->{sp}"#np.nan#initial[pnames_all == sp] . #specify that it takes its value from a shared parameter
             steps[pnames_all == s_recip] = 0
 
     priors       = np.concatenate((prior, GPprior,rvGPprior))

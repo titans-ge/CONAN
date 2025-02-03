@@ -1,3 +1,9 @@
+29-jan-2025: version 3.3.3
+~~~~~~~~~~~~~
+* improved generation of smooth time array (now at 1min sampling) for plotting best fit model 
+* result object now allows to get baseline model and the stdev using `result.lc.get_baseline()` and `result.rv.get_baseline()`
+*  fixed binning and offset issues in ttv lc plot
+
 20-Jan-2025: version 3.3.2
 ~~~~~~~~~~~~~
 * added capability for different parameters to share the same value. 

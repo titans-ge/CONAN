@@ -31,7 +31,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,8,9,10), unpack = True)  # reading in the lightcurve data
         
         #evaluate lc model on smooth time grid
-        t_sm  = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
+        t_sm  = np.linspace(tt.min(),tt.max(), int(np.ptp(tt)*24*60))
         lc_sm = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).lc[names[j]][0]
 
         # bin the lightcurve data

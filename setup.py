@@ -1,5 +1,5 @@
+#works for normal installation but not for editable installation unless 
 import os
-import setuptools
 # from setuptools import setup, Extension
 from  numpy.distutils.core import setup, Extension
 # os.system("f2py -c -m occultquad occultquad.f")
@@ -21,22 +21,23 @@ else:
       ext_modules = [extOccultnl, extOccultquad]
 
 
-setup(name='CONAN3',
-      version='3.3.2',
-      description='COde for exoplaNet ANalysis',
-      long_description=open("README.md").read(),
-      long_description_content_type='text/markdown',
-      url='https://github.com/mlendl42/CONAN3',
-      author='Monika Lendl, Babatunde Akinsanmi',
-      author_email='monika.lendl@unige.ch',
-      license='MIT',
+setup(
+      # name='CONAN3',
+      # version='3.3.2',
+      # description='COde for exoplaNet ANalysis',
+      # long_description=open("README.md").read(),
+      # long_description_content_type='text/markdown',
+      # url='https://github.com/mlendl42/CONAN3',
+      # author='Monika Lendl, Babatunde Akinsanmi',
+      # author_email='monika.lendl@unige.ch',
+      # license='MIT',
       packages=['CONAN3'],
-      python_requires=">=3.10",
+      # python_requires=">=3.10",
       ext_modules=ext_modules,
-      install_requires=['chainconsumer==1.1.2','scipy','pandas','lmfit','dynesty', 'astropy',
-                        'astroquery','celerite','corner','lightkurve','dill','dace_query',
-                        'matplotlib','emcee','george','ldtk==1.7.0','tqdm','spleaf','numba'
-                        ],
+      # install_requires=['chainconsumer==1.1.2','scipy','pandas','lmfit','dynesty', 'astropy',
+      #                   'astroquery','celerite','corner','lightkurve','dill','dace_query',
+      #                   'matplotlib','emcee','george','ldtk==1.7.0','tqdm','spleaf','numba'
+      #                   ],
       )
 
 #copy command line script to home directory

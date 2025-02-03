@@ -231,6 +231,7 @@ class Transit_Model:
             # --------
             # calculate eccentricity and omega
             ecc, ome = sesinw_secosw_to_ecc_omega(self.sesinw[n],self.secosw[n])
+            if ecc>0.99: ecc=0.99
             
             # adapt the RpRs value used in the LC creation to any ddfs
             if self.ddf == 0:
