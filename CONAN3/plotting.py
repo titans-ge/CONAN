@@ -5,40 +5,46 @@ import matplotlib, os
 from matplotlib.ticker import FormatStrFormatter    
 import matplotlib.pyplot as plt    
 from CONAN3.logprob_multi import logprob_multi
-import pickle
-from os.path import splitext
+import dill as pickle
+from os.path import splitext,dirname
 
 
 def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVunit="km/s",params=None,T0=None,period=None,Dur=None):
 
     _ind_para   = pickle.load(open(out_folder+"/.par_config.pkl","rb"))
-    all_models  = logprob_multi(params,_ind_para,get_model=True)
+    all_models  = logprob_multi(params,_ind_para,get_planet_model=True)
 
     matplotlib.use('Agg')
 
     if np.iterable(T0): npl = len(T0)
     else: npl = 1; T0 = [T0]
-    
+
+    # extract the directory names of "\init\init_", "\max\max_", "\med\med_"
+    if not os.path.exists(dirname(out_folder+prefix)): os.mkdir(dirname(out_folder+prefix))
+    plot_folder = out_folder+prefix
+
+    outdata_folder = out_folder+"/out_data/" if os.path.exists(out_folder+"/out_data/") else out_folder+"/"
+
     #model plot for each LC
     for j in range(nphot):
-        infile=out_folder + "/" + splitext(names[j])[0]+'_lcout.dat'
-        tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9), unpack = True)  # reading in the lightcurve data
+        infile = outdata_folder + splitext(names[j])[0]+'_lcout.dat'
+        tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,8,9,10), unpack = True)  # reading in the lightcurve data
         
-        #evaluate rv model on smooth time grid
-        t_sm  = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
-        lc_sm = logprob_multi(params,_ind_para,t=t_sm,get_model=True).lc[names[j]][0]
+        #evaluate lc model on smooth time grid
+        t_sm  = np.linspace(tt.min(),tt.max(), int(np.ptp(tt)*24*60))
+        lc_sm = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).lc[names[j]][0]
 
         # bin the lightcurve data
-        binsize_min=15.
-        binsize    = binsize_min/(24.*60.)
+        binsize_min = 15.
+        binsize     = min(Dur)/10 #binsize_min/(24.*60.)
         nbin = int(np.ptp(tt)/binsize)  # number of bins
 
-        t_bin, f_bin, err_bin = bin_data_with_gaps(tt, flux, err, binsize=binsize)    #original data
-        _,    det_fbin        = bin_data_with_gaps(tt, det_flux, binsize=binsize)    #detrended data
-        _,    resbin          = bin_data_with_gaps(tt, flux-full_mod,binsize=binsize)    #residuals
+        t_bin,    f_bin,  err_bin       = bin_data_with_gaps(tt, flux, err, binsize=binsize)    #original data
+        det_tbin, det_fbin, det_errbin  = bin_data_with_gaps(tt, det_flux, err, binsize=binsize)    #detrended data
+        res_tbin, resbin                = bin_data_with_gaps(tt, flux-full_mod,binsize=binsize)    #residuals
 
         ########## Plot and save lightcurve with fit ########
-        outname=out_folder+prefix+splitext(names[j])[0]+'_fit.png'
+        outname=plot_folder+splitext(names[j])[0]+'_fit.png'
 
         fig,ax = plt.subplots(3,1, figsize=(12,12), sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title('Fit for lightcurve '+names[j][:-4])
@@ -46,22 +52,24 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[0].plot(tt, flux,'.',c='skyblue', ms=3, zorder=1, label='Data')
         ax[0].plot(tt, full_mod, "-r", lw=2,zorder=5,label='Full Model fit')
         ax[0].plot(tt, bfunc, "g--",  zorder=5,label='Baseline')
-        ax[0].errorbar(t_bin, f_bin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, label=f'{int(binsize_min)} min bin')
-        ax[0].set_ylim([min([min(flux),min(full_mod)])-0.1*np.ptp(min(flux)), 
-                        max([max(flux),max(full_mod)])+0.1*np.ptp(max(flux))])
+        ax[0].errorbar(t_bin, f_bin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3, 
+                        label=f'{int(binsize*24*60)} min bin')
+        ax[0].set_ylim([np.nanmin([np.nanmin(flux),np.nanmin(full_mod)])-0.1*(np.nanmax(flux)-np.nanmin(flux)), 
+                        np.nanmax([np.nanmax(flux),np.nanmax(full_mod)])+0.1*(np.nanmax(flux)-np.nanmin(flux))])
         ax[0].legend()
 
         ax[1].set_ylabel("Flux - baseline")
         ax[1].plot(tt, det_flux,'.',c='skyblue',ms=3, zorder=1, label="Detrended data")
         # ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
         ax[1].plot(t_sm, lc_sm,'r-',lw=2,zorder=5, label="Best fit")
-        ax[1].errorbar(t_bin, det_fbin, yerr=err_bin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
-        ax[1].set_ylim([min(det_flux)-0.1*(1-min(det_flux)), max(det_flux)+0.1*(max(det_flux)-1)])
+        ax[1].errorbar(det_tbin, det_fbin, yerr=det_errbin, fmt='o', c='midnightblue', ms=3, capsize=2, zorder=3)
+        ax[1].set_ylim([np.nanmin([np.nanmin(det_flux),min(lc_sm)])-0.1*(np.nanmax(det_flux)-np.nanmin(det_flux)), 
+                        np.nanmax([np.nanmax(det_flux),np.nanmax(lc_sm)])+0.1*(np.nanmax(det_flux)-np.nanmin(det_flux))])
         ax[1].legend()
 
         ax[2].set_ylabel("O – C [ppm]")
         ax[2].plot(tt, 1e6*(flux-full_mod),'.',c='skyblue',ms=2, zorder=1,label=f"rms:{np.std(1e6*(flux-full_mod)):.2f} ppm")
-        ax[2].plot(t_bin, 1e6*resbin,'o', c='midnightblue', ms=3, zorder=3)
+        ax[2].plot(res_tbin, 1e6*resbin,'o', c='midnightblue', ms=3, zorder=3)
         ax[2].axhline(0,ls="--", color="k", alpha=0.3)
         ax[2].legend()
 
@@ -75,24 +83,24 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         
     if nphot > 0 and nttv == 0:
         for n in range(npl):
-            for filt in filters:
+            for filt in np.unique(filters):
                 flux_filter, phase_filter, err_filter, res_filter = [], [], [], []
                 phsm_filter, lcsm_filter = [], []
 
                 for j in range(nphot):
-                    infile = out_folder + "/" + names[j][:-4] + '_lcout.dat'
-                    tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 7, 8, 9), unpack=True)
+                    infile = outdata_folder + names[j][:-4] + '_lcout.dat'
+                    tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 8, 9, 10), unpack=True)
                     flux_resid = flux - full_mod
 
                     if filters[j] == filt:
                         # calculations for each planet (n) in the system
-                        phase = phase_fold(tt, period[n], T0[n], -0.25)
+                        phase    = phase_fold(tt, period[n], T0[n], -0.25)
                         lc_comps = all_models.lc[names[j]][1]  # lc components for each planet in the system
 
                         # evaluate lc model on smooth time grid
-                        t_sm = np.linspace(tt.min(), tt.max(), max(2000, len(tt)))
-                        ph_sm = phase_fold(t_sm, period[n], T0[n], -0.25)
-                        lc_sm_comp = logprob_multi(params, _ind_para, t=t_sm, get_model=True).lc[names[j]][1]
+                        t_sm       = np.linspace(tt.min(), tt.max(), max(2000, len(tt)))
+                        ph_sm      = phase_fold(t_sm, period[n], T0[n], -0.25)
+                        lc_sm_comp = logprob_multi(params, _ind_para, t=t_sm, get_planet_model=True).lc[names[j]][1]
 
                         # remove other planet's LC signal from det_flux
                         for i in range(npl):
@@ -106,7 +114,8 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
                         lcsm_filter.append(lc_sm_comp[f"pl_{n + 1}"])
 
                 # Bin the data
-                binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
+                # binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
+                binsize = Dur[n] / 10 / period[n]  # 10 bins in transit
                 nbin = int(np.ptp(np.concatenate(phase_filter)) / binsize)
 
                 srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
@@ -137,14 +146,14 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
     ############ RVs#####################
     for j in range(nRV):
-        infile  = out_folder + "/" + splitext(RVnames[j])[0]+'_rvout.dat'
-        outname = out_folder+prefix+splitext(RVnames[j])[0]+'_fit.png'
+        infile  = outdata_folder + splitext(RVnames[j])[0]+'_rvout.dat'
+        outname = plot_folder+splitext(RVnames[j])[0]+'_fit.png'
         tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9),unpack = True)  # reading in the rvcurve data
         rv_resid = y_rv-full_mod
 
         #evaluate rv model on smooth time grid
         t_sm  = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
-        rv_sm = logprob_multi(params,_ind_para,t=t_sm,get_model=True).rv[RVnames[j]][0]
+        rv_sm = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).rv[RVnames[j]][0]
 
         fig,ax = plt.subplots(3,1, figsize=(10,15),sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
         ax[0].set_title('Fit for RV curve '+RVnames[j][:-4])
@@ -189,7 +198,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
             phase_all = []
 
             for j in range(nRV):
-                infile  = out_folder + "/" + splitext(RVnames[j])[0]+'_rvout.dat'
+                infile  = outdata_folder + splitext(RVnames[j])[0]+'_rvout.dat'
                 tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9), unpack = True)
                 rv_resid = y_rv-full_mod
 
@@ -201,7 +210,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
                 t_sm       = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
                 ph_sm      = phase_fold(t_sm, period[n], T0[n],-0.5)
                 # ph_sm      = np.where(ph_sm<0, ph_sm+1, ph_sm)
-                rv_sm_comp = logprob_multi(params,_ind_para,t=t_sm,get_model=True).rv[RVnames[j]][1]
+                rv_sm_comp = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).rv[RVnames[j]][1]
 
                 #remove other planet's RV signal from det_RV
                 for i in range(npl):
@@ -221,8 +230,9 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
             ax[0].plot(np.concatenate(phase_all)[srt], np.concatenate(rv_all)[srt], "-k", lw=3, label='Best-fit')
             ax[0].legend()
             plt.subplots_adjust(hspace=0.04,wspace=0.04)
-            fig.savefig(out_folder+prefix+f'Phasefolded_RV_[planet{n+1}].png',bbox_inches="tight") 
-
+            fig.savefig(plot_folder+f'Phasefolded_RV_[planet{n+1}].png',bbox_inches="tight") 
+    
+    plt.close('all')
     matplotlib.use(__default_backend__)
 
 def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
@@ -255,7 +265,7 @@ def param_hist(vals,pname,mv,s1v,s3v,mav,s1m,s3m,out_folder):
     if not os.path.exists(out_folder+"/histograms"): os.mkdir(out_folder+"/histograms")
     outname=out_folder+"/histograms/hist_"+pname+".png"
     plt.savefig(outname)
-
+    plt.close()
     matplotlib.use(__default_backend__)
 
 

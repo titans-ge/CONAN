@@ -1,0 +1,63 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools", "numpy==2.1.3"
+            ]
+
+# build-backend = 'mesonpy'
+# requires = [
+#   'meson-python',
+#   'meson >= 1.5.0',
+# ]
+
+[project]
+name = "CONAN3"
+version = "3.3.3"
+authors = [
+    {name = "Monika Lendl", email = "monika.lendl@unige.ch"},
+    {name = "Babatunde Akinsanmi", email = "tunde.akinsanmi@unige.ch"}
+]
+description = "COde for exoplaNet ANalysis"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "chainconsumer==1.1.2",
+    "scipy",
+    "pandas",
+    "lmfit",
+    "dynesty",
+    "astropy",
+    "astroquery",
+    "celerite",
+    "corner",
+    "lightkurve",
+    "dill",
+    "dace_query",
+    "matplotlib",
+    "emcee",
+    "george",
+    "ldtk ==1.7.0",
+    "tqdm",
+    "spleaf",
+    "numba"
+]
+
+[project.urls]
+Homepage = "https://github.com/mlendl42/CONAN3"
+Documentation = "https://conan3.readthedocs.io/en/latest/"
+Changelog = "https://github.com/tundeakins/CONAN3/blob/main/change_log.rst"
+Issues = "https://github.com/tundeakins/CONAN3/issues"
+
+
+#optional dpendency for tests
+[project.optional-dependencies]
+test = ["pytest","batman-package","radvel"]
+    

@@ -1,3 +1,58 @@
+29-jan-2025: version 3.3.3
+~~~~~~~~~~~~~
+* improved generation of smooth time array (now at 1min sampling) for plotting best fit model 
+* result object now allows to get baseline model and the stdev using `result.lc.get_baseline()` and `result.rv.get_baseline()`
+*  fixed binning and offset issues in ttv lc plot
+
+20-Jan-2025: version 3.3.2
+~~~~~~~~~~~~~
+* added capability for different parameters to share the same value. 
+e.g. shared_params = {'lc1_logjitter': ['lc2_logjitter', 'lc3_logjitter', 'lc4_logjitter']}
+* Quality factor Q of the SHO kernel can be fixed to a value using lc_obj._Qsho or rv_obj._Qsho
+* when multiplying Gp kernels, amplitude of the second kernel should be set to -1 to deactivate it
+* fixed bug in post-sampling GP prediction when "same" GP is used for lcs
+* added reflective boundary condition for impact parameter when sampling with dynesty 
+
+18-Jan-2025: version 3.3.1
+~~~~~~~~~~~~~
+* changed pause statement in occultquad.f to print warning so as not to pause program execution
+* added sesinw-secosw parameterization for planet model
+* added filter dependent GP fit
+6-Dec-2024: version 3.3
+~~~~~~~~~~~~~
+* conversion functions (e.g., rho_to_aR) can take uncertainties.ufloat objects as input
+* custom func can be given as a class
+* automatic linking of lc_obj and rv_obj with seamless parameter sharing
+* fix for installation on python>=3.10
+* added ``.detrend_data()`` method to remove best fit decorr model from data.
+* added option to specify whether to fit jitter and offset for each light curve
+* fixed bug in transit model for eccentric orbits
+* added spleaf for GP fitting
+* reorganized result folder: meidan and max model plots are now saved in med/ and max/ folders respectively. *out.dat files in out_data/ folder
+* ``setup_phasecurve()`` method of the lc object now changed to ``phasecurve()``
+* corrected ecc anomaly calculation to be accurate for large eccentricities
+* added tests
+
+12-July-2024: version 3.2.2dev
+~~~~~~~~~~~~~
+* added light travel time correction to the lightcurve model, user only required to set the stellar radius
+* phase curve model properly account for orbital eccentricity.
+* users can define a custom function which can be used to modify or replace the native CONAN lightcurve model. lc_obj.add_custom_LC_function()
+* changed `import pickle` to `import dill as pickle` which allows to pickle more complex objects like functions.
+* allow masking data points with user-defined condition. e.g. `lc_obj.mask_data(lc_list="all", condition="lc['col0']<lc['col0'][10]")` to mask first 10 data points.
+* allow saving of modified injested data. e.g. `lc_obj.save_LCs(save_path="data_preproc/")` 
+* calculation of AIC,BIC and chisqr now take into account the jitter if added to the errorbars
+* allow installation of CONAN when fortran compiler is not available, in which case python implementation of the transit model is used.
+* extra fixed arguments can be passed to custom function
+* accounted better for eccentricity in different parameter conversions (rho_to_aR, aR_to_rho, Tdur_to_aR, aR_to_Tdur, etc)
+* fixed bug in lc_out.dat file where the gp baseline was not properly subtracted to create the detrended LC
+* new lc_obj.add_sinusoid() function to fit a sinusoidal model to the lc baseline 
+* added gp component to get_decorr function
+* contamination factors can now be setup as fitting parameters. 
+* minor correction for TTV model of multiplanet sysyem when transits overlap
+* new CONAN3.compare_results() class with methods that allows to compare results from different fits.
+* implemented cosine kernel in celerite
+
 3-Jun-2024: version 3.2.1
 ~~~~~~~~~~~~~
 * added function to read the parameters values and errors from the result_**.dat file --> result.get_all_params_dict()
