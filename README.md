@@ -1,5 +1,5 @@
 # CONAN
-COde for exoplaNet ANalysis
+COde for exoplaNet ANalysis: Flexible bayesian framework for modeling heterogeeous exoplanet data
 
 ### Installation
 To avoid requirement conflicts with other packages, it is better to create a new environment (or clone a current environment) to install CONAN
@@ -29,10 +29,10 @@ cd CONAN3
 ```
 
 then running
-```pip install -e .```
+```pip install .```
 
 - (2) directly using pip to install from github
-```pip install -e git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3```
+```pip install git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3```
 
 Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 
@@ -40,7 +40,7 @@ if having troubles compiling the fortran code used for the transit model, set `N
 
 ```
 export NO_FORTRAN=True
-pip install -e git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3
+pip install git+https://github.com/tundeakins/CONAN3.git#egg=CONAN3
 ```
 
 -------------------------

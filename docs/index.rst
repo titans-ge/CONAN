@@ -9,7 +9,11 @@ Welcome to CONAN's documentation!
 
 ``CONAN`` is a Python package for modeling lightcurve (transit/occultation/phasecurve) and radial velocity data of exoplanetary systems. It is designed to be flexible, easy to use, and fast. It is developed and maintained at the Observatory of Geneva, Switzerland.
 
-In this documentation, we will show you how to install and use ``CONAN`` to fit different datasets of exoplanetary systems simultaneously.
+This documentation describes how to install and use ``CONAN`` to fit different datasets of exoplanetary systems simultaneously.
+
+.. warning::
+   The docs are still under construction.
+
 
 .. toctree::
    :maxdepth: 2
