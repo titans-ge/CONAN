@@ -486,20 +486,18 @@ def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=2.):
         t_chunks = np.split(t, np.where(gap>gap_threshold*binsize)[0]) 
         f_chunks = np.split(f, np.where(gap>gap_threshold*binsize)[0])
         e_chunks = np.split(e, np.where(gap>gap_threshold*binsize)[0]) if e is not None else f_chunks
+
+        t_binned, f_binned, e_binned = [],[],[]
         
         for tc,fc,ec in zip(t_chunks,f_chunks,e_chunks):
-            if np.ptp(tc) < binsize: continue
-            nbin = int(np.ptp(tc)/binsize)
+            if np.ptp(tc) < binsize: nbin = 1 #continue
+            else: nbin = int(np.ptp(tc)/binsize)
             if e is not None: t_bin, f_bin, e_bin = bin_data(tc,fc,ec,statistic="mean",bins=nbin)
             else: t_bin, f_bin = bin_data(tc,fc,statistic="mean",bins=nbin)
 
-            try:
-                t_binned = np.concatenate((t_binned, t_bin))
-                f_binned = np.concatenate((f_binned, f_bin))
-                if e is not None: e_binned = np.concatenate((e_binned, e_bin))
-            except:
-                if e is not None: t_binned, f_binned, e_binned = t_bin, f_bin, e_bin
-                else: t_binned, f_binned = t_bin, f_bin
+            t_binned = np.concatenate((t_binned, t_bin))
+            f_binned = np.concatenate((f_binned, f_bin))
+            if e is not None: e_binned = np.concatenate((e_binned, e_bin))
 
         return (t_binned, f_binned, e_binned) if e is not None else (t_binned, f_binned)
 
