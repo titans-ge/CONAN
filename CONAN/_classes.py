@@ -692,8 +692,10 @@ class load_lightcurves:
             filter for each lightcurve in file_list. if a str is given, it is used for all lightcurves,
             if None, the default of "V" is used for all.
         wl : list, int, float, None;
-            central wavelength in microns for each lightcurve in file_list. if int or float is given, 
-            it is used for all lightcurves. if None, the default of 0.6 is used for all.
+            central wavelength in microns for each lightcurve in file_list. This is only used for plotting 
+            transit depth or occultation depth variation as a function of wl. If int or float is given, 
+            it is used for all lightcurves. If None, the default of 0.6 is used for all if same filter,
+            or unique random value per filter.
         nplanet : int;
             number of planets in the system. Default is 1.
         sort : bool;
@@ -803,10 +805,12 @@ class load_lightcurves:
             #store input files in lc object
             self._input_lc[f] = {}
             for i in range(9): self._input_lc[f][f"col{i}"] = fdata[:,i]
-            #compute rms and multiplicative jitter
-            self._rms_estimate.append( np.std(np.diff(fdata[:,1]))/np.sqrt(2) )      #std(diff(flux))/√2 is a good estimate of the rms noise
-            self._jitt_estimate.append( np.sqrt(self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)) ) # √(rms^2 - mean(err^2)) is a good estimate of the required jitter to add quadratically
-            if np.isnan(self._jitt_estimate[-1]): self._jitt_estimate[-1] = 1e-20
+            
+            #compute estimate of rms and jitter
+            self._rms_estimate.append( np.std(np.diff(fdata[:,1]))/np.sqrt(2) )  #std(diff(flux))/√2 is a good estimate of the rms noise
+            err_sqdiff = self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)      # (rms^2 - mean(err^2)
+            self._jitt_estimate.append( np.sqrt(err_sqdiff) if err_sqdiff>0 else 1e-20 )   # √(rms^2 - mean(err^2)) is a good estimate of the required jitter to add quadratically
+            
 
         if sort:  #sort lightcurves based on median time
             mid_t = [np.median(lc["col0"]) for lc in self._input_lc.values()]
@@ -1514,7 +1518,7 @@ class load_lightcurves:
             return None
 
         if lc_list == None or lc_list == []: 
-            print("lc_list is None: No outlier clipping.")
+            if verbose: print("lc_list is None: No outlier clipping.")
             return None
         
         if isinstance(select_column,str):
@@ -1591,7 +1595,7 @@ class load_lightcurves:
             #replace all columns of input file with the clipped data
             self._input_lc[file] = {k:v[ok] for k,v in self._input_lc[file].items()}
 
-            #recompute rms estimate and multiplicative jitter
+            #recompute rms estimate and jitter
             self._rms_estimate[self._names.index(file)]  = np.std(np.diff(self._input_lc[file]["col1"]))/np.sqrt(2)
             err_sqdiff  = self._rms_estimate[self._names.index(file)]**2 - np.mean(self._input_lc[file]["col2"]**2)
             self._jitt_estimate[self._names.index(file)] = np.sqrt(err_sqdiff) if err_sqdiff > 0 else 1e-20
@@ -3421,9 +3425,13 @@ class load_rvs:
             #store input files in rv object
             self._input_rv[f] = {}
             for i in range(6): self._input_rv[f][f"col{i}"] = fdata[:,i]
+
+            #compute estimate of rms  and jitter
             self._rms_estimate.append(np.std(fdata[:,1]))   #std of rv
-            self._jitt_estimate.append( np.sqrt(self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)) )
-            if np.isnan(self._jitt_estimate[-1]): self._jitt_estimate[-1] = 0 
+            err_sqdiff = self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)      # (rms^2 - mean(err^2)
+            self._jitt_estimate.append( np.sqrt(err_sqdiff) if err_sqdiff > 0 else 0 )   # √(rms^2 - mean(err^2)) is a good estimate of the required jitter to add quadratically
+            
+
 
         #list to hold initial baseline model coefficients for each rv
         self._RVbases_init = [dict( A0=0, B0=0, A3=0, B3=0, A4=0, B4=0, A5=0, B5=0, 

@@ -22,23 +22,23 @@ delta    = None
 A_ev     = 0
 A_db     = 0
 
-def ellc_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
-                    secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1):
-    import ellc
-    sb     = occ*1e-6/RpRs**2
-    u1,u2  = convert_LD(q1,q2,"q2u")
-    ecc, w = sesinw_secosw_to_ecc_omega(sesinw, secosw,angle_unit="degrees")
+# def ellc_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
+#                     secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1):
+#     import ellc
+#     sb     = occ*1e-6/RpRs**2
+#     u1,u2  = convert_LD(q1,q2,"q2u")
+#     ecc, w = sesinw_secosw_to_ecc_omega(sesinw, secosw,angle_unit="degrees")
 
-    if rho_star != None:
-        aR   = rho_to_aR(rho_star,per,ecc,w)                     #semi-major axis (in units of stellar radii)
-    else:
-        aR   = Tdur_to_aR(dur, b, RpRs, per,ecc,w)                     #semi-major axis (in units of stellar radii)
+#     if rho_star != None:
+#         aR   = rho_to_aR(rho_star,per,ecc,w)                     #semi-major axis (in units of stellar radii)
+#     else:
+#         aR   = Tdur_to_aR(dur, b, RpRs, per,ecc,w)                     #semi-major axis (in units of stellar radii)
 
-    ellc_flux = ellc.lc(time, t_zero=T0, period=per, radius_1=1/aR, radius_2=RpRs/aR, 
-                        incl=inclination(b, aR,ecc,w) , sbratio=sb,
-                        f_c=secosw, f_s=sesinw,ld_1="quad", ldc_1=[u1,u2], 
-                        )
-    return ellc_flux
+#     ellc_flux = ellc.lc(time, t_zero=T0, period=per, radius_1=1/aR, radius_2=RpRs/aR, 
+#                         incl=inclination(b, aR,ecc,w) , sbratio=sb,
+#                         f_c=secosw, f_s=sesinw,ld_1="quad", ldc_1=[u1,u2], 
+#                         )
+#     return ellc_flux
 
 def batman_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
                     secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1, get_mod=False):
@@ -60,7 +60,6 @@ def batman_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, pe
     else:
         params.a   = Tdur_to_aR(dur, b, RpRs, params.per,params.ecc,params.w)                     #semi-major axis (in units of stellar radii)
 
-    print(params.a)
     params.inc       = inclination(b, params.a,params.ecc,params.w)                      #orbital inclination (in degrees)
     params.limb_dark = "quadratic"        #limb darkening model
     u1,u2            = convert_LD(q1,q2,"q2u")
@@ -96,9 +95,9 @@ def test_batman_transit(show_plot=False):
                                     sesinw=sesinw,secosw=secosw,q1=q1, q2=q2, occ=occ, Fn=None, delta=delta, A_ev=A_ev, 
                                     A_db=A_db,npl=npl, get_mod=True)
 
-        ellc_mod  = ellc_transit(time, rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per, 
-                                    sesinw=sesinw,secosw=secosw,q1=q1, q2=q2, occ=occ, Fn=None, delta=delta, A_ev=A_ev, 
-                                    A_db=A_db,npl=npl)
+        # ellc_mod  = ellc_transit(time, rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per, 
+        #                             sesinw=sesinw,secosw=secosw,q1=q1, q2=q2, occ=occ, Fn=None, delta=delta, A_ev=A_ev, 
+        #                             A_db=A_db,npl=npl)
 
         conan_mod = Transit_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
                                     sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
@@ -114,7 +113,7 @@ def test_batman_transit(show_plot=False):
             ax[0].set_title(f"{e=:.2f},{w=:.1f}, {equiv[-1]}")
             ax[0].plot(time, conan_mod, label="CONAN")
             ax[0].plot(time, bat_mod, "--", label="Batman")
-            ax[0].plot(time, ellc_mod,":", label="ELLC")
+            # ax[0].plot(time, ellc_mod,":", label="ELLC")
             [ax[0].axvline(tc, color="g", linestyle=":") for tc in (tconj.transit,tconj.eclipse)]
             ax[0].set_ylabel("Flux")
             ax[0].legend()
@@ -189,7 +188,7 @@ def test_duration(show_plot=False):
             ax[2].plot(time, orb_pars2.true_anom, "g:",label="CONAN_approx_EA")
             ax[2].set_ylabel("True anomaly")
 
-            from pycheops.funcs import t2z
+            # from pycheops.funcs import t2z
             ax[3].plot(time, orb_pars.get_Rsky(params.a,np.radians(params.inc))[0], label="CONAN")
             ax[3].plot(time,m1.ds, "--",label="Batman")
             ax[3].plot(time, orb_pars2.get_Rsky(params.a,np.radians(params.inc))[0], "g:",label="CONAN_approx_EA")

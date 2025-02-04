@@ -60,4 +60,10 @@ Issues = "https://github.com/tundeakins/CONAN/issues"
 #optional dpendency for tests
 [project.optional-dependencies]
 test = ["pytest","batman-package","radvel"]
+
+
+#pytests
+[tool.pytest.ini_options]
+addopts = ["-v", "-p", "no:warnings"]
+
     

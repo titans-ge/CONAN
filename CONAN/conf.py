@@ -418,7 +418,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     if verbose: lc_obj.print("lc_baseline")
     if gp_lclist !=[]: 
         gp_lclist = gp_lclist[0] if gp_lclist[0] in ['same','all'] else gp_lclist
-    gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in lc_obj._gp_lcs()]
+    gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in lc_obj._gp_lcs()]if _useGPphot!=[] else []
     lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
                     amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
     lc_obj._fit_offset = _offset
@@ -512,7 +512,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     if verbose: rv_obj.print("rv_baseline")
     if gp_rvlist !=[]: 
         gp_rvlist = gp_rvlist[0] if gp_rvlist[0]=='same' else gp_rvlist
-    gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in rv_obj._gp_rvs()]
+    gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in rv_obj._gp_rvs()] if usegpRV!=[] else []
     rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
                     amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
     
