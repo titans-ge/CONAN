@@ -10,7 +10,7 @@ from lmfit import minimize, Parameters, Parameter
 
 from os.path import splitext
 from ldtk import SVOFilter
-from CONAN.models import RadialVelocity_Model, Transit_Model, spline_fit
+from .models import RadialVelocity_Model, Transit_Model, spline_fit
 from .utils import outlier_clipping, rho_to_tdur, rescale0_1, ecc_om_par,sesinw_secosw_to_ecc_omega
 from .utils import rescale_minus1_1, split_transits,sinusoid
 from .geepee import gp_params_convert, celerite_kernels, george_kernels,spleaf_kernels
