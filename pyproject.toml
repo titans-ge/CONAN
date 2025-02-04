@@ -16,7 +16,6 @@ maintainers = [
 
 description = "COde for exoplaNet ANalysis"
 readme = "README.md"
-license= "MIT"
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
