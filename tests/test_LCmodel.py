@@ -1,6 +1,6 @@
 import pytest
 import batman
-import ellc
+# import ellc
 import numpy as np
 from CONAN.utils import (rho_to_aR, convert_LD, Tdur_to_aR, inclination,sesinw_secosw_to_ecc_omega,
                             rho_to_tdur, get_orbital_elements, get_Tconjunctions)
