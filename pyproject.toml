@@ -49,11 +49,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage   = "https://github.com/tundeakins/CONAN"
-Repository = "https://github.com/tundeakins/CONAN"
+Homepage   = "https://github.com/titans-ge/CONAN"
+Repository = "https://github.com/titans-ge/CONAN"
 Documentation = "https://conan-exoplanet.readthedocs.io/en/latest/"
-Changelog = "https://github.com/tundeakins/CONAN/blob/main/change_log.rst"
-Issues = "https://github.com/tundeakins/CONAN/issues"
+Changelog = "https://github.com/titans-ge/CONAN/blob/main/change_log.rst"
+Issues = "https://github.com/titans-ge/CONAN/issues"
 
 
 #optional dpendency for tests

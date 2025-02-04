@@ -20,7 +20,7 @@ To avoid requirement conflicts with other packages, it is better to create a new
 
 .. code-block:: bash
 
-    git clone https://github.com/tundeakins/CONAN.git
+    git clone https://github.com/titans-ge/CONAN.git
 .. code-block:: bash
 
     cd CONAN    
@@ -29,6 +29,6 @@ To avoid requirement conflicts with other packages, it is better to create a new
 - or pip installing directly from the github repository:
 .. code-block:: bash
 
-    pip install -e git+https://github.com/tundeakins/CONAN.git#egg=CONAN
+    pip install -e git+https://github.com/titans-ge/CONAN.git#egg=CONAN
 
 Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.

@@ -24,7 +24,7 @@ or
 
 - (2) Downloading the source files from github: 
     ```
-    git clone https://github.com/tundeakins/CONAN.git
+    git clone https://github.com/titans-ge/CONAN.git
     cd CONAN 
     ```
 
@@ -37,7 +37,7 @@ or
 
 - (3) directly using pip to install from github
     ```
-    pip install git+https://github.com/tundeakins/CONAN.git#egg=CONAN
+    pip install git+https://github.com/titans-ge/CONAN.git#egg=CONAN
     ```
     Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 
@@ -46,11 +46,11 @@ If having troubles compiling the fortran code used for the transit model, set `N
 
 ```
 export NO_FORTRAN=True
-pip install git+https://github.com/tundeakins/CONAN.git#egg=CONAN
+pip install git+https://github.com/titans-ge/CONAN.git#egg=CONAN
 ```
 
 -------------------------
-See recent changes in [change_log.rst](https://github.com/tundeakins/CONAN/blob/main/change_log.rst)
+See recent changes in [change_log.rst](https://github.com/titans-ge/CONAN/blob/main/change_log.rst)
 
 
 ### Fit from config file 
