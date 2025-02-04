@@ -265,14 +265,12 @@ class Transit_Model:
                 #from winn2010 (https://arxiv.org/abs/1001.2010)
                 orb_pars = get_orbital_elements(tt_ss, self.T0[n], self.per[n], ecc, ome,
                                                 ars,inc, approx=approx_EA)
-                TA_lc    = orb_pars.true_anom
+                # TA_lc    = orb_pars.true_anom
                 z, y     = orb_pars.get_Rsky()
-                # from pycheops.funcs import t2z
-                # z = t2z(tt_ss,self.T0[n],self.per[n],np.sin(inc),1/ars,ecc,np.degrees(ome))
 
                 npo = len(z)                # number of lc points
-                m0  = np.zeros(npo)
-                mm0 = np.zeros(npo)
+                m0  = np.ones(npo)#np.zeros(npo)
+                mm0 = np.ones(npo)#np.zeros(npo)
 
                 # convert the LD coefficients to u1 and u2
                 u1,u2 = convert_LD(self.q1,self.q2,conv="q2u")

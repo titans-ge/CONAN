@@ -908,8 +908,11 @@ def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra",total=True):
     ecc_fac = (1-e**2)/(1+esinw)
     inc     = unp.arccos(b/(aR*ecc_fac))
     sini    = unp.sin(inc)
+    numer   = (1+rp)**2 - b**2
+    numer   = np.where(numer < 0,np.nan, numer) + 0
+
     
-    Tdur = P/np.pi * (ecc_fac**2/(unp.sqrt(1-e**2))) * unp.arcsin(unp.sqrt( (1+rp)**2 - b**2 )/(aR*ecc_fac*sini))
+    Tdur = P/np.pi * (ecc_fac**2/(unp.sqrt(1-e**2))) * unp.arcsin(unp.sqrt( numer )/(aR*ecc_fac*sini))
     Tdur = unp.uarray(np.round(unp.nominal_values(Tdur),8), np.round(unp.std_devs(Tdur),8))
 
     if np.iterable(Tdur):
@@ -979,6 +982,7 @@ def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     ecc_fac = (1-e**2)/(1+esinw)
 
     numer =  (1+abs(Rp))**2 - b**2
+    numer = np.where(numer < 0,np.nan, numer) + 0
     denom = unp.sin( Tdur*np.pi*unp.sqrt(1-e**2)/(P*ecc_fac**2) )**2 *ecc_fac**2
 
     aR = unp.sqrt(numer/denom + (b/ecc_fac)**2)
@@ -1191,14 +1195,6 @@ def reflection_atm_variation(phase, Fd=0, A=0, delta_deg=0):
         planetary flux as a function of phase
     """
     raise NotImplementedError("This function is not yet implemented")
-    # res        = SimpleNamespace()
-    # res.delta  = np.deg2rad(delta_deg)
-    # res.phi    = 2*np.pi*phase
-
-    # res.Fmin   = Fd - A/2*(1-np.cos(np.pi+res.delta))
-    # res.Fnight = Fd - A * np.cos(res.delta)
-    # res.pc     = res.Fmin + A/2*(1-np.cos(res.phi+res.delta))
-    # return res   
 
 def rescale0_1(x):
     """Rescale an array to the range [0,1]."""

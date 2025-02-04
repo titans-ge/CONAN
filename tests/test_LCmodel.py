@@ -60,6 +60,7 @@ def batman_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, pe
     else:
         params.a   = Tdur_to_aR(dur, b, RpRs, params.per,params.ecc,params.w)                     #semi-major axis (in units of stellar radii)
 
+    print(params.a)
     params.inc       = inclination(b, params.a,params.ecc,params.w)                      #orbital inclination (in degrees)
     params.limb_dark = "quadratic"        #limb darkening model
     u1,u2            = convert_LD(q1,q2,"q2u")
@@ -394,6 +395,28 @@ def test_ecc_occ_shift(show_plot=False):
 
     assert exp_dt == pytest.approx(dt,abs=1e-2)
 
+def test_flat_transit():
+    per      = 3.5
+    npl      = 1
+
+    equiv    = []
+    time     = np.linspace(T0-0.25*per, T0+0.25*per, int(0.5*per*24*60/2)) #2min cadence
+
+    #Non-transiting
+    conan_mod = Transit_Model(rho_star=None, dur=0.112, T0=T0, RpRs=RpRs, b=1.5+RpRs, per=per,
+                            sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
+                            delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time)[0]
+    equiv.append(pytest.approx(conan_mod,abs=1e-6) == 1)
+
+    #zero radius
+    conan_mod = Transit_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=0, b=b, per=per,
+                            sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
+                            delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time)[0]
+    equiv.append(pytest.approx(conan_mod,abs=1e-6) == 1)
+
+    assert all(equiv)
+
+
 
 if __name__ == "__main__":
     test_batman_transit(False)
@@ -401,3 +424,4 @@ if __name__ == "__main__":
     test_orbital_elements(False)
     test_LTT(False)
     test_ecc_occ_shift(False)
+    test_flat_transit()
