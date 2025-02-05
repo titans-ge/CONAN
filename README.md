@@ -1,3 +1,9 @@
+[![Python package](https://github.com/titans-ge/CONAN/actions/workflows/python-package.yml/badge.svg)](https://github.com/titans-ge/CONAN/actions/workflows/python-package.yml)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/conan-exoplanet)
+[![Upload Python Package](https://github.com/titans-ge/CONAN/actions/workflows/python-publish-pypi.yml/badge.svg)](https://github.com/titans-ge/CONAN/actions/workflows/python-publish-pypi.yml)
+![PyPI - Version](https://img.shields.io/pypi/v/conan-exoplanet)
+
+
 # CONAN
 **CO**de for exopla**N**et **AN**alysis: A flexible bayesian framework for modeling heterogeneous exoplanet data
 
