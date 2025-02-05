@@ -28,7 +28,6 @@ jobs:
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22.0
-        with 
         env:
           # Skip 32-bit builds, musllinux builds, and disable building PyPy wheels on all platforms
           CIBW_SKIP: "*-manylinux_i686 *musllinux* pp*"
