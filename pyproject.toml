@@ -57,7 +57,7 @@ Issues = "https://github.com/titans-ge/CONAN/issues"
 
 #optional dpendency for tests
 [project.optional-dependencies]
-test = ["pytest","batman-package","radvel"]
+test = ["pytest","batman-package","radvel","h5py"]
 
 
 #pytests
