@@ -61,7 +61,7 @@ jobs:
       id-token: write
     environment:
       name: deploy-to-pypi
-      url: https://pypi.org/project/conan-exoplanet
+      url: https://pypi.org/p/conan-exoplanet
 
     steps:
       - uses: actions/download-artifact@v4
