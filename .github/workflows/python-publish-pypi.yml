@@ -31,6 +31,8 @@ jobs:
         env:
           # Skip 32-bit builds, musllinux builds, and disable building PyPy wheels on all platforms
           CIBW_SKIP: "*-manylinux_i686 *musllinux* pp*"
+          # Limit the build to only Python 3.10 and 3.11
+          CIBW_BUILD: "cp310-* cp311-*"
 
       - uses: actions/upload-artifact@v4
         with:
