@@ -34,7 +34,7 @@ To avoid requirement conflicts with other packages, it is better to create a new
 - (3) pip installing directly from the github repository:
 .. code-block:: bash
 
-    pip install git+https://github.com/titans-ge/CONAN.git#egg=CONAN
+    pip install git+https://github.com/titans-ge/CONAN.git
 
 Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 
@@ -44,4 +44,4 @@ This uses a python implementation of the fortran code (which is ~30X slower)
 .. code-block:: bash
 
     export NO_FORTRAN=True
-    pip install git+https://github.com/titans-ge/CONAN.git#egg=CONAN
+    pip install git+https://github.com/titans-ge/CONAN.git

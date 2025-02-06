@@ -43,7 +43,7 @@ or
 
 - (3) directly using pip to install from github
     ```
-    pip install git+https://github.com/titans-ge/CONAN.git#egg=CONAN
+    pip install git+https://github.com/titans-ge/CONAN.git
     ```
     Note that a folder 'src' is created where the CONAN source files are downloaded to before installation.
 
@@ -52,7 +52,7 @@ If having troubles compiling the fortran code used for the transit model, set `N
 
 ```
 export NO_FORTRAN=True
-pip install git+https://github.com/titans-ge/CONAN.git#egg=CONAN
+pip install git+https://github.com/titans-ge/CONAN.git
 ```
 
 -------------------------
