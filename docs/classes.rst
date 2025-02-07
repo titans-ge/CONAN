@@ -2,6 +2,7 @@
 
 API
 ===
+.. module:: CONAN
 
 ``CONAN`` has 3 major classes that are used to store information about the input files and also perform computations.
 They are the ``load_lightcurves``, ``load_rvs``, and ``fit_setup`` which are described in detail below.
@@ -33,6 +34,13 @@ After a run, the results can be reloaded into memory using the ``load_result`` c
 This class has a number of methods to access the results.
 
 .. autoclass:: CONAN._classes.load_result
+    :members:
+    :undoc-members:
+    :inherited-members:
+    :private-members:
+    :show-inheritance:
+
+.. autoclass:: CONAN._classes.compare_results
     :members:
     :undoc-members:
     :inherited-members:
