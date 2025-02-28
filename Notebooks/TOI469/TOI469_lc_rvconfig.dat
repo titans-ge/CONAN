@@ -34,7 +34,7 @@
 	TOI469rv2.dat m/s    None    |   0    0    0    0|   0 ge None            | N(81728,10)   
 # ============ RV GP properties ================================================================================== 
 	name          par1 kern1 Amplitude1         length_scale      |op| par2 kern2 Amplitude2         length_scale2  
-	same          col0 cos   LU(0.1,2,20)       LU(0.01,1,100)    |* | col0 expsq F(1)               LU(0.01,1,60)   
+	same          col0 cos   LU(0.1,2,20)       LU(0.01,1,100)    |* | col0 expsq F(-1)               LU(0.01,1,60)   
 # -----------------------------------------------------------------------------------------------------------------------
 # ============ Planet parameters (Transit and RV) setup ========================================================== 
 	name                       fit  prior                                   note

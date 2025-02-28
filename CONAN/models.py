@@ -431,7 +431,7 @@ def para_minfunc(icoeff, ivars, mm, LCdata):
     flux = LCdata["col1"]
     icoeff_full = np.zeros(22)
     icoeff_full[ivars] = np.copy(icoeff)
-    bfunc,_,_ = basefuncLC(icoeff_full, LCdata, res=0, useSpline=False)   # fit baseline without spline here
+    bfunc,_, = basefuncLC(icoeff_full, LCdata, res=0, useSpline=False)   # fit baseline without spline here
     fullmod = np.multiply(bfunc, mm)
 
     return (flux - fullmod)

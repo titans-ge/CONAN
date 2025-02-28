@@ -1,3 +1,7 @@
+28-Feb-2025: version 3.3.8
+~~~~~~~~~~~~~
+* implemented multiprocessing for plotting figures
+
 29-jan-2025: version 3.3.3
 ~~~~~~~~~~~~~
 * improved generation of smooth time array (now at 1min sampling) for plotting best fit model 

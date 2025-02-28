@@ -552,8 +552,9 @@ class get_CHEOPS_data(object):
         print(pd.DataFrame(data, columns=["obj_id_catname","file_key", "pi_name", "date_mjd_start",
                                             "obs_total_exptime", "data_arch_rev",'status_published']))
 
-    def download(self, file_keys="all", aperture="DEFAULT", decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,
-                 outlier_clip=4, outlier_window_width=11,outlier_clip_niter=1, verbose=True):
+    def download(self, file_keys="all", aperture="DEFAULT", force_download=False, get_metadata=True,
+                    decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,
+                    outlier_clip=4, outlier_window_width=11,outlier_clip_niter=1, verbose=True):
         """   
         Download CHEOPS light curves from the cheops database using the dace_query package
 
@@ -563,6 +564,10 @@ class get_CHEOPS_data(object):
             List of file keys to download. if "all" is given, all file_keys shown in `.search()` result will be downloaded.
         aperture : str
             Aperture to use for the light curve. Default is "DEFAULT". The options are: "R15","R16",...,"R40","RINF","RSUP".
+        force_download: bool
+            Force download the light curve even if it has been downloaded before. Default is False.
+        get_metadata: bool
+            get metadata for the lc. this includes telescope tube temperature which may be used in decorrelation.
         decontaminate : bool
             Decontaminate the light curve. Default is True.
         reject_highpoints : bool
@@ -582,19 +587,25 @@ class get_CHEOPS_data(object):
             if file_keys=="all": file_keys = self.file_keys 
             else: 
                 file_keys = [file_keys]
-        for f in file_keys: assert f in self.file_keys, f"file_key must be in {self.file_keys}"
+        
+        if self.file_keys:
+            for f in file_keys: assert f in self.file_keys, f"file_key must be in {self.file_keys}"
+        else: 
+            self.file_keys = file_keys
 
         if isinstance(aperture,str): aperture = [aperture]*len(file_keys)
         elif isinstance(aperture, list): assert len(aperture)==len(file_keys), "aperture must be a single string or list of the same length as file_keys"
 
         for i,file_key in enumerate(file_keys):
-            d     = Dataset(file_key,verbose=False)
+            d     = Dataset(file_key,force_download=force_download, metadata=get_metadata, verbose=verbose)
             _,_,_ = d.get_lightcurve(aperture=aperture[i],decontaminate=decontaminate, reject_highpoints=reject_highpoints,verbose=False)
             if verbose: print(f"downloaded lightcurve with file key: {file_key}, aperture: {aperture[i]}")
             
             #remove points with high background
+            d.lc["bg"] = d.lc["bg"]*d.flux_median
             mask  = d.lc["bg"] > bg_MAD_reject*np.nanmedian(d.lc["bg"])
-            _,_,_ = d.mask_data(mask, verbose=False)
+            print(f'BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"])}]', end="->")
+            _,_,_ = d.mask_data(mask, verbose=verbose)
 
             #iterative sigma clipping
             for _ in range(outlier_clip_niter): t_,f_,e_ = d.clip_outliers(outlier_clip,outlier_window_width, verbose=verbose)
@@ -614,7 +625,7 @@ class get_CHEOPS_data(object):
             plt.ylabel("Flux")
             plt.show()
 
-    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None):
+    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None, rescale_data=True):
         """
         Save CHEOPS light curves as a CONAN light curve file.
         the output columns are [t, f, e, x_off, y_off, roll, bg, contam, deltaT]
@@ -638,12 +649,17 @@ class get_CHEOPS_data(object):
         for d in self.lc:
             t = d.lc["time"]+d.bjd_ref - bjd_ref
             
-            lc_ = np.stack((t, d.lc["flux"], d.lc["flux_err"], rescale_r(d.lc["xoff"]),
-                            rescale_r(d.lc["yoff"]), self._resort_roll(d.lc["roll_angle"]),
-                            rescale(d.lc["bg"]), rescale(d.lc["contam"]), d.lc["deltaT"])).T
+            if rescale_data:
+                lc_ = np.stack((t, d.lc["flux"], d.lc["flux_err"], rescale_r(d.lc["xoff"]),
+                                rescale_r(d.lc["yoff"]), self._resort_roll(d.lc["roll_angle"]),
+                                rescale(d.lc["bg"]), rescale(d.lc["contam"]), d.lc["deltaT"])).T
+            else:
+                lc_ = np.stack((t, d.lc["flux"], d.lc["flux_err"], d.lc["xoff"],
+                                d.lc["yoff"], d.lc["roll_angle"],
+                                d.lc["bg"], d.lc["contam"], d.lc["deltaT"])).T
             
             fkey = d.file_key.split("TG")[-1].split("_V")[0]
-            prefix = d.target
+            prefix = d.target.replace(" ","")
             file = folder+"/"+prefix+"_"+fkey+".dat" if out_filename is None else f"{folder}/{out_filename}"
             np.savetxt(file, lc_, fmt="%.8f", 
                         header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s} {"x_off":10s} {"y_off":10s} {"roll":10s} {"bg":10s} {"contam":10s} {"deltaT":10s}')

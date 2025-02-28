@@ -12,7 +12,7 @@ from os.path import splitext
 from ldtk import SVOFilter
 from .models import RadialVelocity_Model, Transit_Model, spline_fit
 from .utils import outlier_clipping, rho_to_tdur, rescale0_1, ecc_om_par,sesinw_secosw_to_ecc_omega
-from .utils import rescale_minus1_1, split_transits,sinusoid
+from .utils import rescale_minus1_1, split_transits,sinusoid, robust_std
 from .geepee import gp_params_convert, celerite_kernels, george_kernels,spleaf_kernels
 from .utils import phase_fold, supersampling, get_transit_time, bin_data_with_gaps
 from .misc import _param_obj, _text_format, filter_shortcuts, _print_output, _raise
@@ -94,7 +94,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                     ax[i].plot(p1[p1_srt],dt_flux[p1_srt], "C0.", ms=4, alpha=0.6)
                     if p3 is not None: t_bin,y_bin,e_bin = bin_data_with_gaps(p1[p1_srt],dt_flux[p1_srt],p3[p1_srt],binsize=binsize)
                     else: t_bin,y_bin = bin_data_with_gaps(p1[p1_srt],dt_flux[p1_srt],binsize=binsize); e_bin=None
-                    ax[i].errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3)
+                    ax[i].errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3,label=f"{binsize*24*60:.0f}min bins")
                 else: ax[i].errorbar(p1[p1_srt],dt_flux[p1_srt],p3 if p3 is None else p3[p1_srt],fmt=".", ms=6, color="C0", alpha=0.6, capsize=2)
 
                 if tsm: ax[i].plot(p1_sm[p1_sm_srt], planet_mod_smooth[p1_sm_srt],"r",zorder=4,label="planet_model")
@@ -112,7 +112,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                     ax[i].plot(p1[p1_srt],p2[p1_srt],"C0.",ms=4,alpha=0.6)      #data
                     if p3 is not None: t_bin,y_bin,e_bin = bin_data_with_gaps(p1[p1_srt],p2[p1_srt],p3[p1_srt],binsize=binsize)
                     else: t_bin,y_bin = bin_data_with_gaps(p1[p1_srt],p2[p1_srt],binsize=binsize); e_bin=None
-                    ax[i].errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3)
+                    ax[i].errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3, label=f"{binsize*24*60:.0f}min bins")
                 else: ax[i].errorbar(p1[p1_srt],p2[p1_srt],yerr=p3 if p3 is None else p3[p1_srt], fmt=".",ms=6, color="C0", alpha=0.6, capsize=2)
                 ax[i].plot(p1[p1_srt],fit_mod[i].tot_trnd_mod[p1_srt],c="darkgoldenrod",zorder=4,label="detrend_model")  #detrend model plot
 
@@ -143,7 +143,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
     plt.subplots_adjust(top=0.94,hspace=0.3 if hspace is None else hspace , wspace = wspace if wspace!=None else None)
     for i in range(len(fnames),np.prod(nrow_ncols)): ax[i].axis("off")   #remove unused subplots
 
-    fig.suptitle(f"{col_labels[0]} against {col_labels[1]}", y=0.99, fontsize=18)
+    fig.suptitle(f"{col_labels[0]} against {col_labels[1]}", y=ax[0].get_position().y1+0.1, fontsize=18)
     
     plt.tight_layout()
 
@@ -153,7 +153,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
 
 def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para=0, RpRs=None, 
                 sesinw=0, secosw=0, D_occ=0, Fn=None, ph_off=None, A_ev=0, A_db=0,q1=0, q2=0,
-                mask=False, decorr_bound=(-1,1), spline=None,sinus=None,gp=None,ss_exp=None,
+                mask=False, decorr_bound=(-1,1), cont=0.0, spline=None,sinus=None,gp=None,ss_exp=None,
                 offset=None, A0=None, B0=None, A3=None, B3=None,A4=None, B4=None, 
                 A5=None, B5=None,A6=None, B6=None, A7=None, B7=None, A8=None, B8=None,
                 sin_Amp=0, sin2_Amp=0, sin3_Amp=0, cos_Amp=0, cos2_Amp=0, cos3_Amp=0, sin_P=0,  sin_x0=0,
@@ -177,6 +177,8 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     offset, Ai, Bi; floats [-1,1] or None;
         coefficients of linear model where offset is the intercept. they have large bounds [-1,1].
         Ai, Bi are the linear and quadratic term of the model against column i. A0*col0 + A0*col0**2 for time trend
+    cont : float;
+        contamination factor
     spline : SimpleNamespace;
         spline configuration to use in decorrelation an axis of the data. Default is None which implies no spline is used.
     sinus : dict;
@@ -225,19 +227,24 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     col0_med = np.median(df["col0"])
 
     if mask:
-        assert npl==1, "masking transits/eclipses only works for single planet systems"
+        assert npl==1, "masking transits/eclipses only works for single planet systems" #TODO extend to multiplanetary
         print("masking transit/eclipse phases")
         for tp in pl_vars:
             if isinstance(tr_pars[tp], tuple):
                 if len(tr_pars[tp])==2:   tr_pars[tp]=tr_pars[tp][0]
                 elif len(tr_pars[tp])==3: tr_pars[tp]=tr_pars[tp][1]
-        #use periodicity of 0.5*P to catch both transits and eclipses. this does not work for eccentric orbits
+                elif len(tr_pars[tp])==4: tr_pars[tp]=tr_pars[tp][2]
+
+        #TODO use periodicity of 0.5*P to catch both transits and eclipses. this does not work for eccentric orbits
         E = np.round(( col0_med - tr_pars['T_0'])/(0.5*tr_pars["Period"]) )
         Tc = E*(0.5*tr_pars["Period"]) + tr_pars['T_0']
         ecc,om = sesinw_secosw_to_ecc_omega(tr_pars["sesinw"],tr_pars["secosw"], angle_unit="degrees")
-        duration = rho_to_tdur(tr_pars["rho_star"], tr_pars["Impact_para"], tr_pars["RpRs"],tr_pars["Period"], ecc, om)
+        if "rho_star" in tr_pars: 
+            dur = rho_to_tdur(tr_pars["rho_star"], tr_pars["Impact_para"], tr_pars["RpRs"],tr_pars["Period"], ecc, om)
+        else:
+            dur = tr_pars["Duration"]
         phase = phase_fold(df["col0"], 0.5*tr_pars["Period"], Tc,-0.25)
-        mask = abs(phase) > 0.5*duration/(0.5*tr_pars["Period"])
+        mask = abs(phase) > 0.6*dur/(0.5*tr_pars["Period"])  # mask for out of transit points
         df = df[mask]
 
 
@@ -315,7 +322,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
 
     
     #transit model based on TransitModel       
-    def transit_occ_model(tr_params,t=None,ss_exp=ss_exp,Rstar=None,custom_LCfunc=custom_LCfunc,npl=1):
+    def transit_occ_model(tr_params,t=None,ss_exp=ss_exp,Rstar=None,vcont=cont,custom_LCfunc=custom_LCfunc,npl=1):
         if t is None: t = df["col0"].values
         ss = supersampling(ss_exp/(60*24),int(ss_exp)) if ss_exp is not None else None
         pl_ind = [(f"_{n}" if npl>1 else "") for n in range(1,npl+1)]
@@ -334,7 +341,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
 
         TM  = Transit_Model(rho_star, dur, t0, rp, b, per, sesinw, secosw,ddf=0,q1=tr_params["q1"].value,q2=tr_params["q2"].value,occ=tr_params["D_occ"].value,
                             Fn=tr_params["Fn"].value,delta=tr_params["ph_off"].value,A_ev=tr_params["A_ev"].value,A_db=tr_params["A_db"].value,cst_pars=cst_pars,npl=npl)
-        model_flux,_ = TM.get_value(t,ss=ss,Rstar=Rstar, model_phasevar=model_phasevar,custom_LCfunc=custom_LCfunc)
+        model_flux,_ = TM.get_value(t,ss=ss,Rstar=Rstar, vcont=vcont, model_phasevar=model_phasevar,custom_LCfunc=custom_LCfunc)
 
         return model_flux
 
@@ -379,11 +386,12 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         fl_mod      = tra_occ_mod*trnd_mod
 
         spl_mod     = spline_fit(df,df["col1"]/fl_mod,spline) if spline!=None else np.ones_like(df["col1"])
-        gp_mod      = gp_model(params,df["col1"]-fl_mod*spl_mod) if gp!=None else 0
+        gp_mod      = gp_model(params,df["col1"]-fl_mod*spl_mod) if gp!=None else np.zeros_like(df["col1"])
+        det_flux    = (df["col1"]-gp_mod)/(trnd_mod*spl_mod)
         
-        tsm      = np.linspace(min(df["col0"]),max(df["col0"]),len(df["col0"])*3)
+        tsm      = np.linspace(min(df["col0"]),max(df["col0"]), int(np.ptp(df["col0"])*24*60/3))  #3 minute cadence
         pl_ind   = [(f"_{n}" if npl>1 else "") for n in range(1,npl+1)]
-        phase    =  {}
+        phase    = {}
         phase_sm = {}
         for n,lbl in enumerate(pl_ind):
             # phase["pl1"] if only one planet and counting for more
@@ -392,7 +400,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
 
         mods = SN(  time              = df["col0"],
                     phase             = phase,
-                    tot_trnd_mod      = trnd_mod*spl_mod+gp_mod, 
+                    tot_trnd_mod      = df["col1"]/det_flux, 
                     planet_mod        = tra_occ_mod, 
                     time_smooth       = tsm, 
                     phase_smooth      = phase_sm,
@@ -421,12 +429,12 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                 res = np.append(res, res_mod ) #if gp==None else res+res_mod**2
         return res
     
-    def jacobian(fit_params):
-        flux_model = trend_model(fit_params)*transit_occ_model(fit_params,npl=npl)
-        spl        = spline_fit(df,df["col1"]/flux_model,spline) if spline!=None else np.ones_like(df["col1"])
-        resid      = df["col1"] - flux_model*spl
-        grad_nll   = gp_model(fit_params,resid,False,True)
-        return grad_nll
+    # def jacobian(fit_params):
+    #     flux_model = trend_model(fit_params)*transit_occ_model(fit_params,npl=npl)
+    #     spl        = spline_fit(df,df["col1"]/flux_model,spline) if spline!=None else np.ones_like(df["col1"])
+    #     resid      = df["col1"] - flux_model*spl
+    #     grad_nll   = gp_model(fit_params,resid,False,True)
+    #     return grad_nll
     
     fit_params = params+tr_params
     out = minimize(chisqr, fit_params, nan_policy='propagate', method='lbfgsb' if gp!=None else 'leastsq')#, jac=jacobian if gp!=None else None)  #lbfgsb does not give uncertainties on the parameters
@@ -573,7 +581,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
         trnd_mod = trend_model(params)
         spl_mod  = spline_fit(df,df["col1"]-rv_mod-trnd_mod,spline) if spline!=None else np.zeros_like(df["col1"])
 
-        tsm = np.linspace(min(df["col0"]),max(df["col0"]),max(500,len(df["col0"])*3))
+        tsm = np.linspace(min(df["col0"]),max(df["col0"]),int(np.ptp(df["col0"])*24*60/30)) #30 minute cadence
         pl_ind   = [(f"_{n}" if npl>1 else "") for n in range(1,npl+1)]
         phase    =  {}
         phase_sm = {}
@@ -807,7 +815,7 @@ class load_lightcurves:
             for i in range(9): self._input_lc[f][f"col{i}"] = fdata[:,i]
             
             #compute estimate of rms and jitter
-            self._rms_estimate.append( np.std(np.diff(fdata[:,1]))/np.sqrt(2) )  #std(diff(flux))/√2 is a good estimate of the rms noise
+            self._rms_estimate.append( robust_std(np.diff(fdata[:,1]))/np.sqrt(2) )  #std(diff(flux))/√2 is a good estimate of the rms noise
             err_sqdiff = self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)      # (rms^2 - mean(err^2)
             self._jitt_estimate.append( np.sqrt(err_sqdiff) if err_sqdiff>0 else 1e-20 )   # √(rms^2 - mean(err^2)) is a good estimate of the required jitter to add quadratically
             
@@ -897,7 +905,7 @@ class load_lightcurves:
 
     def get_decorr(self, T_0=None, Period=None, rho_star=None, Duration=None, D_occ=0, Impact_para=0, RpRs=1e-5,
                     Eccentricity=None, omega=None, sesinw=None, secosw=None, Fn=None, ph_off=None, A_ev=0, A_db=0, K=0, q1=0, q2=0, 
-                    fit_offset=None, mask=False, ss_exp=None,Rstar=None, ttv=False,delta_BIC=-5, decorr_bound =(-10,10),
+                    cont=0.0,fit_offset=None, mask=False, ss_exp=None,Rstar=None, ttv=False,delta_BIC=-5, decorr_bound =(-10,10),
                     exclude_cols=[], enforce_pars=[],show_steps=False, plot_model=True, use_jitter_est=False,
                     setup_baseline=True, setup_planet=False, custom_LCfunc=None, verbose=True):
         """
@@ -926,6 +934,9 @@ class load_lightcurves:
             if tuple/list of len 2 implies gaussian prior as (mean,std) while len 3 implies [min,start_val,max].
             Give list of values to assign value to each unique filter in the data, or one value 
             to be used for all filtets. Default is 0 for all filters.
+        cont : float,list (optional);
+            contamination factor of the lightcurve. must be float or list of floats as it does not vary in this least-squares fit.  
+            if list, must contain float for each lc. Default is 0.
         delta_BIC : float (negative);
             BIC improvement a parameter needs to provide in order to be considered relevant for 
             decorrelation. Default is conservative and set to -5 i.e, parameters needs to lower 
@@ -934,7 +945,7 @@ class load_lightcurves:
             whether to fit an offset for each LC data. if None, preset values are used. e.g adding 
             spline for an lc automatically sets fit_offset="n" for that lc.
         mask : bool ;
-            If True, transits and eclipses are masked using T_0, P and rho_star (duration).
+            If True, transits and eclipses are masked using T_0, P and rho_star (or duration).
         decorr_bound: tuple of size 2;
             bounds when fitting decorrelation parameters. Default is (-1,1)
         ss_exp : list, None;
@@ -997,6 +1008,11 @@ class load_lightcurves:
         else:
             _raise(TypeError, "get_decorr(): fit_offset must be a str, list of str or None.")
 
+        if isinstance(cont, (int,float)): cont = [cont]*self._nphot
+        elif isinstance(cont, list): 
+            assert len(cont)== self._nphot, f"get_decorr(): cont must be a list of same length as number of input lcs ({self._nphot})"
+            for ct in cont: assert isinstance(ct, float), f"get_decorr(): cont must be a float or list of floats."
+        else: _raise(TypeError, "get_decorr(): cont must be a float or list of floats.")
 
         if custom_LCfunc is not None: 
             assert callable(custom_LCfunc.func), "get_decorr(): custom_LCfunc must be a callable function"
@@ -1184,7 +1200,7 @@ class load_lightcurves:
             
             #perform first fit of all jump parameters(astro,gp,sine,spline) with offset as only decorr par
             out = _decorr(df, **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],
-                            q2=ld_q2[self._filters[j]], mask=mask, offset=0 if fit_offset[j]=="y" else None, 
+                            q2=ld_q2[self._filters[j]], mask=mask, cont=cont[j],offset=0 if fit_offset[j]=="y" else None, 
                             decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                             jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
                             custom_LCfunc=custom_LCfunc, npl=self._nplanet)    #no trend, only offset if no spline
@@ -1206,7 +1222,7 @@ class load_lightcurves:
                         dtmp = best_pars.copy()   #always include offset if no spline
                         dtmp[p] = 0               #setting the par p to 0 means it will be varied in the fit
                         out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
-                                        decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
+                                        decorr_bound=decorr_bound,  mask=mask, cont=cont[j],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                                         jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
                                         custom_LCfunc=custom_LCfunc, npl=self._nplanet)
                         if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
@@ -1225,7 +1241,7 @@ class load_lightcurves:
                         all_par.remove(par_in)            
 
             result = _decorr(df, **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
-                                **best_pars, decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
+                                **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=cont[j],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                                 jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
                                 custom_LCfunc=custom_LCfunc, npl=self._nplanet)
 
@@ -1250,7 +1266,7 @@ class load_lightcurves:
                 _ = [pps.pop(p) for p in custom_LCfunc.func_args.keys()] # remove custom_LCfunc parameters from pps
             else: best_custom_LCfunc = None
                 
-            self._tmodel.append(_decorr(df,**pps, spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], Rstar=Rstar, custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
+            self._tmodel.append(_decorr(df,**pps, spline=spline[j],sinus=sinusoid[file],gp=GP[file],  mask=mask, cont=cont[j], ss_exp=ss_exp[j], Rstar=Rstar, custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -1459,8 +1475,8 @@ class load_lightcurves:
             figsize=(8,5) if n_data==1 else (14,3.5*nrow_ncols[0])
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
-            fig.suptitle("Masking Points",y=0.99)
             plt.subplots_adjust(hspace=0.3,top=0.94)
+            fig.suptitle("Masking Points",y=ax[0].get_position().y1+0.1)
 
         for i,file in enumerate(lc_list):
             assert file in self._names, f"mask_points(): filename {file} not in loaded lightcurves."
@@ -1558,8 +1574,8 @@ class load_lightcurves:
             figsize=(8,5) if n_data==1 else (14,3.5*nrow_ncols[0])
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
-            fig.suptitle("Outlier clipping",y=0.99)
             plt.subplots_adjust(hspace=0.3,top=0.94)
+            fig.suptitle("Outlier clipping",y=ax[0].get_position().y1+0.1)
 
         for i,file in enumerate(lc_list):
             assert file in self._names, f"clip_outliers(): filename {file} not in loaded lightcurves."
@@ -1575,6 +1591,7 @@ class load_lightcurves:
             thisLCdata = deepcopy(self._input_lc[file])
             ok      = np.ones(len(thisLCdata["col0"]), dtype=bool)  #initialize mask to all True, used to store indices of points that are not clipped
             ok_iter = np.ones(len(thisLCdata["col0"]), dtype=bool)  #initialize mask to all True, ok points for each iteration
+            tot_npt = len(thisLCdata["col0"])
 
             for col in select_column:
                 if np.ptp(thisLCdata[col])==0.0: continue  #skip column if all values are the same (nothing to clip)
@@ -1587,7 +1604,7 @@ class load_lightcurves:
             if verbose and (not show_plot): print(f'\n{file}: Rejected {sum(~ok)}pts > {clip[i]:0.1f}MAD from the median of columns {select_column}')
 
             if show_plot:
-                ax[i].set_title(f'{file}:\nRejected {sum(~ok)}pts>{clip[i]:0.1f}MAD')
+                ax[i].set_title(f'{file}:\nRejected {sum(~ok)}/{tot_npt}pts>{clip[i]:0.1f}MAD')
                 ax[i].plot(self._input_lc[file]["col0"][ok],  self._input_lc[file]["col1"][ok], '.C0', ms=5)
                 ax[i].plot(self._input_lc[file]["col0"][~ok], self._input_lc[file]["col1"][~ok], '.r', ms=5)
 
@@ -1596,7 +1613,7 @@ class load_lightcurves:
             self._input_lc[file] = {k:v[ok] for k,v in self._input_lc[file].items()}
 
             #recompute rms estimate and jitter
-            self._rms_estimate[self._names.index(file)]  = np.std(np.diff(self._input_lc[file]["col1"]))/np.sqrt(2)
+            self._rms_estimate[self._names.index(file)]  = robust_std(np.diff(self._input_lc[file]["col1"]))/np.sqrt(2)
             err_sqdiff  = self._rms_estimate[self._names.index(file)]**2 - np.mean(self._input_lc[file]["col2"]**2)
             self._jitt_estimate[self._names.index(file)] = np.sqrt(err_sqdiff) if err_sqdiff > 0 else 1e-20
         
@@ -1667,6 +1684,10 @@ class load_lightcurves:
         self._bases = [ [DA["dcol0"][i], DA["dcol3"][i], DA["dcol4"][i], DA["dcol5"][i],
                         DA["dcol6"][i], DA["dcol7"][i], DA["dcol8"][i], DA["sin"][i], 
                         DA["grp"][i]] for i in range(self._nphot) ]
+        
+        self._bases_init =  [dict(off=1, A0=0, B0= 0, C0=0, D0=0,A3=0, B3=0, A4=0, B4=0,A5=0, B5=0, 
+                                    A6=0, B6=0,A7=0, B7=0, A8=0, B8=0, amp=0,freq=0,phi=0,ACNM=1,BCNM=0) 
+                                for _ in range(self._nphot)]
         
         self._fit_offset= DA["fit_offset"]
         self._groups    = DA["grp_id"]
@@ -1852,8 +1873,8 @@ class load_lightcurves:
             figsize=(8,5) if n_data==1 else (14,3.5*nrow_ncols[0])
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
-            fig.suptitle("Spline knots",y=0.99)
             plt.subplots_adjust(hspace=0.3,top=0.94)
+            fig.suptitle("Spline knots",y=ax[0].get_position().y1+0.1)
 
         for i,lc in enumerate(lc_list):
             ind = self._names.index(lc)    #index of lc in self._names
@@ -3399,7 +3420,7 @@ class load_rvs:
                 if verbose: print("Linking the last created lightcurve object to the rv object for parameter linking. if this is not the related LC object, input the correct one using `lc_obj` argument of `load_rvs()`\n.")
             else:
                 if verbose: print("lightcurve object not found. Creating empty lc_obj.")
-                lc_obj = load_lightcurves()
+                lc_obj = load_lightcurves(nplanet=self._nplanet)
 
         self._lcobj    = lc_obj
         
@@ -4162,7 +4183,7 @@ class load_rvs:
             self._rvGP_dict[rv]["op"]  = DA["operation"][i]
 
             if self._rvGP_dict[rv]["op"] == "*" and self._rvGP_dict[rv]["ngp"] == 2:
-                assert DA["amplitude"][i][1] == 1, f"add_rvGP(): for multiplication of 2 kernels, the second amplitude must be fixed to 1 to avoid degeneracy, but {DA['amplitude'][i][1]} given."
+                assert DA["amplitude"][i][1] == -1, f"add_rvGP(): for multiplication of 2 kernels, the second amplitude must be fixed to -1 to avoid degeneracy, but {DA['amplitude'][i][1]} given."
 
             for p in ["amplitude", "lengthscale"]:
                 for j in range(ngp):
@@ -4312,8 +4333,8 @@ class load_rvs:
             figsize=(8,5) if n_data==1 else (14,3.5*nrow_ncols[0])
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
-            fig.suptitle("Spline knots",y=0.99)
             plt.subplots_adjust(hspace=0.3,top=0.94)
+            fig.suptitle("Spline knots",y=ax[0].get_position().y1+0.1)
 
         for i,rv in enumerate(rv_list):
             ind = self._names.index(rv)    #index of rv in self._names
@@ -4726,6 +4747,10 @@ class load_result:
             name of the file containing the posterior chains. Default is "chains_dict.pkl".
         burnin_chain_file: str;
             name of the file containing the burn-in chains. Default is "burnin_chains_dict.pkl".
+        quick_load: bool;
+            quickly load only the basic information of the fit, chains and stats. Default is False.
+        verbose: bool;
+            print output. Default is True.
         
         Attributes:
         -----------
@@ -4797,7 +4822,7 @@ class load_result:
         >>> sigma_low, sigma_hi = model.sigma_low, model.sigma_hi    # lower and upper 1-sigma model uncertainties that can be plotted along with lc_mod
     """
 
-    def __init__(self, folder="output",chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl",verbose=True):
+    def __init__(self, folder="output",chain_file = "chains_dict.pkl", burnin_chain_file="burnin_chains_dict.pkl",quick_load=False,verbose=True):
         
         if folder[-1] == "/": folder = folder[:-1]
         chain_file        = folder+"/"+chain_file
@@ -4869,6 +4894,9 @@ class load_result:
         self.evidence   = self._stat_vals["evidence"] if hasattr(self,"_stat_vals") and "evidence" in self._stat_vals.keys() else None
         self.params_dict  = {k:ufloat(v,e) for k,v,e in zip(self.params.names, self.params.median,self.params.stdev)}
 
+        if quick_load:
+            return
+
         if hasattr(self,"_stat_vals"):     #summary statistics are available only if fit completed
             # evaluate model of each lc at a smooth time grid
             self._lc_smooth_time_mod = {}
@@ -4888,7 +4916,7 @@ class load_result:
                 else:
                     tmin, tmax = input_lcs[lc]["col0"].min(), input_lcs[lc]["col0"].max()
 
-                self._lc_smooth_time_mod[lc].time    = np.linspace(tmin,tmax, int((tmax-tmin)*24*60))
+                self._lc_smooth_time_mod[lc].time    = np.linspace(tmin,tmax, int((tmax-tmin)*24*60/3))  #3 minute cadence
                 self._lc_smooth_time_mod[lc].model   = self._evaluate_lc(file=lc, time=self._lc_smooth_time_mod[lc].time).planet_model
 
 
@@ -4897,7 +4925,7 @@ class load_result:
             for i,rv in enumerate(self._rvnames):
                 self._rv_smooth_time_mod[rv] = SN()
                 tmin, tmax = input_rvs[rv]["col0"].min(), input_rvs[rv]["col0"].max()
-                t_sm = np.linspace(tmin,tmax,max(2000, len(input_rvs[rv]["col0"])))
+                t_sm = np.linspace(tmin,tmax,int((tmax-tmin)/min(self.params.P)*10))   #10pts per orb period
                 gam = self.get_all_params_dict(return_type="float",verbose=False)[f"rv{i+1}_gamma"]
                 
                 self._rv_smooth_time_mod[rv].time    = t_sm

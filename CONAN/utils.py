@@ -504,6 +504,26 @@ def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=2.):
     except:
         return bin_data(t,f,e,statistic="mean",bins=int(np.ptp(t)/binsize))
 
+def robust_std(data):
+    """
+    Compute the robust standard deviation using the Median Absolute Deviation (MAD).
+    https://en.m.wikipedia.org/wiki/Median_absolute_deviation
+
+    Parameters:
+    ----------
+    data: array-like
+        The input data.
+
+    Returns
+    -------
+    float
+        The robust standard deviation.
+    """
+    median = np.median(data)
+    mad = np.median(np.abs(data - median))
+    robust_std = mad * 1.4826  # Scale factor for consistency with the standard deviation
+    return robust_std
+
 def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_clipped_indices = False):
 
     """

@@ -6,6 +6,12 @@ from .misc import _compare_nested_structures, compare_objs
 import inspect, os, sys
 
 def new_getfile(object, _old_getfile=inspect.getfile):
+    """
+    Get the source file of a class method.
+    This is a modified version of inspect.getfile that gets the source file of a class method.
+    If the object is a class, it looks for the source file of the method that is a class method.
+    If the object is a method, it gets the source file of the method.
+    """
     if not inspect.isclass(object):
         return _old_getfile(object)
     
@@ -30,35 +36,76 @@ def new_getfile(object, _old_getfile=inspect.getfile):
 #lc_central_wavelength = 
 # ...
 def fit_configfile(config_file = "input_config.dat", out_folder = "output", 
-                   init_decorr=False, rerun_result=True, resume_sampling=False, verbose=False):
+                    init_decorr=False, rerun_result=True, resume_sampling=False, 
+                    lc_path=None, rv_path=None, verbose=False):
     """
-        Run CONAN fit from configuration file. 
-        This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
-        
-        Parameters:
-        -----------
-        config_file: filepath;
-            path to configuration file.
-        out_folder: filepath;
-            path to folder where output files will be saved.
-        init_decorr: bool;
-            whether to run least-squares fit to determine start values of the decorrelation parameters. 
-            Default is False
-        rerun_result: bool;
-            whether to rerun using with already exisiting result inorder to remake plots/files. Default is True
-        resume_sampling: bool;
-            resume sampling from last saved position 
-        verbose: bool;
-            show print statements
+    Run CONAN fit from configuration file. 
+    This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
+    
+    Parameters:
+    -----------
+    config_file: filepath;
+        path to configuration file.
+    out_folder: filepath;
+        path to folder where output files will be saved.
+    init_decorr: bool;
+        whether to run least-squares fit to determine start values of the decorrelation parameters. 
+        Default is False
+    rerun_result: bool;
+        whether to rerun using with already exisiting result inorder to remake plots/files. Default is True
+    resume_sampling: bool;
+        resume sampling from last saved position 
+    lc_path: str;
+        path to light curve files. If None, the path in the config file is used.
+    rv_path: str;
+        path to radial velocity files. If None, the path in the config file is used.
+    verbose: bool;
+        show print statements
+
+    Returns:
+    --------
+    result: object;
+        result object containing chains of the fit.
     """
     from .fit_data import run_fit
 
-    lc_obj, rv_obj, fit_obj = load_configfile(config_file, init_decorr=init_decorr, verbose=verbose)
+    lc_obj, rv_obj, fit_obj = load_configfile(config_file, init_decorr=init_decorr, 
+                                                lc_path=lc_path, rv_path=rv_path, verbose=verbose)
     result = run_fit(lc_obj, rv_obj, fit_obj,out_folder=out_folder,
                         rerun_result=rerun_result,resume_sampling=resume_sampling,verbose=verbose)
     return result
 
 
+def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbose=True):
+    """
+    rerun the fit using config_save.dat file in a previous result folder. 
+    This can be to regenerate plot or comintue sampling with same setup.
+
+    Parameters:
+    -----------
+    result_folder: str;
+        path to folder containing the config_save.dat file from previous CONAN launch.
+    out_folder: str;
+        path to folder where output files will be saved. If None, the output files are saved in the result_folder.
+    resume_sampling: bool;
+        resume sampling from last saved position
+    verbose: bool;
+        show print statements
+
+    Returns:
+    --------
+    result: object;
+        result object containing chains of the fit.
+    """
+    
+    assert os.path.exists(result_folder), f"{result_folder} does not exist"
+    assert os.path.exists(result_folder+"/config_save.dat"), f"config_save.dat file does not exist in {result_folder}"
+
+    if out_folder is None: out_folder = result_folder
+    result = fit_configfile(config_file = result_folder+"/config_save.dat", out_folder = out_folder, 
+                            rerun_result=True, resume_sampling=resume_sampling, verbose=verbose)
+    return result
+    
 def _skip_lines(file, n):
     """ takes an open file object and skips the reading of lines by n lines """
     for i in range(n):
@@ -227,7 +274,8 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
 
 
 
-def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr=False, verbose=False):
+def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr=False, 
+                    lc_path=None, rv_path=None, verbose=False):
     """
         configure conan from specified configfile.
         
@@ -241,6 +289,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         init_decorr: bool;
             whether to run least-squares fit to determine start values of the decorrelation parameters. 
             Default is False
+        lc_path: str;
+            path to light curve files. If None, the path in the config file is used.
+        rv_path: str;
+            path to radial velocity files. If None, the path in the config file is used.
         verbose: bool;
             show print statements
         Returns:
@@ -258,12 +310,21 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     _file = open(configfile,"r")
     _skip_lines(_file,9)                       #remove first 2 comment lines
-    fpath    = _file.readline().rstrip().split()[1]           # the path where the files are
-    if fpath.startswith("./") or fpath.startswith("../"):    
-        fpath = os.path.dirname(os.path.abspath(configfile)) + "/" + fpath
+    fpath    = _file.readline().rstrip().split()[1]                         # the path where the files are
+    
+    #TODO getting abs path may be unecessary since user can give lc_path and rv_path that overrides the one in config file
+    if fpath.startswith("./") or fpath.startswith("../"):                   # if the path is relative to where the config file is get the absolute path
+        if configfile!="config_save.dat":                                   # only get the absolute path if the config file is not from results folder
+            fpath = os.path.dirname(os.path.abspath(configfile)) + "/" + fpath  
+    
     rv_fpath = _file.readline().rstrip().split()[1]           # the path where the files are
     if rv_fpath.startswith("./") or rv_fpath.startswith("../"):    
-        rv_fpath = os.path.dirname(os.path.abspath(configfile)) + "/" + rv_fpath
+        if configfile!="config_save.dat":
+            rv_fpath = os.path.dirname(os.path.abspath(configfile)) + "/" + rv_fpath
+    
+    fpath    = fpath if lc_path is None else lc_path
+    rv_fpath = rv_fpath if rv_path is None else rv_path
+
     nplanet  = int(_file.readline().rstrip().split()[1])      # the path where the files are
     _skip_lines(_file,1)                                      #remove 3 comment lines
 
@@ -401,10 +462,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         #move to next LC
         dump =_file.readline()
     
-    if _clip_cols!=[]: _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
     #check that the elements of _clip_cols are the same
     if len(_clip_cols) > 1:
         assert len(set(_clip_cols)) == 1, f"all columns to clip must be the same for all files but {_clip_cols} given"
+    if _clip_cols!=[]: _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
 
     # instantiate light curve object
     lc_obj = load_lightcurves(_names, fpath, _filters, _wl, nplanet)

@@ -1334,7 +1334,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     # for each shared parameter, update the value of the recipient and make sure it is not jumping (step=0)
     for sp in shared_params:
         for s_recip in shared_params[sp]:
-            initial[pnames_all == s_recip] = f"->{sp}"#np.nan#initial[pnames_all == sp] . #specify that it takes its value from a shared parameter
+            initial[pnames_all == s_recip] = np.nan#f"->{sp}"#initial[pnames_all == sp] . #specify that it takes its value from a shared parameter
             steps[pnames_all == s_recip] = 0
 
     priors       = np.concatenate((prior, GPprior,rvGPprior))
@@ -1532,6 +1532,14 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             chains    = sampler.chain
             print((f"Mean acceptance fraction: {np.mean(sampler.acceptance_fraction):.3f}"))
             evidence  = None
+
+            #save chains to file
+            chains_dict =  {}
+            for ch in range(chains.shape[2]):
+                chains_dict[jnames[ch]] = chains[:,:,ch]
+            pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
+            print(f"\nEmcee production chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN.load_result()` to load it.\n")  
+    
         else:
             print("\nSkipping burn-in and production. Loading chains from disk")
             result     = load_result(out_folder,verbose=False)
@@ -1553,13 +1561,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             try: evidence    = result.evidence
             except: evidence = None
 
-        #save chains to file
-        chains_dict =  {}
-        for ch in range(chains.shape[2]):
-            chains_dict[jnames[ch]] = chains[:,:,ch]
-        pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
-        print(f"\nEmcee production chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN.load_result()` to load it.\n")  
-    
         GRvals = grtest_emcee(chains)
         gr_print(jnames,GRvals,out_folder)
 
@@ -1607,9 +1608,18 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             chains    = resample_equal(dyn_res.samples, weights)
             bp        = posterior[np.argmax(dyn_res.logl)]
 
+            #save chains to file
+            chains_dict =  {}
+            for ch in range(chains.shape[1]):
+                chains_dict[jnames[ch]] = chains[:,ch]
+            pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
+            print(f"\nDynesty chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN.load_result()` to load it.\n")  
+
+            result = load_result(out_folder,verbose=False)
+
         else:
             print("\nSkipping dynesty run. Loading chains from disk")
-            result     = load_result(out_folder, verbose=False)
+            result     = load_result(out_folder, quick_load=True, verbose=False)
             posterior  = result.flat_posterior
             chains     = np.stack([v for k,v in result._chains.items()],axis=1)
             try: bp    = result.params.max
@@ -1617,12 +1627,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             try: evidence    = result.evidence
             except: evidence = None
 
-        #save chains to file
-        chains_dict =  {}
-        for ch in range(chains.shape[1]):
-            chains_dict[jnames[ch]] = chains[:,ch]
-        pickle.dump(chains_dict,open(out_folder+"/"+"chains_dict.pkl","wb"))
-        print(f"\nDynesty chain written to disk as {out_folder}/chains_dict.pkl. Run `result=CONAN.load_result()` to load it.\n")  
         
     pool.close()  #close the pool
     pool.join()   #wait for the processes to finish
@@ -1637,22 +1641,23 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     print("============ Sampling Finished ==============================================\n")
     # ==== chain and corner plot ================
     matplotlib.use('Agg')
-    result = load_result(out_folder,verbose=False)
     if fit_sampler == "emcee": 
         #chain plot
+        if verbose: print("Plotting emcee chains ...")
         for i in range(nplot):
             fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
             fig = result.plot_chains(fit_pars)
             fig.savefig(out_folder+f"/chains_{i}.png", bbox_inches="tight") 
-        print(f"\nsaved {nplot} chain plot(s) as {out_folder}/chains_*.png")
+        print(f"\n----> saved {nplot} chain plot(s) as {out_folder}/chains_*.png")
     
     
     #corner plot
+    if verbose: print("Making corner plot(s) ...")
     for i in range(nplot):
         fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
         fig = result.plot_corner(fit_pars, force_plot=True)
         fig.savefig(out_folder+f"/corner_{i}.png", bbox_inches="tight")
-    print(f"saved {nplot} corner plot(s) as {out_folder}/corner_*.png")
+    print(f"----> saved {nplot} corner plot(s) as {out_folder}/corner_*.png\n")
     matplotlib.use(__default_backend__)
 
     dim=posterior.shape
@@ -1688,22 +1693,26 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     stdev[[ijnames][0]] = sigma1s
 
     #============================== PLOTTING ===========================================
-    print('\nPlotting output figures')
 
     inmcmc='n'
     indparams["inmcmc"] = inmcmc
 
     #median
-    mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],indparams,make_outfile=(statistic=="median"), verbose=True,out_folder=out_folder)
+    if verbose:
+        if statistic=='median': print("\nCreating *out.dat files using the median posterior ...\n")
+    mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],indparams,make_outfile=(statistic=="median"), verbose=(statistic=="median"),out_folder=out_folder)
     #save summary_stats and as a hidden files. can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
     stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], stdev=stdev[jumping],
                         T0 = T0_post,  P = p_post, dur = Dur_post, evidence=evidence)
     pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
-
+    if verbose: print("\n ----> Plotting figures using median posterior values ...\n")
     fit_plots(nttv,nphot, nRV, filters, LCnames, RVnames, out_folder,'/med/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
 
     #max_posterior
-    mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],indparams,make_outfile=(statistic=="max"),verbose=False)
+    if verbose:
+        if statistic == "max": print("\nCreating *out.dat files using the max posterior ...\n")
+    mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],indparams,make_outfile=(statistic=="max"),verbose=(statistic=="max"),out_folder=out_folder)
+    if verbose: print("\n ----> Plotting figures using max posterior values ...\n")
     fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/max/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
 
     mod_dev = (f_arr - mval2)/merr2 if statistic != "median" else (f_arr - mval)/merr  #Akin allow statistics to be based on median of posterior
@@ -1715,6 +1724,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     earr = merr2 if statistic != "median" else merr  # the full errors
 
     if nphot > 0:
+        debug_t1 = time.time()
+        if verbose: print("Computing photometric noise (red and white) correction factors ...", end = " ")
         bw, br, brt, cf, cfn = corfac(rarr, t_arr, earr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
         of=open(out_folder+"/CF.dat",'w')
         of.write(f"{'beta_w':8s} {'beta_r':8s} {'beta_rtot':8s} {'CF':8s} {'CFerr':10s} \n")
@@ -1725,6 +1736,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             if (cf_apply == 'rchisq'):
                 earr[indlist[i][0]] = np.sqrt((earr[indlist[i][0]])**2 + (cfn[i])**2)
         of.close()
+        print(f'[{(time.time() - debug_t1)} secs')
+
 
     
     print("\n")

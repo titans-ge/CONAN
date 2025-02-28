@@ -415,7 +415,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     out_data = np.hstack((out_data,phases))
                     if make_outfile:
                         outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat' 
-                        if verbose: print(f"Writing LC output to file: {outfile}")
+                        if verbose: print(f"    - Writing LC output to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
             
             elif useGPphot[j] in ['ge','ce','sp'] and sameLCgp.flag==False and sameLCgp.filtflag==False: 
@@ -485,7 +485,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     out_data = np.hstack((out_data,phases))
                     if make_outfile:
                         outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
-                        if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
+                        if verbose: print(f"    - Writing LC output with GP({which_GP}) to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
 
             else:
@@ -568,7 +568,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     out_data = np.hstack((out_data,phases))
                     if make_outfile:
                         outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
-                        if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
+                        if verbose: print(f"    - Writing LC output with GP({which_GP}) to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
 
         if sameLCgp.filtflag == True: #if using the same GP for each filter
@@ -649,7 +649,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                         out_data = np.hstack((out_data,phases))
                         if make_outfile:
                             outfile=out_folder+"/out_data/"+splitext(LCnames[j])[0]+'_lcout.dat'
-                            if verbose: print(f"Writing LC output with GP({which_GP}) to file: {outfile}")
+                            if verbose: print(f"    - Writing LC output with GP({which_GP}) to file: {outfile}")
                             np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
     
         if get_base_model:
@@ -820,7 +820,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     if make_outfile:   
                         outfile  = out_folder+"/out_data/"+splitext(RVnames[j])[0]+'_rvout.dat'
                         out_data = np.hstack((out_data,phases))
-                        if verbose: print(f"Writing RV output to file: {outfile}")
+                        if verbose: print(f"    - Writing RV output to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
                         # pd.DataFrame(out_data,columns=header).to_csv(outfile,sep="\t",index=False, float_format='%-16.6f')
 
@@ -889,7 +889,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     if make_outfile:   
                         out_data = np.hstack((out_data,phases))
                         outfile  = out_folder+"/out_data/"+splitext(RVnames[j])[0]+'_rvout.dat'
-                        if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
+                        if verbose: print(f"    - Writing RV output with GP({which_GP}) to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
             else:
                 pass
@@ -966,7 +966,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     if make_outfile:   
                         out_data = np.hstack((out_data,phases))
                         outfile  = out_folder+"/out_data/"+splitext(RVnames[j])[0]+'_rvout.dat'
-                        if verbose: print(f"Writing RV output with GP({which_GP}) to file: {outfile}")
+                        if verbose: print(f"    - Writing RV output with GP({which_GP}) to file: {outfile}")
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter="\t")
 
         if get_base_model:

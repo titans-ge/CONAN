@@ -51,7 +51,7 @@ autodoc_class_signature = "separated"
 html_theme_options = {
     'navigation_depth': 5,
 }
-# autosummary_generate = True
+autosummary_generate = True
 
 autodoc_default_options = {
     'members': True,

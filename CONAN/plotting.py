@@ -7,11 +7,16 @@ import matplotlib.pyplot as plt
 from CONAN.logprob_multi import logprob_multi
 import dill as pickle
 from os.path import splitext,dirname
+import concurrent.futures
 
 
 def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVunit="km/s",params=None,T0=None,period=None,Dur=None):
 
     _ind_para   = pickle.load(open(out_folder+"/.par_config.pkl","rb"))
+    params_all  = np.concatenate((_ind_para["params"], _ind_para["GPparams"],_ind_para["rvGPparams"]))
+    params_all[_ind_para["jumping"]] = params 
+    filnames    = list(_ind_para["filnames"])
+    model_PC    = _ind_para["model_phasevar"]
     all_models  = logprob_multi(params,_ind_para,get_planet_model=True)
 
     matplotlib.use('Agg')
@@ -26,12 +31,12 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
     outdata_folder = out_folder+"/out_data/" if os.path.exists(out_folder+"/out_data/") else out_folder+"/"
 
     #model plot for each LC
-    for j in range(nphot):
+    def plot_lightcurve(j):
         infile = outdata_folder + splitext(names[j])[0]+'_lcout.dat'
         tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,8,9,10), unpack = True)  # reading in the lightcurve data
         
         #evaluate lc model on smooth time grid
-        t_sm  = np.linspace(tt.min(),tt.max(), int(np.ptp(tt)*24*60))
+        t_sm  = np.linspace(tt.min(),tt.max(), int(np.ptp(tt)*24*60/2))
         lc_sm = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).lc[names[j]][0]
 
         # bin the lightcurve data
@@ -58,7 +63,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
                         np.nanmax([np.nanmax(flux),np.nanmax(full_mod)])+0.1*(np.nanmax(flux)-np.nanmin(flux))])
         ax[0].legend()
 
-        ax[1].set_ylabel("Flux - baseline")
+        ax[1].set_ylabel("Detrended Flux")
         ax[1].plot(tt, det_flux,'.',c='skyblue',ms=3, zorder=1, label="Detrended data")
         # ax[1].plot(tt, mm,'r-',lw=2,zorder=5, label="Model fit")
         ax[1].plot(t_sm, lc_sm,'r-',lw=2,zorder=5, label="Best fit")
@@ -75,84 +80,110 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
         ax[2].set_xlabel("Time")
         plt.subplots_adjust(hspace=0.02)
-        fig.savefig(outname,bbox_inches='tight')
+        fig.savefig(outname,bbox_inches='tight',dpi=100)
 
-
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(plot_lightcurve, range(nphot))
     #### phase plot for each planet in system across multiple LCs ####
     # check that filter list contains same string
         
+    def plot_phase_folded_lightcurve(n, filt):
+        flux_filter, phase_filter, err_filter, res_filter = [], [], [], []
+        phsm_filter, lcsm_filter = [], []
+        filt_index = filnames.index(filt)
+
+        for j in range(nphot):
+            infile = outdata_folder + names[j][:-4] + '_lcout.dat'
+            tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 8, 9, 10), unpack=True)
+            flux_resid = flux - full_mod
+
+            if filters[j] == filt:
+                # calculations for each planet (n) in the system
+                phase    = phase_fold(tt, period[n], T0[n], -0.25)
+                lc_comps = all_models.lc[names[j]][1]  # lc components for each planet in the system
+
+                # evaluate lc model on smooth time grid
+                t_sm       = np.linspace(tt.min(), tt.max(), int(np.ptp(tt)*24*60/2))
+                ph_sm      = phase_fold(t_sm, period[n], T0[n], -0.25)
+                lc_sm_comp = logprob_multi(params, _ind_para, t=t_sm, get_planet_model=True).lc[names[j]][1]
+
+                # remove other planet's LC signal from det_flux
+                for i in range(npl):
+                    if i != n: det_flux -= lc_comps[f"pl_{i+1}"] - 1
+
+                flux_filter.append(det_flux)
+                phase_filter.append(phase)
+                err_filter.append(err)
+                res_filter.append(flux_resid)
+                phsm_filter.append(ph_sm)
+                lcsm_filter.append(lc_sm_comp[f"pl_{n + 1}"])
+
+        # Bin the data
+        # binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
+        binsize = Dur[n] / 10 / period[n]  # 10 bins in transit
+        nbin = int(np.ptp(np.concatenate(phase_filter)) / binsize)
+
+        srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
+        pbin, flux_bins, error_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(flux_filter)[srt],
+                                                np.concatenate(err_filter)[srt], binsize=binsize)
+        _, res_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt], binsize=binsize)
+        srt_sm = np.argsort(np.concatenate(phsm_filter))
+
+        if model_PC[filt_index]:  # if modeling a full phase curve in this filter create new panel to show zoom
+            fig, ax = plt.subplots(3, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (1.5, 2, 1)})
+        else:
+            fig, ax = plt.subplots(2, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (3, 1)})
+        
+        ax[0].set_title(f'Phasefolded LC {filt} - planet{n + 1}: P={period[n]:.2f} d ({filt})')
+        ax[0].set_ylabel(f"Detrended Flux")
+        ax[0].axhline(1, ls="--", color="k", alpha=0.3)
+        ax[0].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=3, zorder=1, label='Data')
+        ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
+        ax[0].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
+                    label='Best-fit')
+        ax[0].legend()
+
+
+        if model_PC[filt_index]:
+            occ_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+filt_index
+            DF_occ = params_all[occ_ind]
+            # print(f"Occultation depth_{filt}: {_ind_para['pnames_all'][occ_ind]} - {DF_occ:.2f}ppm")
+            ax[1].set_ylabel(f"Detrended Flux")
+            ax[1].axhline(1, ls="--", color="k", alpha=0.3)
+            ax[1].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=3, zorder=1, label='Data')
+            ax[1].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
+            ax[1].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
+                        label='Best-fit')
+            ax[1].set_ylim([1-2*DF_occ*1e-6, 1+2*DF_occ*1e-6])
+            ax[1].legend()
+
+        ax[-1].axhline(0, ls="--", color="k", alpha=0.3)
+        ax[-1].plot(np.concatenate(phase_filter), np.concatenate(res_filter)*1e6, '.', c='skyblue', ms=2, zorder=1)
+        ax[-1].errorbar(pbin, 1e6 * res_bins, yerr=error_bins * 1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
+        ax[-1].set_xlabel("Orbital phase")
+        ax[-1].set_ylim([-np.std(np.concatenate(res_filter)*1e6), np.std(np.concatenate(res_filter)*1e6)])
+        ax[-1].set_ylabel(f"O – C [ppm]")
+
+        plt.subplots_adjust(hspace=0.04, wspace=0.04)
+        fig.savefig(out_folder + prefix + f'Phasefolded_LC_[planet{n + 1}]_{filt}.png', bbox_inches="tight",dpi=100)
+
+
     if nphot > 0 and nttv == 0:
-        for n in range(npl):
-            for filt in np.unique(filters):
-                flux_filter, phase_filter, err_filter, res_filter = [], [], [], []
-                phsm_filter, lcsm_filter = [], []
-
-                for j in range(nphot):
-                    infile = outdata_folder + names[j][:-4] + '_lcout.dat'
-                    tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 8, 9, 10), unpack=True)
-                    flux_resid = flux - full_mod
-
-                    if filters[j] == filt:
-                        # calculations for each planet (n) in the system
-                        phase    = phase_fold(tt, period[n], T0[n], -0.25)
-                        lc_comps = all_models.lc[names[j]][1]  # lc components for each planet in the system
-
-                        # evaluate lc model on smooth time grid
-                        t_sm       = np.linspace(tt.min(), tt.max(), max(2000, len(tt)))
-                        ph_sm      = phase_fold(t_sm, period[n], T0[n], -0.25)
-                        lc_sm_comp = logprob_multi(params, _ind_para, t=t_sm, get_planet_model=True).lc[names[j]][1]
-
-                        # remove other planet's LC signal from det_flux
-                        for i in range(npl):
-                            if i != n: det_flux -= lc_comps[f"pl_{i+1}"] - 1
-
-                        flux_filter.append(det_flux)
-                        phase_filter.append(phase)
-                        err_filter.append(err)
-                        res_filter.append(flux_resid)
-                        phsm_filter.append(ph_sm)
-                        lcsm_filter.append(lc_sm_comp[f"pl_{n + 1}"])
-
-                # Bin the data
-                # binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
-                binsize = Dur[n] / 10 / period[n]  # 10 bins in transit
-                nbin = int(np.ptp(np.concatenate(phase_filter)) / binsize)
-
-                srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
-                pbin, flux_bins, error_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(flux_filter)[srt],
-                                                        np.concatenate(err_filter)[srt], binsize=binsize)
-                _, res_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt], binsize=binsize)
-                srt_sm = np.argsort(np.concatenate(phsm_filter))
-
-                fig, ax = plt.subplots(2, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (3, 1)})
-                ax[0].set_title(f'Phasefolded LC {filt} - planet{n + 1}: P={period[n]:.2f} d ({filt})')
-                ax[0].set_ylabel(f"Flux – baseline")
-                ax[0].axhline(1, ls="--", color="k", alpha=0.3)
-                ax[0].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=3, zorder=1, label='Data')
-                ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
-                ax[0].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
-                            label='Best-fit')
-                ax[0].legend()
-
-                ax[1].axhline(0, ls="--", color="k", alpha=0.3)
-                ax[1].plot(np.concatenate(phase_filter), np.concatenate(res_filter)*1e6, '.', c='skyblue', ms=2, zorder=1)
-                ax[1].errorbar(pbin, 1e6 * res_bins, yerr=error_bins * 1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
-                ax[1].set_xlabel("Orbital phase")
-                ax[1].set_ylabel(f"O – C [ppm]")
-
-                plt.subplots_adjust(hspace=0.04, wspace=0.04)
-                fig.savefig(out_folder + prefix + f'Phasefolded_LC_[planet{n + 1}]_{filt}.png', bbox_inches="tight")
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            for n in range(npl):
+                for filt in np.unique(filters):
+                    executor.submit(plot_phase_folded_lightcurve, n, filt)
 
 
     ############ RVs#####################
-    for j in range(nRV):
+    def plot_rv(j):
         infile  = outdata_folder + splitext(RVnames[j])[0]+'_rvout.dat'
         outname = plot_folder+splitext(RVnames[j])[0]+'_fit.png'
         tt, y_rv , e_rv, full_mod, base, rv_mod, det_RV = np.loadtxt(infile, usecols=(0,1,2,3,7,8,9),unpack = True)  # reading in the rvcurve data
         rv_resid = y_rv-full_mod
 
         #evaluate rv model on smooth time grid
-        t_sm  = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
+        t_sm  = np.linspace(tt.min(),tt.max(), int(np.ptp(tt)/min(period)*10))
         rv_sm = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).rv[RVnames[j]][0]
 
         fig,ax = plt.subplots(3,1, figsize=(10,15),sharex=True,gridspec_kw={"height_ratios":(3,3,1)})
@@ -181,8 +212,11 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[2].set_ylabel(f"O – C [m/s]")
 
         plt.subplots_adjust(hspace=0.02)
-        fig.savefig(outname, bbox_inches='tight')  
+        fig.savefig(outname, bbox_inches='tight',dpi=100)  
 
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(plot_rv, range(nRV))
 
     #joint plot
     if nRV > 0:
@@ -207,7 +241,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
                 rv_comps = all_models.rv[RVnames[j]][1]    #rv components for each planet in the system
                 
                 #evaluate rv model on smooth time grid
-                t_sm       = np.linspace(tt.min(),tt.max(), max(2000,len(tt)))
+                t_sm       = np.linspace(tt.min(),tt.max(), int(np.ptp(tt)/min(period)*10))
                 ph_sm      = phase_fold(t_sm, period[n], T0[n],-0.5)
                 # ph_sm      = np.where(ph_sm<0, ph_sm+1, ph_sm)
                 rv_sm_comp = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).rv[RVnames[j]][1]
@@ -230,7 +264,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
             ax[0].plot(np.concatenate(phase_all)[srt], np.concatenate(rv_all)[srt], "-k", lw=3, label='Best-fit')
             ax[0].legend()
             plt.subplots_adjust(hspace=0.04,wspace=0.04)
-            fig.savefig(plot_folder+f'Phasefolded_RV_[planet{n+1}].png',bbox_inches="tight") 
+            fig.savefig(plot_folder+f'Phasefolded_RV_[planet{n+1}].png',bbox_inches="tight",dpi=100) 
     
     plt.close('all')
     matplotlib.use(__default_backend__)

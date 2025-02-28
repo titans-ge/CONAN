@@ -5,7 +5,7 @@ requires = ["setuptools", "numpy==2.1.3"
 
 [project]
 name = "conan-exoplanet"
-version = "3.3.8"
+version = "3.3.9"
 authors = [
     {name = "Babatunde Akinsanmi", email = "tunde.akinsanmi@unige.ch"},
     {name = "Monika Lendl", email = "monika.lendl@unige.ch"}
