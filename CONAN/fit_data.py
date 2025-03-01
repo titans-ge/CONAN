@@ -983,7 +983,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         kern = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, lc_Qsho)
                     if n==1:
                         #starting values of next kernel
-                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value])
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value])
                         kern2 = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, lc_Qsho)
 
                         
@@ -1118,7 +1118,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         else:
                             kern  = celerite_kernels[gpkern](-10, 1)   #dummy initialization
                         # set the kernel parameters to the starting values after performing the conversion
-                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value],
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ce_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value],
                                                                 fixed_arg = rv_Qsho)
                         kern.set_parameter_vector([gppar1, gppar2])
                     if n==1:
@@ -1128,7 +1128,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         else:
                             kern2 = celerite_kernels[gpkern](-10, 1)
                         #starting values of next kernel
-                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value],
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="ce_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value],
                                                                 fixed_arg = rv_Qsho)
                         kern2.set_parameter_vector([gppar1, gppar2])
                         
@@ -1143,12 +1143,12 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     assert gpkern in spleaf_kernels.keys(), f"Invalid kernel '{gpkern}' for Spleaf GP, must be one of {list(spleaf_kernels.keys())}"
                     if n==0: 
                         # set the kernel parameters to the starting values after performing the conversion
-                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                             thisRVgp[f"lengthscale{n}"].start_value])
                         kern = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, rv_Qsho)
                     if n==1:
                         #starting values of next kernel
-                        gppar1, gppar2 =  gp_conv.get_values(kernels=gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
+                        gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                             thisRVgp[f"lengthscale{n}"].start_value])
                         kern2 = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, rv_Qsho)
 
