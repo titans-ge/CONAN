@@ -21,11 +21,12 @@ except ImportError:
 
 from .utils import (rho_to_aR, Tdur_to_aR, cosine_atm_variation, reflection_atm_variation, 
                     phase_fold,convert_LD,rescale0_1,sesinw_secosw_to_ecc_omega,
-                    light_travel_time_correction, get_orbital_elements)
+                    light_travel_time_correction, get_orbital_elements, inclination)
 from types import SimpleNamespace
 
 def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, per=None, 
-                sesinw=[0], secosw=[0], ddf=0, q1=0,q2=0, split_conf=None,ss=None, vcont=0,Rstar=None,grprs=0,
+                sesinw=[0], secosw=[0], ddf=0, occ=0, Fn=None, delta=None, A_ev=0,
+                A_db=0, q1=0,q2=0, split_conf=None,ss=None, vcont=0,Rstar=None,grprs=0,
                 custom_LCfunc=None, cst_pars={}):
     """ 
     computes the TTV model for a given set of parameters along with the baseline
@@ -52,6 +53,16 @@ def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, pe
         sqrt(ecc)*cos(omega)
     ddf : float
         if ddf is not 0, then depth variation is being used and this value is added to the base rprs, gr
+    occ : float
+        Occultation depth in ppm
+    Fn : float
+        nightside flux ratio in ppm
+    delta : float
+        hotspot shift of the atmospheric variation in degrees
+    A_ev : float
+        semi-Amplitude of the ellipsoidal variation in ppm
+    A_db : float
+        semi-Amplitude of the Doppler boosting in ppm
     q1 : float
         LD coefficient 1
     q2 : float
@@ -104,7 +115,7 @@ def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, pe
         imp_par    = list(np.array(b)[plnum])
 
         TM = Transit_Model(rho_star=rho_star, dur=dur, T0=this_t0, RpRs=rprs, b=imp_par, per=P, sesinw=sesinw_, secosw=secosw_, 
-                            ddf=ddf, occ=0, Fn=0, delta=0, q1=q1, q2=q2,cst_pars=cst_pars, npl=len(this_t0))
+                            ddf=ddf, occ=occ, Fn=Fn, delta=delta, A_ev=A_ev, A_db=A_db, q1=q1, q2=q2,cst_pars=cst_pars, npl=len(this_t0))
         this_trans,_ = TM.get_value(tarr_split,ss=ss,grprs=grprs,vcont=vcont,Rstar=Rstar,model_phasevar=False,custom_LCfunc=custom_LCfunc)  #compute the transit model for this chunk of data
         mm[ind]     += (this_trans-1)   #add the zero-baseline transit chunk to the zero baseline total model
 
@@ -230,7 +241,8 @@ class Transit_Model:
             # calculate the z values for the lightcurve and put them into a z array. Then below just extract them from that array
             # --------
             # calculate eccentricity and omega
-            ecc, ome = sesinw_secosw_to_ecc_omega(self.sesinw[n],self.secosw[n])
+            ecc, ome_rad = sesinw_secosw_to_ecc_omega(self.sesinw[n],self.secosw[n])
+            ome_deg = ome_rad*180/np.pi
             if ecc>0.99: ecc=0.99
             
             # adapt the RpRs value used in the LC creation to any ddfs
@@ -240,30 +252,30 @@ class Transit_Model:
                 RR=grprs+self.ddf    # the specified GROUP rprs + the respective ddf (deviation)
             
             # calculate the a/Rs 
-            efac1 = np.sqrt(1.-ecc**2)/(1.+ecc*np.sin(ome))
-            efac2 = self.b[n]*(1.-ecc**2)/(1.+ecc*np.sin(ome))
+            efac1 = np.sqrt(1.-ecc**2)/(1.+ecc*np.sin(ome_rad))
+            efac2 = self.b[n]*(1.-ecc**2)/(1.+ecc*np.sin(ome_rad))
             if self.dur is not None: 
                 # ars  =  np.sqrt(((1.+RR)**2 - efac2**2 * (1.-(np.sin(self.dur*np.pi/self.per[n]))**2))/(np.sin(self.dur*np.pi/self.per[n]))**2) * efac1
-                ars  = Tdur_to_aR(self.dur,self.b[n],RR,self.per[n],ecc,np.degrees(ome))
-            else: ars = rho_to_aR(self.rho_star,self.per[n],ecc,np.degrees(ome))
+                ars  = Tdur_to_aR(self.dur,self.b[n],RR,self.per[n],ecc,ome_deg)
+            else: ars = rho_to_aR(self.rho_star,self.per[n],ecc,ome_deg)
 
-            inc = np.arccos(self.b[n]/(ars*(1-ecc**2)/(1+ecc*np.sin(ome))))  #inclination in radians
+            inc = np.arccos(self.b[n]/(ars*(1-ecc**2)/(1+ecc*np.sin(ome_rad))))  #transit inclination in radians
 
             #light travel time correction
             if Rstar is not None:
-                tt_ss = light_travel_time_correction(tt_ss, self.T0[n],ars,self.per[n],inc,Rstar,ecc,ome)
+                tt_ss = light_travel_time_correction(tt_ss, self.T0[n],ars,self.per[n],inc,Rstar,ecc,ome_rad)
 
             # if replacing the LC model with a custom function
             if custom_LCfunc!=None and custom_LCfunc.replace_LCmodel:
                 LC_pars = dict(Duration=self.dur, rho_star=self.rho_star,RpRs=RR,Impact_para=self.b[n],T_0=self.T0[n],Period=self.per[n],Eccentricity=ecc,
-                                omega=ome*180/np.pi,q1=self.q1,q2=self.q2,D_occ=self.occ,Fn=self.Fn,ph_off=self.delta,A_ev=self.A_ev,A_db=self.A_db)
+                                omega=ome_deg,q1=self.q1,q2=self.q2,D_occ=self.occ,Fn=self.Fn,ph_off=self.delta,A_ev=self.A_ev,A_db=self.A_db)
                 lc_mod = custom_LCfunc.get_func(tt_ss,**self.cst_pars,extra_args=custom_LCfunc.extra_args,LC_pars=LC_pars)
             
             else:   #use default CONAN lc model
 
                 #calculate star planet separation in sky plane, in units of stellar radius 
                 #from winn2010 (https://arxiv.org/abs/1001.2010)
-                orb_pars = get_orbital_elements(tt_ss, self.T0[n], self.per[n], ecc, ome,
+                orb_pars = get_orbital_elements(tt_ss, self.T0[n], self.per[n], ecc, ome_rad,
                                                 ars,inc, approx=approx_EA)
                 # TA_lc    = orb_pars.true_anom
                 z, y     = orb_pars.get_Rsky()
@@ -284,14 +296,20 @@ class Transit_Model:
                 if RR < 0: mm0[ph_transit] = 1-mm0[ph_transit]+1   #allow negative depths
                 
                 #============= OCCULTATION ==========================
-                Fp,Fn,A_db, A_ev = self.occ*1e-6, self.Fn*1e-6, self.A_db*1e-6, self.A_ev*1e-6
+                Fp, Fn, A_db, A_ev = self.occ*1e-6, self.Fn*1e-6, self.A_db*1e-6, self.A_ev*1e-6
+                inc_occ            = inclination(self.b[n], ars,ecc, ome_deg,"occ")
+                z_occ, y_occ       = orb_pars.get_Rsky(ars,inc_occ)   #for occ
 
-                ph_occultation  = np.where((y < 0))
-                npo_occultation = len(z[ph_occultation])
+                ph_occultation     = np.where((y < 0))
+                npo_occultation    = len(z[ph_occultation])
+                u1, u2             = 0., 0.              # no limb darkening
 
-                u1, u2 = 0., 0.              # no limb darkening
-                mm0[ph_occultation],m0[ph_occultation] = occultquad(z[ph_occultation],u1,u2,abs(RR),npo_occultation)   # mm0 is the occultation model (transit model w/o LD)
-                if len(mm0[ph_occultation]) >0: mm0[ph_occultation] = 1 + Fp*(rescale0_1(mm0[ph_occultation])-1)  #rescale the occultation model
+                mm0[ph_occultation],m0[ph_occultation] = occultquad(z_occ[ph_occultation],u1,u2,abs(RR),npo_occultation)   # mm0 is the occ model (transit model w/o LD with RR to get accurate ingress and total duration)
+                exp_depth   = abs(RR)**2                    #expected depth given full non-LD transit of planet with radius RR
+                calc_depth  = np.ptp(mm0[ph_occultation])   #calculated depth due to possible grazing config
+                depth_ratio = calc_depth/exp_depth          #ratio 
+                if len(mm0[ph_occultation]) >0: 
+                    mm0[ph_occultation] = 1 + (Fp*depth_ratio)*(rescale0_1(mm0[ph_occultation])-1)  #rescale the occ model to observable occ depth
                 
                 #phase angle
                 ph_angle = orb_pars.phase_angle #TA_lc + (ome-np.pi/2)   
@@ -505,16 +523,17 @@ def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=N
     model_components = {}   #components of the model RV curve for each planet
     for n in range(npl):
 
-        ecc, ome = sesinw_secosw_to_ecc_omega(sesinw[n],secosw[n])
+        ecc, ome_rad = sesinw_secosw_to_ecc_omega(sesinw[n],secosw[n])
+        ome_deg = ome_rad*180/np.pi
         
         if custom_RVfunc!=None and custom_RVfunc.replace_RVmodel:
-            RV_pars = dict(T0=T0[n],Period=per[n],K=K[n],ecc=ecc,omega=ome)
+            RV_pars = dict(T_0=T0[n],Period=per[n],K=K[n],Eccentricity=ecc,omega=ome_deg)
             m_RV = custom_RVfunc.get_func(tt,**cst_pars,extra_args=custom_RVfunc.extra_args,RV_pars=RV_pars)
         else:
-            orb_pars = get_orbital_elements(tt, T0[n], per[n], ecc, ome)
+            orb_pars = get_orbital_elements(tt, T0[n], per[n], ecc, ome_rad)
             TA_rv    = orb_pars.true_anom
             # get the model RV at each time stamp
-            m_RV = K[n] * (np.cos(TA_rv + ome) + ecc * np.cos(ome))  #ome is of the planet, eqn 6 in https://arxiv.org/pdf/2212.06966
+            m_RV = K[n] * (np.cos(TA_rv + ome_rad) + ecc * np.cos(ome_rad))  #ome is of the planet, eqn 6 in https://arxiv.org/pdf/2212.06966
 
 
             if custom_RVfunc!=None and custom_RVfunc.replace_LCmodel==False:
