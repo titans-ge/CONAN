@@ -1348,6 +1348,7 @@ class load_lightcurves:
                     _res.params.add(f"aR{lbl}", expr = f'((rho_star*{ecc_fac2}*{G}*(Period{lbl}*24*3600)**2) /(3*pi))**(1/3)', min=0, max=np.inf)
                     _res.params.add(f"inc{lbl}", expr=f'(180/pi*acos(Impact_para{lbl}/(aR{lbl}*{ecc_fac})))')
                     _res.params.add(f"Duration{lbl}", expr=f'( Period{lbl}/pi * ({ecc_fac}**2/(sqrt(1-ecc**2))) * asin({numer}/(aR{lbl}*{ecc_fac}*sin(pi/180*inc{lbl}))))', min=0, max=np.inf)
+            
             #GP
             for gpn in [1,2]:
                 if f"log_GP_amp{gpn}" in _res.params:
@@ -2740,6 +2741,7 @@ class load_lightcurves:
 
             if self._planet_pars[f"pl{n}"]["Period"].to_fit != "n" or self._planet_pars[f"pl{n}"]["Period"].step_size !=0:
                 print(f'transit_timing_variation(): Fixing `Period` to the start value {self._planet_pars[f"pl{n}"]["Period"].start_value} defined in `.planet_parameters()`\n')
+                self._planet_pars[f"pl{n}"]["Period"] = _param_obj.from_tuple(self._planet_pars[f"pl{n}"]["Period"].start_value)
             
             T0s.append(self._planet_pars[f"pl{n}"]["T_0"].start_value)
             Ps.append(self._planet_pars[f"pl{n}"]["Period"].start_value)
@@ -3735,10 +3737,6 @@ class load_rvs:
                 if len(gamma) ==2: gamma_init.append( (pps["gamma"], gamma[1]))     
                 if len(gamma) ==3: gamma_init.append( (gamma[0], pps["gamma"], gamma[2]) )  
 
-        if plot_model:
-            _plot_data(self,plot_cols=(0,1,2),col_labels=("time","rv"),binsize=0,model_overplot=self._rvmodel)
-        
-
         #prefill other light curve setup from the results here or inputs given here.
         if setup_baseline:
             if verbose: print(_text_format.BOLD + "Setting-up rv baseline model from result" +_text_format.END)
@@ -3748,6 +3746,27 @@ class load_rvs:
         if setup_planet:
             if verbose: print(_text_format.BOLD + "\nSetting-up planet RV pars from input values" +_text_format.END)
             self.planet_parameters(**input_pars, verbose=verbose)
+        
+        #derive other planet parameters from fit
+        for i in range(len(self._rvdecorr_result)):
+            _res = self._rvdecorr_result[i]
+            G = '(6.674299999999998e-08)'
+            for n in range(1,self._nplanet+1):
+                lbl = f"_{n}" if self._nplanet>1 else ""
+                _res.params.add(f"ecc{lbl}",expr=f'sesinw{lbl}**2+secosw{lbl}**2',min=0, max=1)
+                _res.params.add(f"w{lbl}",expr=f'(180/pi*atan2(sesinw{lbl},secosw{lbl}))%360', min=0, max=360)
+
+            #GP
+            for gpn in [1,2]:
+                if f"log_GP_amp{gpn}" in _res.params:
+                    _res.params.add(f"GP_amp{gpn}", expr=f'exp(log_GP_amp{gpn})',
+                        min=np.exp(_res.params[f'log_GP_amp{gpn}'].min),max=np.exp(_res.params[f'log_GP_amp{gpn}'].max))
+                    _res.params.add(f"GP_len{gpn}", expr=f'exp(log_GP_len{gpn})',
+                        min=np.exp(_res.params[f'log_GP_len{gpn}'].min),max=np.exp(_res.params[f'log_GP_len{gpn}'].max))
+            self._rvdecorr_result[i] = _res
+
+        if plot_model:
+            _plot_data(self,plot_cols=(0,1,2),col_labels=("time","rv"),binsize=0,model_overplot=self._rvmodel)
         
         return self._rvdecorr_result
     
