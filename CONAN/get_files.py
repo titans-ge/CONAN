@@ -638,6 +638,8 @@ class get_CHEOPS_data(object):
             Folder to save the light curve file in.
         out_filename : str
             Name of the output file. Default is None in which case the file will be named as "{planet_name}_TG{file_key}.dat"
+        rescale_data : bool
+            Rescale the data to between 0 and 1. Default is True.
         """
     
         rescale   = lambda x: (x - np.min(x))/np.ptp(x)          # between 0 and 1 
