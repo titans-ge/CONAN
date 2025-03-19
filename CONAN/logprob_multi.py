@@ -298,7 +298,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         if get_planet_model:
             if nttv>0:
                 LCmod,compo = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
-                                        ddf=ddf0,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
+                                        ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in,
+                                        q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                         custom_LCfunc=custom_LCfunc if ncustom>0 else None, cst_pars=cst_pars)
             else:
                 TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
@@ -312,7 +313,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         #compute transit model
         if nttv>0:
             mt0, _ = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
-                                    ddf=ddf0,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
+                                    ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                     custom_LCfunc=custom_LCfunc if ncustom>0 else None,cst_pars=cst_pars)
         else:
             TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
