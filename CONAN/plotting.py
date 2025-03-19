@@ -138,7 +138,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[0].set_ylabel(f"Detrended Flux")
         ax[0].axhline(1, ls="--", color="k", alpha=0.3)
         ax[0].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=3, zorder=1, label='Data')
-        ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
+        ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3, label=f"{int(binsize*24*60)}-min bins")
         ax[0].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
                     label='Best-fit')
         ax[0].legend()
@@ -146,15 +146,19 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
         if model_PC[filt_index]:
             occ_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+filt_index
-            DF_occ = params_all[occ_ind]
+            aev_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+len(filnames)*3 + filt_index
+            adb_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+len(filnames)*4 + filt_index
+            tot_pc_amp = params_all[occ_ind] + 2*params_all[aev_ind] + 2*params_all[adb_ind]
+
             # print(f"Occultation depth_{filt}: {_ind_para['pnames_all'][occ_ind]} - {DF_occ:.2f}ppm")
             ax[1].set_ylabel(f"Detrended Flux")
             ax[1].axhline(1, ls="--", color="k", alpha=0.3)
-            ax[1].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=3, zorder=1, label='Data')
-            ax[1].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3)
+            ax[1].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', alpha=0.4,ms=3, zorder=1, label='Data')
+            ax[1].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3, label=f"{int(binsize*24*60)}-min bins")
             ax[1].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
                         label='Best-fit')
-            ax[1].set_ylim([1-2*DF_occ*1e-6, 1+2*DF_occ*1e-6])
+            ax[1].set_ylim([1-1.5*tot_pc_amp*1e-6, max(flux_bins.max()+error_bins.max(), 1+1.5*tot_pc_amp*1e-6)])
+
             ax[1].legend()
 
         ax[-1].axhline(0, ls="--", color="k", alpha=0.3)
