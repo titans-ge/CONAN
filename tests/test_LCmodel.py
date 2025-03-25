@@ -22,45 +22,45 @@ A_ev     = 0
 A_db     = 0
 
 
-def ktransit_mod(t, rho_star,dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
-                    secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1):
-        import ktransit
-        import numpy as np
-        from CONAN.utils import sesinw_secosw_to_ecc_omega
+# def ktransit_mod(t, rho_star,dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
+#                     secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1):
+#         import ktransit
+#         import numpy as np
+#         from CONAN.utils import sesinw_secosw_to_ecc_omega
 
-        u1 = 2*np.sqrt(q1)*q2
-        u2 = np.sqrt(q1)*(1-2*q2)
-        ecc, ome = sesinw_secosw_to_ecc_omega(sesinw,secosw)
-        esinw = ecc*np.sin(ome)
-        ecosw = ecc*np.cos(ome)
+#         u1 = 2*np.sqrt(q1)*q2
+#         u2 = np.sqrt(q1)*(1-2*q2)
+#         ecc, ome = sesinw_secosw_to_ecc_omega(sesinw,secosw)
+#         esinw = ecc*np.sin(ome)
+#         ecosw = ecc*np.cos(ome)
 
-        M = ktransit.LCModel()
-        M.add_star(
-                rho=rho_star, # mean stellar density in cgs units
-                ld1=u1,
-                ld2=u2, 
-                ld3=0.0,
-                ld4=0.0, 
-                dil=0.0,
-                zpt=01.0, 
-                veloffset=0 # new keyword, the radial velocity zero-point offset in m/s   
-                )
+#         M = ktransit.LCModel()
+#         M.add_star(
+#                 rho=rho_star, # mean stellar density in cgs units
+#                 ld1=u1,
+#                 ld2=u2, 
+#                 ld3=0.0,
+#                 ld4=0.0, 
+#                 dil=0.0,
+#                 zpt=01.0, 
+#                 veloffset=0 # new keyword, the radial velocity zero-point offset in m/s   
+#                 )
 
-        M.add_planet(
-                        T0=T0, # a transit mid-time 
-                        period=per, # an orbital period in days
-                        impact=b, # an impact parameter
-                        rprs=RpRs, # planet stellar radius ratio
-                        ecosw=ecosw, 
-                        esinw=esinw,
-                        occ=occ, # a secondary eclipse depth in ppm
-                        rvamp=0.) # radial velocity semi-amplitude in m/s
+#         M.add_planet(
+#                         T0=T0, # a transit mid-time 
+#                         period=per, # an orbital period in days
+#                         impact=b, # an impact parameter
+#                         rprs=RpRs, # planet stellar radius ratio
+#                         ecosw=ecosw, 
+#                         esinw=esinw,
+#                         occ=occ, # a secondary eclipse depth in ppm
+#                         rvamp=0.) # radial velocity semi-amplitude in m/s
         
-        M.add_data(
-                time=t,   
-                itime=np.zeros_like(t)+0.021
-                )
-        return M.transitmodel
+#         M.add_data(
+#                 time=t,   
+#                 itime=np.zeros_like(t)+0.021
+#                 )
+#         return M.transitmodel
 
 # def ellc_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
 #                     secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1):
@@ -158,7 +158,7 @@ def test_batman_transit(show_plot=False):
             ax[0].set_title(f"{e=:.2f},{w=:.1f}, {equiv[-1]}")
             ax[0].plot(time, conan_mod, label="CONAN")
             ax[0].plot(time, bat_mod, "--", label="Batman")
-            ax[0].plot(time, kmod, ":", label="ktransit")
+            # ax[0].plot(time, kmod, ":", label="ktransit")
             # ax[0].plot(time, ellc_mod,":", label="ELLC")
             [ax[0].axvline(tc, color="g", linestyle=":") for tc in (tconj.transit,tconj.eclipse)]
             ax[0].set_ylabel("Flux")
