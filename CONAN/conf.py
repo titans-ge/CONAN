@@ -656,12 +656,13 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
             func_x    = _file.readline().split()[2]
             _adump    = _file.readline().split()
-            str_pars  = _adump[2].split("),")
-            str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
             func_args = {}
-            for p in str_pars:
-                p_name, p_prior = p.split(":")
-                func_args[p_name] = _prior_value(p_prior)
+            if _adump[2]!='None':
+                str_pars  = _adump[2].split("),")
+                str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
+                for p in str_pars:
+                    p_name, p_prior = p.split(":")
+                    func_args[p_name] = _prior_value(p_prior)
             dump   = _file.readline()
             _adump = dump.split()
             extra_args = {}
@@ -697,12 +698,13 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
             rvfunc_x    = _file.readline().split()[2]
             _adump    = _file.readline().split()
-            str_pars  = _adump[2].split("),")
-            str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
             rvfunc_args = {}
-            for p in str_pars:
-                p_name, p_prior = p.split(":")
-                rvfunc_args[p_name] = _prior_value(p_prior)
+            if _adump[2]!='None':
+                str_pars  = _adump[2].split("),")
+                str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
+                for p in str_pars:
+                    p_name, p_prior = p.split(":")
+                    rvfunc_args[p_name] = _prior_value(p_prior)
             dump   = _file.readline()
             _adump = dump.split()
             rvextra_args = {}

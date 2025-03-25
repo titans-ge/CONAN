@@ -120,13 +120,12 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
         # Bin the data
         # binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
-        binsize = Dur[n] / 10 / period[n]  # 10 bins in transit
-        nbin = int(np.ptp(np.concatenate(phase_filter)) / binsize)
+        binsize = Dur[n] / 10   # 10 bins in transit
 
         srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
         pbin, flux_bins, error_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(flux_filter)[srt],
-                                                np.concatenate(err_filter)[srt], binsize=binsize)
-        _, res_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt], binsize=binsize)
+                                                np.concatenate(err_filter)[srt], binsize=binsize/ period[n])
+        _, res_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt], binsize=binsize/ period[n])
         srt_sm = np.argsort(np.concatenate(phsm_filter))
 
         if model_PC[filt_index]:  # if modeling a full phase curve in this filter create new panel to show zoom
@@ -165,7 +164,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[-1].plot(np.concatenate(phase_filter), np.concatenate(res_filter)*1e6, '.', c='skyblue', ms=2, zorder=1)
         ax[-1].errorbar(pbin, 1e6 * res_bins, yerr=error_bins * 1e6, fmt='o', c='midnightblue', ms=5, capsize=2)
         ax[-1].set_xlabel("Orbital phase")
-        ax[-1].set_ylim([-np.std(np.concatenate(res_filter)*1e6), np.std(np.concatenate(res_filter)*1e6)])
+        ax[-1].set_ylim([-np.nanstd(np.concatenate(res_filter)*1e6), np.nanstd(np.concatenate(res_filter)*1e6)])
         ax[-1].set_ylabel(f"O – C [ppm]")
 
         plt.subplots_adjust(hspace=0.04, wspace=0.04)

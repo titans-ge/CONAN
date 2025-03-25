@@ -3,6 +3,7 @@ import pytest
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def test_kernels(show_plot=False):
     amp, len_sc = 1000, 4  #ppm, days
     t = np.linspace(0, 100, 1000)
@@ -26,12 +27,12 @@ def test_kernels(show_plot=False):
     # ge_mat52 = george_kernels["mat52"](*gp_conv.get_values("ge_mat52", data="lc", pars = [amp, len_sc])).get_value(np.atleast_2d(t).T)[0]
 
     #cosine
-    sp_cos = spleaf_kernels["cos"](*gp_conv.get_values("sp_cos", data="lc", pars = [amp, len_sc])).eval(t)  
+    sp_cos = spleaf_cosine(*gp_conv.get_values("sp_cos", data="lc", pars = [amp, len_sc])).eval(t)
     ce_cos = celerite_kernels["cos"](*gp_conv.get_values("ce_cos", data="lc", pars = [amp, len_sc])).get_value(t)
     ge_cos = 1*george_kernels["cos"](1)
     ge_cos.set_parameter_vector(gp_conv.get_values("ge_cos", data="lc", pars = [amp, len_sc]))
     ge_cos = ge_cos.get_value(np.atleast_2d(t).T)[0]
-    # plt.plot(t, sp_cos); plt.plot(t,ce_cos,"--"); plt.plot(t,ge_cos,":"); plt.axvline(len_sc); plt.show()
+    plt.plot(t, sp_cos); plt.plot(t,ce_cos,"--"); plt.plot(t,ge_cos,":"); plt.axvline(len_sc); plt.show()
 
     equiv.append(  sp_cos == pytest.approx(ce_cos, abs=0.01*1e-6) and ce_cos ==  pytest.approx(ge_cos,abs=0.01*1e-6) )
 
@@ -66,3 +67,5 @@ def test_kernels(show_plot=False):
 
     assert all(equiv)
 
+
+#TODO  test an instance of a gpfit e,g celerite or george example and see that it gives expected loglikelihood

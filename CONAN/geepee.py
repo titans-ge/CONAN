@@ -19,14 +19,14 @@ class celerite_cosine(terms.Term):
             np.exp(log_a), 0.0,
             0.0, np.exp(log_nu),
         )
-    
 
-def spleaf_cosine(a, b, la, nu):
+def spleaf_cosine(a, nu):
     """
-    Cosine kernel with period P and amplitude sig
+    Cosine kernel with variance a and amplitude nu 
     """
-    return term.QuasiperiodicKernel(a,0,0,nu)
-
+    return term.TransformKernel(inner_kernel    = term.QuasiperiodicKernel(1,0,0,1),
+                                translate_param = lambda a,nu: dict(a=a,b=0,la=0,nu=nu), 
+                                a = a, nu = nu)
 
 
 class gp_params_convert:
@@ -46,7 +46,7 @@ class gp_params_convert:
         Parameters
         -----------
         kernels: list,str
-            kernel for which parameter transformation is performed. Must be one of ["any_george","sho","mat32","real"]
+            kernel for which parameter transformation is performed
         data: str,
             one of ["lc","rv"]
         pars: iterable,
@@ -154,7 +154,7 @@ class gp_params_convert:
                 
         variance   = amplitude**2
         nu         = 2*np.pi/lengthscale
-        return variance, 0, 0, nu  
+        return variance, nu  
         
     #celerite kernels  
     def ce_sho(self, data, amplitude, lengthscale, Q=1/np.sqrt(2)):

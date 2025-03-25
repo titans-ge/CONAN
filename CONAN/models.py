@@ -252,8 +252,8 @@ class Transit_Model:
                 RR=grprs+self.ddf    # the specified GROUP rprs + the respective ddf (deviation)
             
             # calculate the a/Rs 
-            efac1 = np.sqrt(1.-ecc**2)/(1.+ecc*np.sin(ome_rad))
-            efac2 = self.b[n]*(1.-ecc**2)/(1.+ecc*np.sin(ome_rad))
+            # efac1 = np.sqrt(1.-ecc**2)/(1.+ecc*np.sin(ome_rad))
+            # efac2 = self.b[n]*(1.-ecc**2)/(1.+ecc*np.sin(ome_rad))
             if self.dur is not None: 
                 # ars  =  np.sqrt(((1.+RR)**2 - efac2**2 * (1.-(np.sin(self.dur*np.pi/self.per[n]))**2))/(np.sin(self.dur*np.pi/self.per[n]))**2) * efac1
                 ars  = Tdur_to_aR(self.dur,self.b[n],RR,self.per[n],ecc,ome_deg)
@@ -306,7 +306,7 @@ class Transit_Model:
 
                 mm0[ph_occultation],m0[ph_occultation] = occultquad(z_occ[ph_occultation],u1,u2,abs(RR),npo_occultation)   # mm0 is the occ model (transit model w/o LD with RR to get accurate ingress and total duration)
                 exp_depth   = abs(RR)**2                    #expected depth given full non-LD transit of planet with radius RR
-                calc_depth  = np.ptp(mm0[ph_occultation])   #calculated depth due to possible grazing config
+                calc_depth  = np.ptp(mm0[ph_occultation]) if len(mm0[ph_occultation])>0 else exp_depth #calculated depth which could be different due to possible grazing eclipse config
                 depth_ratio = calc_depth/exp_depth          #ratio 
                 if len(mm0[ph_occultation]) >0: 
                     mm0[ph_occultation] = 1 + (Fp*depth_ratio)*(rescale0_1(mm0[ph_occultation])-1)  #rescale the occ model to observable occ depth

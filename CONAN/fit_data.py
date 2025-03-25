@@ -140,7 +140,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 result = load_result(out_folder)
                 return result
         
-    if verbose: print('\nCONAN fit launched!!!\n') 
+    if verbose: print('\n================ CONAN fit launched!!! ================\n') 
 
     
     #begin loading data from the 3 objects and calling the methods
@@ -981,17 +981,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         # set the kernel parameters to the starting values after performing the conversion
                         gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value])
                         kern = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, lc_Qsho)
+                        gp   = {"k1":kern}
                     if n==1:
                         #starting values of next kernel
                         gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value])
                         kern2 = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, lc_Qsho)
+                        gp.update({"k2":kern2})
+                        assert thisLCgp["op"]!="*",f"Multiplication of Spleaf kernels not yet supported. consider using celerite or george"
 
-                        
-                        # if thisLCgp["op"]=="+": kern += kern2
-                        # if thisLCgp["op"]=="*": kern *= kern2
-                    
+
                     gp_x   = thisLCdata[gpcol] # the x values for the GP,
-                    gp     = {"k1":kern} if thisLCgp["ngp"]==1 else {"k1":kern, "k2":kern2} #spleaf kernel dictionary
                     col_nm = gpcol
 
             GPobjects.append(gp)
@@ -1146,17 +1145,17 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                             thisRVgp[f"lengthscale{n}"].start_value])
                         kern = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, rv_Qsho)
+                        gp   = {"k1":kern}
                     if n==1:
                         #starting values of next kernel
                         gppar1, gppar2 =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,
                                                                                             thisRVgp[f"lengthscale{n}"].start_value])
                         kern2 = spleaf_kernels[gpkern](gppar1, gppar2) if gpkern!="sho" else spleaf_kernels[gpkern](gppar1, gppar2, rv_Qsho)
+                        gp.update({"k2":kern2})
+                        assert thisRVgp["op"]!="*",f"Multiplication of Spleaf kernels not yet supported. consider using celerite or george"
 
-                        # if thisRVgp["op"]=="+": kern += kern2
-                        # if thisRVgp["op"]=="*": kern *= kern2
-                    
+
                     gp_x   = thisRVdata[gpcol]
-                    gp     = {"k1":kern} if thisRVgp["ngp"]==1 else {"k1":kern, "k2":kern2}  #dictionary with the GP kernels
                     col_nm = gpcol
 
             rvGPobjects.append(gp)
@@ -1402,7 +1401,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior_distr.append(llim)
 
     ## plot the prior distributions
-    if verbose: print("Plotting prior distributions")
+    if verbose: print("\nPlotting prior distributions ...\n----------------------------------")
     matplotlib.use('Agg')
     
     start_pars = initial[jumping]
@@ -1424,7 +1423,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
     ############################## Initial model ##################################
-    if verbose: print('\nPlotting initial model(s)\n---------------------------')
 
     inmcmc = 'n'
     indparams = {   "custom_RVfunc": custom_RVfunc,"custom_LCfunc": custom_LCfunc,"nphot": nphot,"nRV": nRV,"sine_conf": sine_conf,
@@ -1436,35 +1434,40 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     "RVunit": RVunit,"rv_pargps": rv_pargps,"rv_gpkerns": rv_gpkerns,"sameRVgp": sameRVgp,"fit_sampler": fit_sampler, "shared_params":shared_params }
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
 
+    if verbose: print('\nGenerating initial model(s) ...\n---------------------------',end=" ")
     debug_t1 = time.time()
     mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],indparams,make_outfile=True,verbose=False,debug=debug,out_folder=out_folder)
-    if debug: print(f'finished logprob_multi, took {(time.time() - debug_t1)} secs')
+    if verbose: print(f'[{(time.time() - debug_t1):.2f} secs]')
+    
+    if verbose: print('\nPlotting initial model(s) ...\n---------------------------',end=" ")
     debug_t2 = time.time()
     fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
-    if debug: print(f'finished fit_plots, took {(time.time() - debug_t2)} secs')
+    print(f'[{(time.time() - debug_t2):.2f} secs]')
 
-    ########################### MCMC run ###########################################
-    print(f'\n============ Samping started ... (using {fit_sampler} [{NS_type if fit_sampler=="dynesty" else emcee_move}])======================')
-
+    #sampling setup
+    print("\nFit setup\n----------")
     inmcmc = 'y'
     indparams["inmcmc"] = inmcmc
     print(f'No of cpus: {nproc}')
     print(f'No of dimensions: {ndim}')
     print('fitting parameters: ', pnames_all[jumping])
     if shared_params!={}: print('Shared parameters: ', shared_params)
-    pool = Pool(nproc)
 
     if debug: 
         starting = {k:v for k,v in zip(pnames_all[jumping],initial[jumping])}
         print(f'\ninitial: {starting}')
 
     if init_only:
-        print("Generation of initial models completed")
+        print("\nGeneration of initial models completed !!!")
         return
     
+    ########################### MCMC run ###########################################
+    print(f'\n============ Samping started ... (using {fit_sampler} [{NS_type if fit_sampler=="dynesty" else emcee_move}])======================')
+    samp_start_time = time.time()
 
     nplot     = int(np.ceil(ndim/15))                #number of chain and corner plots to make
     nplotpars = int(np.ceil(ndim/nplot))             #number of parameters to plot in each plot
+    pool      = Pool(nproc)                          #multiprocessing pool
 
     if fit_sampler == "emcee":
         if nchains < 3*ndim:
@@ -1638,26 +1641,29 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     exti[1].sort()  #indices of pnames_all elements found in  the extinpars
     extins=np.copy(exti[1])
 
-    print("============ Sampling Finished ==============================================\n")
+    sampling_time = (time.time() - samp_start_time)/3600
+    print(f"============ Sampling Finished ==============================================[{sampling_time:.2f}hrs]\n")
     # ==== chain and corner plot ================
     matplotlib.use('Agg')
     if fit_sampler == "emcee": 
         #chain plot
+        chains_start_time = time.time()
         if verbose: print("Plotting emcee chains ...")
         for i in range(nplot):
             fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
             fig = result.plot_chains(fit_pars)
             fig.savefig(out_folder+f"/chains_{i}.png", bbox_inches="tight") 
-        print(f"\n----> saved {nplot} chain plot(s) as {out_folder}/chains_*.png")
+        print(f"\n----> saved {nplot} chain plot(s) as {out_folder}/chains_*.png [{(time.time() - chains_start_time):.2f} secs]")
     
     
     #corner plot
     if verbose: print("Making corner plot(s) ...")
+    corner_start_time = time.time()
     for i in range(nplot):
         fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
         fig = result.plot_corner(fit_pars, force_plot=True)
         fig.savefig(out_folder+f"/corner_{i}.png", bbox_inches="tight")
-    print(f"----> saved {nplot} corner plot(s) as {out_folder}/corner_*.png\n")
+    print(f"----> saved {nplot} corner plot(s) as {out_folder}/corner_*.png [{(time.time() - corner_start_time):.2f} secs]\n")
     matplotlib.use(__default_backend__)
 
     dim=posterior.shape
@@ -1699,32 +1705,40 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     #median
     if verbose:
-        if statistic=='median': print("\nCreating *out.dat files using the median posterior ...\n")
+        if statistic=='median': print("\nCreating *out.dat files using the median posterior ...")
     mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],indparams,make_outfile=(statistic=="median"), verbose=(statistic=="median"),out_folder=out_folder)
     #save summary_stats and as a hidden files. can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
     stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], stdev=stdev[jumping],
                         T0 = T0_post,  P = p_post, dur = Dur_post, evidence=evidence)
     pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
-    if verbose: print("\n ----> Plotting figures using median posterior values ...\n")
+    if verbose: print("\n ----> Plotting figures using median posterior values ...", end="")
+    med_start_time = time.time()
     fit_plots(nttv,nphot, nRV, filters, LCnames, RVnames, out_folder,'/med/med_',RVunit,medp[jumping],T0_post,p_post,Dur_post)
+    if verbose: print(f"[{(time.time() - med_start_time):.2f} secs]\n")
 
     #max_posterior
     if verbose:
-        if statistic == "max": print("\nCreating *out.dat files using the max posterior ...\n")
+        if statistic == "max": print("\nCreating *out.dat files using the max posterior ...")
     mval2, merr2, T0_post_max, p_post_max, Dur_post_max = logprob_multi(maxp[jumping],indparams,make_outfile=(statistic=="max"),verbose=(statistic=="max"),out_folder=out_folder)
-    if verbose: print("\n ----> Plotting figures using max posterior values ...\n")
+    if verbose: print(" ----> Plotting figures using max posterior values ...", end="")
+    max_start_time = time.time()
     fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/max/max_',RVunit,maxp[jumping], T0_post_max,p_post_max,Dur_post_max)
+    if verbose: print(f"[{(time.time() - max_start_time):.2f} secs]\n")
+
 
     mod_dev = (f_arr - mval2)/merr2 if statistic != "median" else (f_arr - mval)/merr  #Akin allow statistics to be based on median of posterior
     chisq   = np.sum(mod_dev**2)
     ndata   = len(t_arr)
+    if verbose: print("Computing AIC, BIC stats ...",end="")
+    bic_start_time = time.time()
     get_AIC_BIC(npar,ndata,chisq,out_folder)
+    if verbose: print(f"[{(time.time() - bic_start_time):.2f} secs]\n")
 
     rarr = f_arr-mval2  if statistic != "median" else f_arr - mval  # the full residuals
     earr = merr2 if statistic != "median" else merr  # the full errors
 
     if nphot > 0:
-        debug_t1 = time.time()
+        corfac_t1 = time.time()
         if verbose: print("Computing photometric noise (red and white) correction factors ...", end = " ")
         bw, br, brt, cf, cfn = corfac(rarr, t_arr, earr, indlist, nphot, njumpphot) # get the beta_w, beta_r and CF and the factor to get redchi2=1
         of=open(out_folder+"/CF.dat",'w')
@@ -1736,7 +1750,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             if (cf_apply == 'rchisq'):
                 earr[indlist[i][0]] = np.sqrt((earr[indlist[i][0]])**2 + (cfn[i])**2)
         of.close()
-        print(f'[{(time.time() - debug_t1)} secs')
+        if verbose: print(f'[{(time.time() - corfac_t1)} secs')
 
 
     

@@ -190,14 +190,17 @@ def _print_output(self, section: str, file=None):
         _print_custom_function += txtfmt.format("function", DA.func.__name__ if flag else 'None', "#custom function/class to combine with/replace LCmodel")
         _print_custom_function += txtfmt.format("x",DA.x if flag else 'None',"#independent variable [time, phase_angle]")
         if flag:
-            fa      = DA.func_args
-            fa_str  = []
-            for k in fa.keys():
-                if isinstance(fa[k],(int,float)):
-                    fa_str.append(f'{k}:F({fa[k]})')
-                if isinstance(fa[k],tuple):
-                    fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
-            fa_str  = ",".join(fa_str)
+            if DA.func_args == {}:   # if custom func does not takein any additional arguments
+                fa_str = 'None'
+            else:
+                fa      = DA.func_args
+                fa_str  = []
+                for k in fa.keys():
+                    if isinstance(fa[k],(int,float)):
+                        fa_str.append(f'{k}:F({fa[k]})')
+                    if isinstance(fa[k],tuple):
+                        fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
+                fa_str  = ",".join(fa_str)
         else: fa_str = 'None'
         _print_custom_function += txtfmt.format("func_pars",fa_str,"#param names&priors e.g. A:U(0,1,2),P:N(2,1)")
         exa_str = [f"{k}:{v}" for k,v in DA.extra_args.items()]
@@ -216,14 +219,17 @@ def _print_output(self, section: str, file=None):
         _print_custom_function += txtfmt.format("function", DA.func.__name__ if flag else 'None', "#custom function/class to combine with/replace RVmodel")
         _print_custom_function += txtfmt.format("x",DA.x if flag else 'None',"#independent variable [time, true_anomaly]")
         if flag:
-            fa      = DA.func_args
-            fa_str  = []
-            for k in fa.keys():
-                if isinstance(fa[k],(int,float)):
-                    fa_str.append(f'{k}:F({fa[k]})')
-                if isinstance(fa[k],tuple):
-                    fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
-            fa_str  = ",".join(fa_str)
+            if DA.func_args == {}:   # if custom func does not takein any additional arguments
+                fa_str = 'None'
+            else:
+                fa      = DA.func_args
+                fa_str  = []
+                for k in fa.keys():
+                    if isinstance(fa[k],(int,float)):
+                        fa_str.append(f'{k}:F({fa[k]})')
+                    if isinstance(fa[k],tuple):
+                        fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
+                fa_str  = ",".join(fa_str)
         else: fa_str = 'None'
         _print_custom_function += txtfmt.format("func_pars",fa_str,"#param names&priors e.g. A:U(0,1,2),P:N(2,1)")
         exa_str = [f"{k}:{v}" for k,v in DA.extra_args.items()]
@@ -469,6 +475,7 @@ class _param_obj():
             params = ["n",v,0.,"n",v,0.,0.,0.,0.,user_input,user_data,f'F({v})']
         elif isinstance(v, tuple):
             if len(v)==2:  #normal prior
+                assert v[1]>0,f"{func_call} wrongly defined normal prior. must be of form (mean,std) with std>0 but {v} given."
                 step   = 0.1*v[1] if step==None else step
                 lo_lim = v[0]-10*v[1] if lo==None else lo
                 hi_lim = v[0]+10*v[1] if hi==None else hi
@@ -480,7 +487,7 @@ class _param_obj():
                 hi_lim = v[2] if hi==None else hi
                 params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,user_input,user_data,f'U({v[0]},{v[1]},{v[2]})']
             elif len(v)==4: #truncated normal prior
-                assert v[0]<=v[2]<=v[1],f"{func_call} wrongly defined trucated normal prior. must be of form (min,max,mean,std) with min<=mean<=max but {v} given."
+                assert v[0]<=v[2]<=v[1] and v[3]>0,f"{func_call} wrongly defined trucated normal prior. must be of form (min,max,mean,std) with min<=mean<=max  and std>0, but {v} given."
                 step = 0.1*v[3] if step==None else step
                 params = ["y",v[2],step,"p",v[2],v[3],v[3],v[0],v[1],user_input,user_data,f'TN({v[0]},{v[1]},{v[2]},{v[3]})']
             else:

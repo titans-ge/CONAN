@@ -173,7 +173,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     q1,q2 : float  (optional);
         Kipping quadratic limb darkening parameters.
     mask : bool ;
-        if True, transits and eclipses are masked using T_0, P and rho_star which must be float/int.                    
+        if True, transits and eclipses are masked using T_0, P and rho_star/Duration which must be float/int.                    
     offset, Ai, Bi; floats [-1,1] or None;
         coefficients of linear model where offset is the intercept. they have large bounds [-1,1].
         Ai, Bi are the linear and quadratic term of the model against column i. A0*col0 + A0*col0**2 for time trend
@@ -244,8 +244,9 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         else:
             dur = tr_pars["Duration"]
         phase = phase_fold(df["col0"], 0.5*tr_pars["Period"], Tc,-0.25)
-        mask = abs(phase) > 0.6*dur/(0.5*tr_pars["Period"])  # mask for out of transit points
-        df = df[mask]
+        mask = abs(phase) > 0.75*dur/(0.5*tr_pars["Period"])  # mask for out of transit points
+        df = df[mask].reset_index(drop=True)
+        flux_err = (np.array(df["col2"])**2 + jitter**2)**0.5
 
 
     #PARAMETRIC DECORRELATION PARAMETERS
@@ -1266,7 +1267,7 @@ class load_lightcurves:
                 _ = [pps.pop(p) for p in custom_LCfunc.func_args.keys()] # remove custom_LCfunc parameters from pps
             else: best_custom_LCfunc = None
                 
-            self._tmodel.append(_decorr(df,**pps, spline=spline[j],sinus=sinusoid[file],gp=GP[file],  mask=mask, cont=cont[j], ss_exp=ss_exp[j], Rstar=Rstar, custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
+            self._tmodel.append(_decorr(df,**pps, spline=spline[j],sinus=sinusoid[file],gp=GP[file], cont=cont[j], ss_exp=ss_exp[j], Rstar=Rstar, custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -3895,58 +3896,22 @@ class load_rvs:
 
         Examples:
         ---------
-         1. create a custom function in phase angle that adds sinusoidal components to the light curve model
+        create a custom function that adds the classical RM signal (computed by pyarome) to the RV model
         
-        >>> def custom_func(phase_angle, A, B, C,extra_args={}):     # A,B,C are the custom parameters and no extra arguments
-        >>>     return A*np.sin(phase_angle) + B*np.cos(2*phase_angle) + C
+        >>> def custom_func(time, vsini, phi, extra_args={}):     # vsini and phi are additional pars required for RM
+        >>>     RM =  pyarome(  vsini, phi, 
+        >>>                     RV_pars=dict(K=0, Duration=0,rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,
+        >>>                     omega=90,q1=0,q2=0)
+        >>>                     )
+        >>>     return RM
 
-        >>> def op_func(transit_model, custom_model):   # operation function to combine the custom model with the transit model
-        >>>     return transit_model + custom_model
+        >>> def op_func(RV_model, custom_model):   # operation function to combine the custom model with the RV model
+        >>>     return RV_model + custom_model
 
-        >>> # A is fixed, B has uniform prior, C has gaussian prior
-        >>> custom_lcfunc = lc_obj.add_custom_LC_function(func=custom_func, x="phase_angle",func_args=dict(A=0.1, B=(0.2,0,0.01), C=(0.3,0.01), op_func=op_func)
-        >>> # this custom function has now been registered and will be used in the light-curve model.
+        >>> # vsini has a gaussian prior while the spin-orbit angle phi takes uniform prior
+        >>> custom_lcfunc = lc_obj.add_custom_LC_function(func=custom_func, x="time",func_args=dict(vsini=(6,0.2), phi=(0,10,180), op_func=op_func)
+        >>> # this custom function has now been registered and will be used in the computing to total RV signal
 
-        2. replace the RV model with a custom model that has two new parameters beyond the 
-        standard RV parameters. Here we create a custom model from ``catwoman`` that models asymmetric 
-        transit light curves using two new parameters rp2 and phi. the limb darkening law to use in 
-        catwoman  can be passed in the extra_args dictionary.
-        
-        >>> def catwoman_func(t, rp2, phi, extra_args=dict(ld_law="quadratic"),
-        >>>                     LC_pars=dict(Duration=0,rho_star=0,RpRs=0,Impact_para=0,T_0=0,Period=0,Eccentricity=0,omega=90,q1=0,q2=0,D_occ=0,Fn=0,ph_off=0,A_ev=0,A_db=0)
-        >>>                     ):
-        >>>     import catwoman 
-        >>>     import numpy as np
-        >>>     import astropy.constants as c
-        >>>     import astropy.units as u
-        >>>     
-        >>>     # create a catwoman model. CONAN transit pars in LDpars can be passed to the function
-        >>>     params  = catwoman.TransitParams()
-        >>>     params.t0  = LC_pars["T_0"]          
-        >>>     params.per = LC_pars["Period"]    
-        >>>     params.rp  = LC_pars["RpRs"] 
-        >>>     #convert stellar density to a/R*
-        >>>     G  = (c.G.to(u.cm**3/(u.g*u.second**2))).value
-        >>>     aR = ( rho*G*(P*(u.day.to(u.second)))**2 / (3*np.pi)) **(1/3.)
-        >>>     params.a   =  aR                          
-        >>>     params.inc = np.arccos(LC_pars["Impact_para"]/aR)   
-        >>>     params.ecc = LC_pars["Eccentricity"]   
-        >>>     params.w   = LC_pars["omega"]             
-        >>>     params.limb_dark = extra_args["ld_law"]
-        >>>     #convert from kipping parameterisation to quadratic
-        >>>     u1 = 2*np.sqrt(LC_pars["q1"])*LC_pars["q2"]  
-        >>>     u2 = np.sqrt(LC_pars["q1"])*(1-2*LC_pars["q2"]) 
-        >>>     params.u = [u1, u2]    
-
-        >>>     params.phi = phi                        #angle of rotation of top semi-circle (in degrees)
-        >>>     params.rp2 = rp2                        #bottom semi-circle radius (in units of stellar radii)
-        >>>     
-        >>>     model = catwoman.TransitModel(params,t)         #initalises model
-        >>>     return  model.light_curve(params)                #calculates light curve
-        >>> 
-        >>> lc_obj.add_custom_LC_function(func=catwoman_func, x="time",func_args=dict(rp2=(0.1,0.01), 
-        >>>         phi=(-90,0,90)),extra_args=dict(ld_law="quadratic") op_func=None,replace_RVmodel=True)
-        
         """
 
         if func!=None:
@@ -4870,7 +4835,7 @@ class load_result:
         if self._ind_para["custom_LCfunc"].func is not None:   # must reload the saved custom_func from the result folder 
             import importlib
             func_name = self._ind_para["custom_LCfunc"].func.__name__              #get_func_name
-            module    = importlib.import_module(f"{self._folder.replace('/','.')}.custom_LCfunc")   #import module from result folder
+            module    = importlib.import_module(f"{self._folder.replace('/','.')}.custom_LCfunc")   #import module from result folder   #TODO this breaks when path of output folder is not in CWD 
             
             self._ind_para["custom_LCfunc"].func = getattr(module, func_name)      # get the function from the module
             if inspect.isclass(self._ind_para["custom_LCfunc"].func):              # if the function is a class,use the get_model method

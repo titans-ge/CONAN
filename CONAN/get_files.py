@@ -335,7 +335,7 @@ class get_Kepler_data(object):
                 self.lc[s] = lk.search_lightcurve(self.planet_name,author="Kepler",quarter=s,exptime=self.exptime
                                                     ).download_all(quality_bitmask=quality_bitmask
                                                                     ).stitch(lambda x: x.select_flux(select_flux).normalize())
-                self.contam[s] = None # 1 - self.lc[s].hdu[1].header["CROWDSAP"]
+                self.contam[s] =  1 - self.lc[s].hdu[1].header["CROWDSAP"]
                 print(f"downloaded lightcurve for quarter {s}")
 
             else:
@@ -346,7 +346,7 @@ class get_Kepler_data(object):
                     new_s = round(new_s+0.1,1)
                     self.lc[new_s] = lc.select_flux(select_flux).normalize()
                     self.quarters += [new_s]
-                    self.contam[new_s] = None # 1 - self.lc[s].hdu[1].header["CROWDSAP"]
+                    self.contam[new_s] = 1 - self.lc[new_s].hdu[1].header["CROWDSAP"]
 
                 self.quarters.remove(s)
                 print(f"downloaded lightcurve for quarter {s}, split into {len(temp_data)} part(s)")

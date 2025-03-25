@@ -5,6 +5,7 @@ import scipy.stats as stats
 import scipy.interpolate as si
 import concurrent.futures
 
+#TODO corfac can take very long. results sometimes are difficult to understand. It should be revised.
 def corfac(rarr, tarr, earr, indlist, nphot, njumpphot):
     """
     Compute the red noise factor, white noise factor, combined factor, and

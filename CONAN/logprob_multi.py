@@ -22,6 +22,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         model parameters 
     args : dict 
         contains various config parameters to use in mode calculation
+    t : array, optional
+        user-defined time array at which to evaluate the model, by default None
     make_outfile : bool, optional
         whether to make the output  model file "*out.dat". by default False
     verbose : bool, optional
@@ -115,6 +117,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         t_in       = thisLCdata["col0"] if t is None else t
         f_in       = thisLCdata["col1"]
         e_in       = thisLCdata["col2"]
+
+        s_samp[j]  = s_samp[j] if t is None else None  # if t is provided, don't use s_samp
 
         if baseLSQ == "y": bvar = bvars[j][0]
         else: bvar=[]

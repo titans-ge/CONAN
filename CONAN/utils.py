@@ -40,8 +40,8 @@ def light_travel_time_correction(t,t0,aR,P,inc,Rstar,ecc=0,w=1.57079):
         ph_angle = orb.phase_angle
         d   = aR * (1-ecc**2)/(1+ecc*np.cos(orb.true_anom))    # distance to the planet at each time/true anomaly
 
-    assert inc<2*np.pi, f"inc should be in radians but {inc} gotten" 
-    assert w<2*np.pi, f"w should be in radians but {w} gotten" 
+    assert inc<=2*np.pi, f"inc should be in radians but {inc} gotten" 
+    assert w<=2*np.pi, f"w should be in radians but {w} gotten" 
 
     c    = 299792.458 *(60*60*24)   # speed of light in km/day
     Rsun = 695700.0                 # solar radius in km
@@ -772,7 +772,7 @@ def aR_to_rho(P,aR,e=0,w=90,qm=0):
     Ps = P*(u.day.to(u.second))
     w  = unp.radians(w)
     
-    st_rho=3*np.pi*aR**3 / (G*Ps**2) * (1+qm)
+    st_rho=3*np.pi*aR**3 / (G*Ps**2 * (1+qm))
 
     #eccentricity correction  eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
     ecc_factor = (1+e*unp.sin(w))**3/(1-e**2)**(3/2)
@@ -803,8 +803,10 @@ def inclination(b, a, e=0, w=90, tra_occ="tra"):
     """
     w = unp.radians(w)
     esinw = e*unp.sin(w) if tra_occ=="tra" else -e*unp.sin(w)
-    ecc_factor=(1-e**2)/(1+esinw)  
-    inc = unp.degrees(unp.arccos( b / (a*ecc_factor)) )
+    ecc_factor=(1-e**2)/(1+esinw) 
+    b_aef = b / (a*ecc_factor)
+    b_aef = np.where(b_aef>1,1,b_aef)  # to avoid arccos error
+    inc = unp.degrees(unp.arccos(b_aef) )
 
     if np.iterable(inc):
         return unp.nominal_values(inc) if all(unp.std_devs(inc) == np.zeros_like(inc)) else inc
@@ -1012,7 +1014,7 @@ def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     else:
         return unp.nominal_values(aR).item() if unp.std_devs(aR) == 0 else aR
 
-def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
+def rho_to_tdur(rho, b, Rp, P,e=0,w=90, tra_occ="tra", total=True):
     """
     convert stellar density to transit duration in days https://doi.org/10.1093/mnras/stu318
 
@@ -1030,6 +1032,10 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
         The eccentricity of the orbit.
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
+    tra_occ: str;
+        select duration of transit (tra) or occultation (occ)
+    total: bool;
+        select total duration T14 (True) or full duration T23 (False)
 
     Returns:
     --------
@@ -1037,10 +1043,10 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90):
         The transit duration in days.
     """
     aR   = rho_to_aR(rho, P,e,w)
-    Tdur = aR_to_Tdur(aR, b, Rp, P,e,w)
+    Tdur = aR_to_Tdur(aR, b, Rp, P,e,w,tra_occ, total)
     return Tdur
 
-def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90):
+def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90,tra_occ="tra"):
     """
     convert transit duration to stellar density in g/cm^3 https://doi.org/10.1093/mnras/stu318
 
@@ -1058,17 +1064,19 @@ def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90):
         The eccentricity of the orbit.
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
+    tra_occ: str;
+        select duration of transit (tra) or occultation (occ)
 
     Returns:
     --------
     rho: array-like;
         The stellar density in g/cm^3.
     """
-    aR = Tdur_to_aR(Tdur, b, Rp, P,e,w)
+    aR = Tdur_to_aR(Tdur, b, Rp, P,e,w,tra_occ)
     rho = aR_to_rho(P,aR)
     return rho
 
-def convert_rho(rho, ecc, w, conv="true2obs"):
+def convert_rho(rho, ecc=0, w=90, conv="true2obs"):
     """
     convert true stellar density to transit derived density or vice-versa 
 
@@ -1079,7 +1087,7 @@ def convert_rho(rho, ecc, w, conv="true2obs"):
     ecc : float
         eccentricity
     w : float
-        argumenent of periastron in radians
+        argumenent of periastron in degrees
     conv : str, optional
         whether to convert from true2obs or obs2true, by default "true2obs"
 
