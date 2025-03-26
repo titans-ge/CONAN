@@ -445,7 +445,7 @@ def test_flat_transit():
     npl      = 1
 
     equiv    = []
-    time     = np.linspace(T0-0.25*per, T0+0.25*per, int(0.5*per*24*60/2)) #2min cadence
+    time     = np.linspace(T0-0.15*per, T0+0.15*per, int(0.3*per*24*60/2)) #2min cadence
 
     #Non-transiting
     conan_mod = Transit_Model(rho_star=None, dur=0.112, T0=T0, RpRs=RpRs, b=1.5+RpRs, per=per,

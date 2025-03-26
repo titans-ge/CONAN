@@ -32,7 +32,7 @@ def test_kernels(show_plot=False):
     ge_cos = 1*george_kernels["cos"](1)
     ge_cos.set_parameter_vector(gp_conv.get_values("ge_cos", data="lc", pars = [amp, len_sc]))
     ge_cos = ge_cos.get_value(np.atleast_2d(t).T)[0]
-    plt.plot(t, sp_cos); plt.plot(t,ce_cos,"--"); plt.plot(t,ge_cos,":"); plt.axvline(len_sc); plt.show()
+    # plt.plot(t, sp_cos); plt.plot(t,ce_cos,"--"); plt.plot(t,ge_cos,":"); plt.axvline(len_sc); plt.show()
 
     equiv.append(  sp_cos == pytest.approx(ce_cos, abs=0.01*1e-6) and ce_cos ==  pytest.approx(ge_cos,abs=0.01*1e-6) )
 

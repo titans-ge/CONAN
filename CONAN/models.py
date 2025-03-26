@@ -277,7 +277,6 @@ class Transit_Model:
                 #from winn2010 (https://arxiv.org/abs/1001.2010)
                 orb_pars = get_orbital_elements(tt_ss, self.T0[n], self.per[n], ecc, ome_rad,
                                                 ars,inc, approx=approx_EA)
-                # TA_lc    = orb_pars.true_anom
                 z, y     = orb_pars.get_Rsky()
 
                 npo = len(z)                # number of lc points
@@ -307,7 +306,7 @@ class Transit_Model:
                 mm0[ph_occultation],m0[ph_occultation] = occultquad(z_occ[ph_occultation],u1,u2,abs(RR),npo_occultation)   # mm0 is the occ model (transit model w/o LD with RR to get accurate ingress and total duration)
                 exp_depth   = abs(RR)**2                    #expected depth given full non-LD transit of planet with radius RR
                 calc_depth  = np.ptp(mm0[ph_occultation]) if len(mm0[ph_occultation])>0 else exp_depth #calculated depth which could be different due to possible grazing eclipse config
-                depth_ratio = calc_depth/exp_depth          #ratio 
+                depth_ratio = calc_depth/exp_depth if exp_depth>0 else 1       #ratio 
                 if len(mm0[ph_occultation]) >0: 
                     mm0[ph_occultation] = 1 + (Fp*depth_ratio)*(rescale0_1(mm0[ph_occultation])-1)  #rescale the occ model to observable occ depth
                 

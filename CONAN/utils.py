@@ -1226,11 +1226,11 @@ def reflection_atm_variation(phase, Fd=0, A=0, delta_deg=0):
 
 def rescale0_1(x):
     """Rescale an array to the range [0,1]."""
-    return ((x - np.min(x))/np.ptp(x) ) if np.all(min(x) != max(x)) else x
+    return ((x - np.min(x))/np.ptp(x) ) if np.ptp(x) != 0 else x
 
 def rescale_minus1_1(x):
     """Rescale an array to the range [-1,1]."""
-    return ((x - np.min(x))/np.ptp(x) - 0.5)*2 if np.all(min(x) != max(x)) else x
+    return ((x - np.min(x))/np.ptp(x) - 0.5)*2 if np.ptp(x) != 0 else x
 
 def convert_LD(coeff1, coeff2,conv="q2u"):
     """ 
