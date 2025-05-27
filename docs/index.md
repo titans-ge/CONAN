@@ -1,5 +1,3 @@
-> ⚠️ **Warning**: The docs are still under construction.
-
 ```{include} ../README.md
 ```
 
