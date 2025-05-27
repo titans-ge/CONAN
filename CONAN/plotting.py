@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from CONAN.logprob_multi import logprob_multi
 import dill as pickle
 from os.path import splitext,dirname
+import traceback
 import concurrent.futures
 
 
@@ -33,16 +34,24 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
     #model plot for each LC
     def plot_lightcurve(j):
         infile = outdata_folder + splitext(names[j])[0]+'_lcout.dat'
+        fdata  = np.loadtxt(infile)
+        n_nan  = np.sum(np.isnan(fdata).any(axis=1))
+        n_inf  = np.sum(np.isinf(fdata).any(axis=1))  # find rows with inf in output
+        if n_inf>0 or n_nan>0:
+            print(f"\n       Warning: {names[j]} – ",end="")
+            if n_inf > 0: print(f"infs on {n_inf} row(s). ",end="")
+            if n_nan > 0: print(f"NaNs on {n_nan} row(s).")
+        fin    = ~np.isinf(fdata).any(axis=1)  # find rows with inf in output
         tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0,1,2,3,8,9,10), unpack = True)  # reading in the lightcurve data
+        tt, flux, err, full_mod, bfunc, mm, det_flux = tt[fin], flux[fin], err[fin], full_mod[fin], bfunc[fin], mm[fin], det_flux[fin]
         
         #evaluate lc model on smooth time grid
         t_sm  = np.linspace(tt.min(),tt.max(), int(np.ptp(tt)*24*60/2))
         lc_sm = logprob_multi(params,_ind_para,t=t_sm,get_planet_model=True).lc[names[j]][0]
+        t_sm, lc_sm = t_sm[~np.isinf(lc_sm)], lc_sm[~np.isinf(lc_sm)]
 
         # bin the lightcurve data
-        binsize_min = 15.
         binsize     = min(Dur)/10 #binsize_min/(24.*60.)
-        nbin = int(np.ptp(tt)/binsize)  # number of bins
 
         t_bin,    f_bin,  err_bin       = bin_data_with_gaps(tt, flux, err, binsize=binsize)    #original data
         det_tbin, det_fbin, det_errbin  = bin_data_with_gaps(tt, det_flux, err, binsize=binsize)    #detrended data
@@ -80,10 +89,12 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
         ax[2].set_xlabel("Time")
         plt.subplots_adjust(hspace=0.02)
-        fig.savefig(outname,bbox_inches='tight',dpi=100)
+        fig.savefig(outname,bbox_inches='tight',dpi=150)
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(plot_lightcurve, range(nphot))
+
+
     #### phase plot for each planet in system across multiple LCs ####
     # check that filter list contains same string
         
@@ -94,7 +105,9 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
 
         for j in range(nphot):
             infile = outdata_folder + names[j][:-4] + '_lcout.dat'
+            fin    = ~np.isinf(np.loadtxt(infile)).any(axis=1)  # get rows with finite values
             tt, flux, err, full_mod, bfunc, mm, det_flux = np.loadtxt(infile, usecols=(0, 1, 2, 3, 8, 9, 10), unpack=True)
+            tt, flux, err, full_mod, bfunc, mm, det_flux = tt[fin], flux[fin], err[fin], full_mod[fin], bfunc[fin], mm[fin], det_flux[fin]
             flux_resid = flux - full_mod
 
             if filters[j] == filt:
@@ -119,7 +132,6 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
                 lcsm_filter.append(lc_sm_comp[f"pl_{n + 1}"])
 
         # Bin the data
-        # binsize = 15. / (24. * 60.) / period[n]  # 15 minute bins in phase units
         binsize = Dur[n] / 10   # 10 bins in transit
 
         srt = np.argsort(np.concatenate(phase_filter)) if len(flux_filter) > 1 else np.argsort(phase_filter[0])
@@ -128,36 +140,37 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         _, res_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt], binsize=binsize/ period[n])
         srt_sm = np.argsort(np.concatenate(phsm_filter))
 
-        if model_PC[filt_index]:  # if modeling a full phase curve in this filter create new panel to show zoom
+        if model_PC[filt_index] or (min(pbin) < 0 < max(pbin) and min(pbin) < 0.5 < max(pbin)):  # if modeling a full phase curve (or there's transit & eclipse) in this filter create new panel to show zoom
             fig, ax = plt.subplots(3, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (1.5, 2, 1)})
         else:
             fig, ax = plt.subplots(2, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (3, 1)})
         
         ax[0].set_title(f'Phasefolded LC {filt} - planet{n + 1}: P={period[n]:.2f} d ({filt})')
-        ax[0].set_ylabel(f"Detrended Flux")
+        ax[0].set_ylabel(f"Detrended Flux [ppm]")
         ax[0].axhline(1, ls="--", color="k", alpha=0.3)
         ax[0].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', ms=3, zorder=1, label='Data')
         ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3, label=f"{int(binsize*24*60)}-min bins")
         ax[0].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
                     label='Best-fit')
+        ax[0].set_yticklabels([round(v) for v in (ax[0].get_yticks()-1)*1e6])
         ax[0].legend()
 
 
-        if model_PC[filt_index]:
+        if model_PC[filt_index] or (min(pbin) < 0 < max(pbin) and min(pbin) < 0.5 < max(pbin)):  # if modeling a full phase curve (or there's transit & eclipse) in this filter create new panel to show zoom
             occ_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+filt_index
             aev_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+len(filnames)*3 + filt_index
             adb_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+len(filnames)*4 + filt_index
             tot_pc_amp = params_all[occ_ind] + 2*params_all[aev_ind] + 2*params_all[adb_ind]
 
             # print(f"Occultation depth_{filt}: {_ind_para['pnames_all'][occ_ind]} - {DF_occ:.2f}ppm")
-            ax[1].set_ylabel(f"Detrended Flux")
+            ax[1].set_ylabel(f"Detrended Flux [ppm]")
             ax[1].axhline(1, ls="--", color="k", alpha=0.3)
             ax[1].plot(np.concatenate(phase_filter), np.concatenate(flux_filter), '.', c='skyblue', alpha=0.4,ms=3, zorder=1, label='Data')
             ax[1].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3, label=f"{int(binsize*24*60)}-min bins")
             ax[1].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
                         label='Best-fit')
             ax[1].set_ylim([1-1.5*tot_pc_amp*1e-6, max(flux_bins.max()+error_bins.max(), 1+1.5*tot_pc_amp*1e-6)])
-
+            ax[1].set_yticklabels([round(v) for v in (ax[1].get_yticks()-1)*1e6])
             ax[1].legend()
 
         ax[-1].axhline(0, ls="--", color="k", alpha=0.3)
@@ -168,15 +181,19 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[-1].set_ylabel(f"O – C [ppm]")
 
         plt.subplots_adjust(hspace=0.04, wspace=0.04)
-        fig.savefig(out_folder + prefix + f'Phasefolded_LC_[planet{n + 1}]_{filt}.png', bbox_inches="tight",dpi=100)
+        fig.savefig(out_folder + prefix + f'Phasefolded_LC_[planet{n + 1}]_{filt}.png', bbox_inches="tight",dpi=150)
 
 
     if nphot > 0 and nttv == 0:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for n in range(npl):
                 for filt in np.unique(filters):
-                    executor.submit(plot_phase_folded_lightcurve, n, filt)
-
+                    try:
+                        executor.submit(plot_phase_folded_lightcurve, n, filt)
+                        # plot_phase_folded_lightcurve(n, filt)
+                    except Exception as e:
+                        print(f"Error occurred in plotting phase folded lightcurve ({n=},{filt=}): {e}")
+                        print(traceback.format_exc())
 
     ############ RVs#####################
     def plot_rv(j):

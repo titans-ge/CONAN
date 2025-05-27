@@ -9,6 +9,7 @@ import matplotlib, os
 from ._classes import __default_backend__
 from os.path import splitext, exists
 from .utils import light_travel_time_correction,sinusoid
+from copy import deepcopy
 
 
 def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
@@ -16,7 +17,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
     """
     calculate log probability and create output file of full model calculated using posterior parameters
 
-    Parameters:
+    Parameters
     ----------
     p : array
         model parameters 
@@ -60,11 +61,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
     if len(argvals)==72: argvals = list(argvals)[7:]  #backwards compatibility: skip the first 7 arguments
     
     (   custom_RVfunc, custom_LCfunc, nphot, nRV, sine_conf, filters, nfilt, filnames,\
-        nddf, nocc, nttv, col8_arr, grprs, ttv_conf, grnames, groups, ngroup, \
+        nddf, nocc, nttv, col8_arr, grprs, ttv_conf, grnames, groups, pc_model, \
         ewarr, inmcmc, paraCNM, baseLSQ, bvars, bvarsRV, model_phasevar, LCnames, RVnames, \
         lc_Qsho, rv_Qsho, dwCNMarr, dwCNMind, params, useGPphot, useGPrv, GPobjects, \
         GPparams, GPindex, pindices, jumping, jnames, prior_distr, pnames_all, norm_sigma, \
-        uni_low, uni_up,rv_gp_colnames, gp_colnames, gpkerns, LTT, jumping_GP, GPstepsizes, sameLCgp, \
+        uni_low, uni_up,rv_gp_colnames, gp_colnames, gpkerns, LTT, conditionals, GPstepsizes, sameLCgp, \
         npl, useSpline_lc, useSpline_rv, s_samp, rvGPobjects, rvGPparams, rvGPindex, input_lcs, input_rvs, \
         RVunit, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler, shared_params) = argvals if 'shared_params' in args.keys() else argvals+[{}]
 
@@ -74,6 +75,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
     if type(custom_RVfunc) != SimpleNamespace: custom_RVfunc = None
     if "model_phasevar" not in args.keys():
         model_phasevar = [False]*nfilt
+    if isinstance(pc_model, int):   #backwards compatibility
+        pc_model = ["cosine"]*nfilt
 
     params_all  = np.concatenate((params, GPparams,rvGPparams))
 
@@ -104,9 +107,19 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         for s_recip in shared_params[sp]:
             params_all[pnames_all == s_recip] = params_all[pnames_all == sp]
 
+    # conditionals
+    for cond in conditionals.keys():
+        if eval(conditionals[cond], globals={k:v for k,v in zip(pnames_all, params_all)}) == False:
+            if inmcmc=='n': 
+                print(f"logprob_multi(): {conditionals[cond]=} is not satisfied")
+            if inmcmc=='y': 
+                return -np.inf
+    if debug:
+        _ = [print(f"{k}:{v}") for k,v in zip(pnames_all[jumping], params_all[jumping])]
+
     ncustom = custom_LCfunc.npars if custom_LCfunc!=None else 0# number of custom function parameters
     nsin    = sum([v for v in sine_conf.npars.values()]) if sine_conf.flag else 0
-    # sin_st  = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom    #starting index of sinuoid parameters
+    # sin_st  = 1+7*npl +nttv+ nddf+nocc*7 + nfilt*2 + nphot + ncustom    #starting index of sinuoid parameters
 
     time_all, flux_all, err_all, full_mod_all, base_para_all, base_sine_all, base_spl_all, base_gp_all, base_total_all, transit_all, det_flux_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
     # restrict the parameters to those of the light curve
@@ -138,13 +151,14 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         phoff_ind = 1+7*npl+nttv+nddf+nocc*2+k      # index in params of the phoff value
         Aev_ind   = 1+7*npl+nttv+nddf+nocc*3+k      # index in params of the Aev value
         Adb_ind   = 1+7*npl+nttv+nddf+nocc*4+k      # index in params of the Adb value
-        cont_ind  = 1+7*npl+nttv+nddf+nocc*5+k      # index in params of the cont value
+        f1ev_ind  = 1+7*npl+nttv+nddf+nocc*5+k      # index in params of the Adb value
+        cont_ind  = 1+7*npl+nttv+nddf+nocc*6+k      # index in params of the cont value
 
-        q1ind     = 1+7*npl+nttv+nddf+nocc*6+2*k    # index in params of the first LD coeff of this filter
-        q2ind     = 1+7*npl+nttv+nddf+nocc*6+2*k+1  # index in params of the second LD coeff of this filter
+        q1ind     = 1+7*npl+nttv+nddf+nocc*7+2*k    # index in params of the first LD coeff of this filter
+        q2ind     = 1+7*npl+nttv+nddf+nocc*7+2*k+1  # index in params of the second LD coeff of this filter
         gg        = int(groups[j]-1)
 
-        LCjitterind = 1+7*npl + nttv+nddf+nocc*6 + nfilt*2 + j
+        LCjitterind = 1+7*npl + nttv+nddf+nocc*7 + nfilt*2 + j
 
         # get the index of pp that is 
         # adapt the RpRs value used in the LC creation to any ddfs
@@ -248,6 +262,12 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         else:
             Adb_in = params_all[Adb_ind]
 
+        if (f1ev_ind in jumping[0]):   
+            f1ev_in = pp[ppcount]
+            ppcount = ppcount+1
+        else:
+            f1ev_in = params_all[f1ev_ind]
+
         if (cont_ind in jumping[0]):   
             cont_in = pp[ppcount]
             ppcount = ppcount+1
@@ -273,7 +293,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         
         cst_pars= {}
         if ncustom>0:
-            customind = 1+7*npl + nttv+nddf+nocc*6 + nfilt*2 + nphot + np.arange(ncustom)
+            customind = 1+7*npl + nttv+nddf+nocc*7 + nfilt*2 + nphot + np.arange(ncustom)
             for kk,cst_ind in enumerate(customind):
                 if cst_ind in jumping[0]:
                     cst_pars[list(custom_LCfunc.par_dict.keys())[kk]] = pp[ppcount]
@@ -283,7 +303,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
 
         if sine_conf.flag:
             file_slct = filnames[k] if sine_conf.fit=="filt" else "same" if sine_conf.fit=="same" else LCnames[j]
-            sin_ind   = 1+7*npl +nttv+ nddf+nocc*6 + nfilt*2 + nphot + ncustom + sine_conf.index[file_slct]  #the indices of this lc/filt sinuoid parameters
+            sin_ind   = 1+7*npl +nttv+ nddf+nocc*7 + nfilt*2 + nphot + ncustom + sine_conf.index[file_slct]  #the indices of this lc/filt sinuoid parameters
             # sine_conf.pars[file_slct] = params_all[sin_ind]     #TODO all parameters should be updated like this as opppsed to using ppcount
             for kk,s_ind in enumerate(sin_ind):
                 if s_ind in jumping[0]:
@@ -302,14 +322,14 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         if get_planet_model:
             if nttv>0:
                 LCmod,compo = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
-                                        ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in,
+                                        ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,
                                         q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                         custom_LCfunc=custom_LCfunc if ncustom>0 else None, cst_pars=cst_pars)
             else:
                 TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
-                                    occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in, q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
+                                    occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in, q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
                 LCmod,compo = TM.get_value(t_in, ss=s_samp[j],grprs=grprs_here,vcont=cont_in,Rstar=Rstar,model_phasevar=model_phasevar[k],
-                                            custom_LCfunc=custom_LCfunc if ncustom>0 else None)
+                                            custom_LCfunc=custom_LCfunc if ncustom>0 else None, pc_model=pc_model[k])
 
             model_outputs.lc[name] = LCmod, compo
             continue
@@ -317,13 +337,13 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         #compute transit model
         if nttv>0:
             mt0, _ = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
-                                    ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
+                                    ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                     custom_LCfunc=custom_LCfunc if ncustom>0 else None,cst_pars=cst_pars)
         else:
             TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
-                                        occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, A_db=Adb_in,q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
+                                        occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
             mt0, _ = TM.get_value(t_in,ss=s_samp[j], grprs=grprs_here, vcont=cont_in,Rstar=Rstar,model_phasevar=model_phasevar[k],
-                                    custom_LCfunc=custom_LCfunc if ncustom>0 else None)   
+                                    custom_LCfunc=custom_LCfunc if ncustom>0 else None, pc_model=pc_model[k])   
         
         
         if inmcmc=="n" and Rstar!=None and j==0:   #calculate light travel time correction for each planet and plot
@@ -352,7 +372,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             matplotlib.use(__default_backend__)
 
         # compute baseline model (w/ or w/o spline)
-        bfstart = 1 + 7*npl + nttv + nddf +nocc*6 +2*nfilt + nphot + ncustom + nsin + nRV*2+ j*22  # index in params of the first baseline param of this light curve
+        bfstart = 1 + 7*npl + nttv + nddf +nocc*7 +2*nfilt + nphot + ncustom + nsin + nRV*2+ j*22  # index in params of the first baseline param of this light curve
         blind   = np.asarray(list(range(bfstart,bfstart+22))) # the indices of the baseline params of this light curve
         basesin = np.zeros(22)
         
@@ -376,7 +396,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         det_LC     = f_in / base_total    #detrended data   
 
         # lc jitter 
-        LCjitterind = 1+7*npl + nttv + nddf + nocc*6 + nfilt*2 + j
+        LCjitterind = 1+7*npl + nttv + nddf + nocc*7 + nfilt*2 + j
         LCjit       = np.exp(params_all[LCjitterind])
         err_in      = (e_in**2 + LCjit**2)**0.5
 
@@ -439,14 +459,14 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 #need conversion of gp pars before setting them
                 gp_conv       = gp_params_convert()
                 kernels       = [f"{useGPphot[j]}_{gpk}" for gpk in gpkerns[j]]  #prepend correct GP package symbol for the kernel
-                thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars,fixed_arg=lc_Qsho)
+                thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars)
                 
                 if useGPphot[j] in ['ge','ce']:
                     gp = GPobjects[j]      #gp for this lc
                     gp.set_parameter_vector(thislc_gppars)
                     gp.compute(pargp[srt_gp], yerr = err_all[j][srt_gp]) #compute gp with jitter included 
                 else:
-                    gp = cov.Cov(t=pargp[srt_gp],err=term.Error(err_all[j][srt_gp]),**GPobjects[j]) #create the spleaf gp from dictionary of kernels
+                    gp = cov.Cov(t=pargp[srt_gp],err=term.Error(err_all[j][srt_gp]),kterm=deepcopy(GPobjects[j])) #create the spleaf gp error term and kernel term. use a copy of kernel as spleaf doesnt allow to reuse the kernel this way
                     gp.set_param(thislc_gppars)
 
 
@@ -454,7 +474,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     if useGPphot[j] in ['ge','ce']: 
                         lnprob_thislc = gp.log_likelihood((residual_all[j])[srt_gp], quiet=True)  
                     else:                           
-                        lnprob_thislc = gp.log_like((residual_all[j])[srt_gp])
+                        lnprob_thislc = gp.loglike((residual_all[j])[srt_gp])
+                        del gp #delete the kernel term to avoid memory issues
                     lnprob = lnprob + lnprob_thislc
                 
                 # if not in MCMC, get a prediction and append it to the output array
@@ -514,7 +535,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             #need conversion of gp pars before setting them
             gp_conv       = gp_params_convert()
             kernels       = [f"{useGPphot[sameLCgp.first_index]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-            all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars,fixed_arg=lc_Qsho)
+            all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
             
             if useGPphot[sameLCgp.first_index] in ['ge','ce']:
                 gp  = GPobjects[sameLCgp.first_index]
@@ -522,7 +543,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 gp.compute(pargp[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp])
             else: #spleaf
                 gp = cov.Cov(t=pargp[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp]),
-                                **GPobjects[sameLCgp.first_index])
+                                kterm=deepcopy(GPobjects[sameLCgp.first_index]))
                 gp.set_param(all_lc_gppars)
 
 
@@ -530,8 +551,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 if useGPphot[sameLCgp.first_index] in ['ge','ce']: 
                     lnprob_allLC = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp], quiet=True)
                 else:
-                    lnprob_allLC = gp.log_like((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp])
-                
+                    lnprob_allLC = gp.loglike((np.concatenate([residual_all[i] for i in sameLCgp.indices]))[srt_gp])
+                    del gp
                 lnprob  = lnprob + lnprob_allLC
 
             # if not in MCMC, get a prediction and append it to the output array
@@ -596,7 +617,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 #need conversion of gp pars before setting them
                 gp_conv       = gp_params_convert()
                 kernels       = [f"{useGPphot[sameLCgp.first_index[filt]]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index[filt] ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-                all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars,fixed_arg=lc_Qsho)
+                all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
                 
                 if useGPphot[sameLCgp.first_index[filt]] in ['ge','ce']:
                     gp  = GPobjects[sameLCgp.first_index[filt]]
@@ -604,7 +625,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     gp.compute(pargp[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp])
                 else: #spleaf
                     gp = cov.Cov(t=pargp[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp]),
-                                    **GPobjects[sameLCgp.first_index[filt]])
+                                    kterm=deepcopy(GPobjects[sameLCgp.first_index[filt]]))
                     gp.set_param(all_lc_gppars)
 
 
@@ -612,8 +633,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     if useGPphot[sameLCgp.first_index[filt]] in ['ge','ce']: 
                         lnprob_filtLC = gp.log_likelihood(resid_cctn_filt[srt_gp], quiet=True)
                     else:
-                        lnprob_filtLC = gp.log_like(resid_cctn_filt[srt_gp])
-                    
+                        lnprob_filtLC = gp.loglike(resid_cctn_filt[srt_gp])
+                        del gp
                     lnprob  = lnprob + lnprob_filtLC
 
                 # if not in MCMC, get a prediction and append it to the output array
@@ -744,18 +765,18 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 Kin.append(params_all[7+7*n])
         
 
-        gammaind = 1+7*npl + nttv+nddf + nocc*6 + nfilt*2 + nphot + ncustom + nsin + j*2   #pass the right gamma index for each file (Akin)
+        gammaind = 1+7*npl + nttv+nddf + nocc*7 + nfilt*2 + nphot + ncustom + nsin + j*2   #pass the right gamma index for each file (Akin)
         Gamma_in = params_all[gammaind]
 
         # rv jitter 
-        jitterind = 1+7*npl + nttv+ nddf + nocc*6 + nfilt*2 + nphot + ncustom + nsin + j*2 + 1
+        jitterind = 1+7*npl + nttv+ nddf + nocc*7 + nfilt*2 + nphot + ncustom + nsin + j*2 + 1
         jit       = params_all[jitterind]
         err_in    =  (e_in**2 + jit**2)**0.5
 
         ncustomRV  = custom_RVfunc.npars if custom_RVfunc!=None else 0 # number of custom RV function parameters
         cstRV_pars = {}
         if ncustomRV>0:
-            customRVind = 1+7*npl + nttv+nddf+nocc*6 + nfilt*2 + nphot + ncustom + nsin + 2*nRV + np.arange(ncustomRV)
+            customRVind = 1+7*npl + nttv+nddf+nocc*7 + nfilt*2 + nphot + ncustom + nsin + 2*nRV + np.arange(ncustomRV)
             cstRV_pars
             for kk,cst_ind in enumerate(customRVind):
                     cstRV_pars[list(custom_RVfunc.par_dict.keys())[kk]] = params_all[cst_ind]
@@ -772,7 +793,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         mod_RV_gamma = mod_RV + Gamma_in
 
         #compute baseline model (w/ or w/o spline)
-        bfstartRV = 1 + 7*npl + nttv + nddf + nocc*6 + 2*nfilt + nphot+ ncustom+ nsin + 2*nRV + ncustomRV + nphot*22 +j*12  #the first index in the param array that refers to a baseline function
+        bfstartRV = 1 + 7*npl + nttv + nddf + nocc*7 + 2*nfilt + nphot+ ncustom+ nsin + 2*nRV + ncustomRV + nphot*22 +j*12  #the first index in the param array that refers to a baseline function
         incoeff   = np.array(list(range(bfstartRV,bfstartRV+12)))  # the indices for the coefficients for the baseline function        
         rvbasesin = params_all[incoeff]
 
@@ -846,14 +867,14 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 #need conversion of gp pars before setting them
                 gp_conv       = gp_params_convert()
                 kernels       = [f"{useGPrv[j]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel
-                thisrv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars,fixed_arg=rv_Qsho)
+                thisrv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars)
                 
                 if useGPrv[j] in ['ge','ce']:
                     gp  = rvGPobjects[j]      #gp for this rv
                     gp.set_parameter_vector(thisrv_gppars)
                     gp.compute(rvpargp[srt_rvgp], yerr = err_in[srt_rvgp])
                 else:
-                    gp = cov.Cov(t=rvpargp[srt_rvgp],err=term.Error(err_in[srt_rvgp]),**rvGPobjects[j]) #create the spleaf gp from the dictionary of kernels
+                    gp = cov.Cov(t=rvpargp[srt_rvgp],err=term.Error(err_in[srt_rvgp]),kterm=deepcopy(rvGPobjects[j])) #create the spleaf gp from the dictionary of kernels
                     gp.set_param(thisrv_gppars)
 
 
@@ -861,7 +882,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     if useGPrv[j] in ['ge','ce']:
                         lnprob_thisRV = gp.log_likelihood((residual_all[j])[srt_rvgp], quiet=True)
                     else:
-                        lnprob_thisRV = gp.log_like((residual_all[j])[srt_rvgp])
+                        lnprob_thisRV = gp.loglike((residual_all[j])[srt_rvgp])
                     lnprob = lnprob + lnprob_thisRV
 
                 # if not in MCMC, get a prediction and append it to the output array
@@ -878,7 +899,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     emod            = np.concatenate((emod,err_all[j]))
 
                     base_total_all[j] = base_total_all[j] + base_gp_all[j]  #update base_total with base_gp
-                    det_rv_all        = RV_all[j] - base_total_all[j]
+                    det_rv_all[j]        = RV_all[j] - base_total_all[j]
                     residual_all[j]   = RV_all[j] - full_mod_all[j]
 
                     out_data   = np.stack((time_all[j],RV_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],rvmod_all[j],det_rv_all[j],gamma_all[j],residual_all[j]),axis=1)
@@ -917,7 +938,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             #need conversion of gp pars before setting them
             gp_conv       = gp_params_convert()
             kernels       = [f"{useGPrv[sameRVgp.first_index]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-            all_rv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=all_rv_gppars,fixed_arg=rv_Qsho)
+            all_rv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=all_rv_gppars)
             
             if useGPrv[sameRVgp.first_index] in ['ge','ce']:
                 gp = rvGPobjects[sameRVgp.first_index]
@@ -925,7 +946,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 gp.compute(rvpargp[srt_rvgp], yerr = np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp])
             else:
                 gp = cov.Cov(t=rvpargp[srt_rvgp],err=term.Error(np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp]),
-                                **rvGPobjects[sameRVgp.first_index])
+                                kterm=deepcopy(rvGPobjects[sameRVgp.first_index]))
                 gp.set_param(all_rv_gppars)
 
 
@@ -933,7 +954,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 if useGPrv[sameRVgp.first_index] in ['ge','ce']:
                     lnprob_allRV = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], quiet=True)
                 else:
-                    lnprob_allRV = gp.log_like((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp])
+                    lnprob_allRV = gp.loglike((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp])
                 
                 lnprob       = lnprob + lnprob_allRV
 

@@ -1,5 +1,5 @@
 import numpy as np
-from .plotting import *
+from .plotting import param_hist, param_histbp,plot_traspec
 from .utils import rho_to_tdur, rho_to_aR, convert_LD,aR_to_Tdur, tdur_to_rho
 from .funcs import credregionML
 
@@ -12,7 +12,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
     and derived parameters to files. It also plots the histograms of the parameters and derived parameters
     and saves them to the output folder.
 
-    Parameters:
+    Parameters
     ----------
     posterior : array
         The posterior samples from the sampling.
@@ -630,6 +630,9 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
 
 
 def gr_print(jnames,GRvals, out_folder):
+    """
+    Print the Gelman-Rubin values to a file.
+    """
     
     outfile=out_folder+'/GRvals.dat'
     of=open(outfile,'w')
@@ -641,6 +644,9 @@ def gr_print(jnames,GRvals, out_folder):
 
 
 def get_AIC_BIC(npar,ndata,chi2,out_folder):
+    """
+    Calculate AIC and BIC values from the chi2, number of parameters and data points.
+    """
     
     BIC = chi2 + npar * np.log(ndata)
     AIC = chi2 + npar * ndata *2. / (ndata - npar -1.)
@@ -677,6 +683,20 @@ def dyn_summary(res,out_folder,ns_type):
 
 
 def get_PDF_Gauss(cen,sig1,sig2,dim):
+    """
+    Generate a Gaussian PDF with the given center and sigmas.
+
+    Parameters
+    ----------
+    cen : float
+        Center of the Gaussian distribution.
+    sig1 : float
+        First sigma value for the Gaussian distribution.
+    sig2 : float
+        Second sigma value for the Gaussian distribution.
+    dim : tuple
+        Dimensions of the output array.
+    """
     sig = (sig1 + sig2)/2.
     npoints = int(dim[0])  # number of samples needed
     val_PDF = np.random.normal(cen, sig, int(npoints))
@@ -684,6 +704,9 @@ def get_PDF_Gauss(cen,sig1,sig2,dim):
 
 def derive_parameters(filnames, nm, Rs_PDF, Ms_PDF, RpRs_PDF, Period_PDF, b_PDF, dur_PDF, rhoS_PDF, ecosw_PDF, esinw_PDF, K_PDF, 
                         q1_PDF, q2_PDF, Fn_PDF, DFocc_PDF, phoff_PDF, howstellar):
+    """
+    Derive the parameters from the input values and return them as PDFs.
+    """
     
     import scipy.constants as cn
 

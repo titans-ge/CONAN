@@ -42,7 +42,7 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
     Run CONAN fit from configuration file. 
     This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
     
-    Parameters:
+    Parameters
     -----------
     config_file: filepath;
         path to configuration file.
@@ -62,7 +62,7 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
     verbose: bool;
         show print statements
 
-    Returns:
+    Returns
     --------
     result: object;
         result object containing chains of the fit.
@@ -81,7 +81,7 @@ def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbo
     rerun the fit using config_save.dat file in a previous result folder. 
     This can be to regenerate plot or comintue sampling with same setup.
 
-    Parameters:
+    Parameters
     -----------
     result_folder: str;
         path to folder containing the config_save.dat file from previous CONAN launch.
@@ -92,7 +92,7 @@ def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbo
     verbose: bool;
         show print statements
 
-    Returns:
+    Returns
     --------
     result: object;
         result object containing chains of the fit.
@@ -115,17 +115,17 @@ def _prior_value(str_prior):
     """
     convert string prior into float/tuple
     
-    Parameters:
+    Parameters
     -----------
     str_prior: str;
         string representation of prior value e.g N(0.5,0.1) or F(0.5) or U(0.1,0.5,0.9) or LU(0.1,0.5,0.9)
     
-    Returns:
+    Returns
     --------
     val: float, tuple;
         value of the prior
 
-    Examples:
+    Examples
     ---------
     >>> _prior_value("N(0.5,0.1)")
     (0.5,0.1)
@@ -153,7 +153,7 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
     """
         create configuration file that of lc_obj, rv_obj, amd fit_obj setup.
         
-        Parameters:
+        Parameters
         -----------
         lc_obj : object,None;
             Instance of CONAN.load_lightcurve() object and its attributes.
@@ -279,7 +279,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     """
         configure conan from specified configfile.
         
-        Parameters:
+        Parameters
         -----------
         configfile: filepath;
             path to configuration file.
@@ -295,7 +295,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             path to radial velocity files. If None, the path in the config file is used.
         verbose: bool;
             show print statements
-        Returns:
+        Returns
         --------
         lc_obj, rv_obj, fit_obj. if return_fit is True, the result object of fit is also returned
         lc_obj: object;
@@ -308,8 +308,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             result object containing chains of the mcmc fit.
     """
 
-    _file = open(configfile,"r")
-    _skip_lines(_file,9)                       #remove first 2 comment lines
+    _file    = open(configfile,"r")
+    dump     = _file.readline()
+    version  = dump.split(" v")[1].split(" =")[0]
+    version  = tuple(map(int, (version.split("."))))   # -> (3,3,1)
+    _skip_lines(_file,8)                       #remove first 2 comment lines
     fpath    = _file.readline().rstrip().split()[1]                         # the path where the files are
     
     #TODO getting abs path may be unecessary since user can give lc_path and rv_path that overrides the one in config file
@@ -441,27 +444,74 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     # ========== GP input ====================
     gp_lclist,op = [],[]
-    gp_pars, kernels, amplitude, lengthscale = [],[],[],[]
+    gp_pars, kernels, amplitude, lengthscale, h3, h4, lcGP_logUprior = [],[],[],[],[],[],[]
 
     dump =_file.readline()
-    while dump[0] != "#":
-        _adump = dump.split()
-        gp_lclist.append(_adump[0])
-        gp_pars.append(_adump[1])
-        kernels.append(_adump[2])
-        amplitude.append(_prior_value(_adump[3]))
-        lengthscale.append(_prior_value(_adump[4]))
-        
-        op.append(_adump[5].strip("|"))
-        if op[-1] != "--":    #if theres a second kernel 
-            gp_pars[-1]     = (gp_pars[-1],_adump[7])
-            kernels[-1]     = (kernels[-1],_adump[8])
-            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9]))
-            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10]))
+    if version < (3,3,11):
+        while dump[0] != "#":
+            lcGPpdist = []
+            _adump = dump.split()
+            gp_lclist.append(_adump[0])
+            gp_pars.append(_adump[1])
+            kernels.append(_adump[2])
+            amplitude.append(_prior_value(_adump[3])); lcGPpdist.append(_adump[3].split("(")[0])
+            lengthscale.append(_prior_value(_adump[4])); lcGPpdist.append(_adump[4].split("(")[0])
+            h3.append(None)
+            h4.append(None)
 
-        #move to next LC
-        dump =_file.readline()
-    
+            op.append(_adump[5].strip("|"))
+            if op[-1] != "--":    #if theres a second kernel 
+                gp_pars[-1]     = (gp_pars[-1],_adump[7])
+                kernels[-1]     = (kernels[-1],_adump[8])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9])); lcGPpdist.append(_adump[9].split("(")[0])
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10])); lcGPpdist.append(_adump[10].split("(")[0])
+                h3.append(None)
+                h4.append(None)
+
+            lcGPpdist = [x for x in lcGPpdist if x in ["U", "LU"]]  #remove all other prior types
+            if lcGPpdist!=[]: 
+                assert len(set(lcGPpdist))==1, f"prior distribution must be the same for all LC's GP hyperparameters but {lcGPpdist} given for the LCs: {gp_lclist[-1]}"
+                lcGP_logUprior.append(False if lcGPpdist[0]=="U" else True)
+            #move to next LC
+            dump =_file.readline()
+
+    else:
+        while dump[0] != "#":
+            lcGPpdist = []
+            _adump = dump.split()
+            gp_lclist.append(_adump[0])
+            kernels.append(_adump[1])
+            gp_pars.append(_adump[2])
+            amplitude.append(_prior_value(_adump[3])); lcGPpdist.append(_adump[3].split("(")[0])
+            lengthscale.append(_prior_value(_adump[4])); lcGPpdist.append(_adump[4].split("(")[0])
+            h3.append(_prior_value(_adump[5])); lcGPpdist.append(_adump[5].split("(")[0])
+            h4.append(_prior_value(_adump[6])); lcGPpdist.append(_adump[6].split("(")[0])
+
+            #move to next line
+            dump   = _file.readline()
+            _adump = dump.split()
+            if _adump[0][0] in ["|","*","+"]: #if so, file has a second gpkernel
+                op.append(_adump[0].strip("|"))
+                kernels[-1]     = (kernels[-1],_adump[1])
+                gp_pars[-1]     = (gp_pars[-1],_adump[2])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3])); lcGPpdist.append(_adump[3].split("(")[0])
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4])); lcGPpdist.append(_adump[4].split("(")[0])
+                h3[-1]          = (h3[-1],_prior_value(_adump[5])); lcGPpdist.append(_adump[5].split("(")[0])
+                h4[-1]          = (h4[-1],_prior_value(_adump[6])); lcGPpdist.append(_adump[6].split("(")[0])
+                #move to next rv file    
+                dump =_file.readline()
+            else:
+                op.append("--")
+
+            lcGPpdist = [x for x in lcGPpdist if x in ["U", "LU"]]  #remove all other prior types
+            if lcGPpdist!=[]: 
+                assert len(set(lcGPpdist))==1, f"prior distribution must be the same for all LC's GP hyperparameters but {lcGPpdist} given for the LCs: {gp_lclist[-1]}"
+                lcGP_logUprior.append(False if lcGPpdist[0]=="U" else True)
+        
+    if lcGP_logUprior != []:
+        assert len(set(lcGP_logUprior)) == 1, f"prior distribution must be the same for all LCs GP hyperparameters but {lcGP_logUprior} given for the hyperparameters of {gp_lclist}"    
+    lcGP_logUprior = lcGP_logUprior[0] if (version >= (3,3,11) and lcGP_logUprior!= [])  else True
+
     #check that the elements of _clip_cols are the same
     if len(_clip_cols) > 1:
         assert len(set(_clip_cols)) == 1, f"all columns to clip must be the same for all files but {_clip_cols} given"
@@ -481,9 +531,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         gp_lclist = gp_lclist[0] if gp_lclist[0] in ['same','all'] else gp_lclist
     gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in lc_obj._gp_lcs()]if _useGPphot!=[] else []
     lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
-                    amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
+                    amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,gp_pck=gp_pck,
+                    GP_logUprior=lcGP_logUprior, verbose=verbose)
     lc_obj._fit_offset = _offset
-
 
     ## RV ==========================================================
     #### auto decorrelation
@@ -543,28 +593,77 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     
     # RV GP
     gp_rvlist,op = [],[]
-    gp_pars, kernels, amplitude, lengthscale = [],[],[],[]
+    gp_pars, kernels, amplitude, lengthscale, h3, h4, rvGP_logUprior = [],[],[],[],[],[],[]
 
     dump =_file.readline()
-    while dump[0] != "#":
-        _adump = dump.split()
-        gp_rvlist.append(_adump[0])
-        gp_pars.append(_adump[1])
-        kernels.append(_adump[2])
-        amplitude.append(_prior_value(_adump[3]))
-        lengthscale.append(_prior_value(_adump[4]))
-        
-        op.append(_adump[5].strip("|"))
-        if op[-1] != "––":    #if theres a second kernel 
-            gp_pars[-1]     = (gp_pars[-1],_adump[7])
-            kernels[-1]     = (kernels[-1],_adump[8])
-            amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9]))
-            lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10]))
+    if version < (3,3,11):
+        while dump[0] != "#":
+            rvGPpdist = []
 
-        #move to next RV
-        dump =_file.readline()
-        
-        
+            _adump = dump.split()
+            gp_rvlist.append(_adump[0])
+            gp_pars.append(_adump[1])
+            kernels.append(_adump[2])
+            amplitude.append(_prior_value(_adump[3])); rvGPpdist.append(_adump[3].split("(")[0])
+            lengthscale.append(_prior_value(_adump[4])); rvGPpdist.append(_adump[4].split("(")[0])
+            h3.append(None)
+            h4.append(None)
+            
+            op.append(_adump[5].strip("|"))
+            if op[-1] != "--":    #if theres a second kernel 
+                gp_pars[-1]     = (gp_pars[-1],_adump[7])
+                kernels[-1]     = (kernels[-1],_adump[8])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9])); rvGPpdist.append(_adump[9].split("(")[0])
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10])); rvGPpdist.append(_adump[10].split("(")[0])
+                h3.append(None)
+                h4.append(None)
+            
+            rvGPpdist = [x for x in rvGPpdist if x in ["U", "LU"]]  #remove all other prior types
+            if rvGPpdist!=[]:
+                assert len(set(rvGPpdist))==1, f"prior distribution must be the same for all RVs GP hyperparameters but {rvGPpdist} given for the hyperparameters of {gp_rvlist[-1]}"
+                rvGP_logUprior.append(False if rvGPpdist[0]=="U" else True)
+            #move to next RV
+            dump =_file.readline()
+
+    else:
+        while dump[0] != "#":
+            rvGPpdist = []
+
+            _adump = dump.split()
+            gp_rvlist.append(_adump[0])
+            kernels.append(_adump[1])
+            gp_pars.append(_adump[2])
+            amplitude.append(_prior_value(_adump[3])); rvGPpdist.append(_adump[3].split("(")[0])
+            lengthscale.append(_prior_value(_adump[4])); rvGPpdist.append(_adump[4].split("(")[0])
+            h3.append(_prior_value(_adump[5])); rvGPpdist.append(_adump[5].split("(")[0])
+            h4.append(_prior_value(_adump[6])); rvGPpdist.append(_adump[6].split("(")[0])
+            
+            #move to next line
+            dump   = _file.readline()
+            _adump = dump.split()
+            if _adump[0][0] in ["|","*","+"]: #if so, file has a second gpkernel
+                op.append(_adump[0].strip("|"))
+                kernels[-1]     = (kernels[-1],_adump[1])
+                gp_pars[-1]     = (gp_pars[-1],_adump[2])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3])); rvGPpdist.append(_adump[3].split("(")[0])
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4])); rvGPpdist.append(_adump[4].split("(")[0])
+                h3[-1]          = (h3[-1],_prior_value(_adump[5])); rvGPpdist.append(_adump[5].split("(")[0])
+                h4[-1]          = (h4[-1],_prior_value(_adump[6])); rvGPpdist.append(_adump[6].split("(")[0])
+                #move to next rv file    
+                dump =_file.readline()
+            else:
+                op.append("--")
+            
+
+            rvGPpdist = [x for x in rvGPpdist if x in ["U", "LU"]]  #remove all other prior types
+            if rvGPpdist!=[]:
+                assert len(set(rvGPpdist))==1, f"prior distribution must be the same for all RVs GP hyperparameters but {rvGPpdist} given for the hyperparameters of {gp_rvlist[-1]}"
+                rvGP_logUprior.append(False if rvGPpdist[0]=="U" else True)
+            
+    if rvGP_logUprior != []:
+        assert len(set(rvGP_logUprior)) == 1, f"prior distribution must be the same for all RVs GP hyperparameters but {rvGP_logUprior} given for the RVs: {gp_rvlist}"    
+    rvGP_logUprior = rvGP_logUprior[0] if (version >= (3,3,11) and rvGP_logUprior != []) else True
+    
     rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,rv_unit=RVunit,lc_obj=lc_obj)
     rv_obj.rv_baseline(*np.array(RVbases).T, gamma=gammas,gp=usegpRV,verbose=False) 
     rv_obj.rescale_data_columns(method=_RVsclcol,verbose=False)
@@ -572,11 +671,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
                         knot_spacing=_spl_knot, verbose=False)
     if verbose: rv_obj.print("rv_baseline")
     if gp_rvlist !=[]: 
-        gp_rvlist = gp_rvlist[0] if gp_rvlist[0]=='same' else gp_rvlist
+        gp_rvlist = gp_rvlist[0] if gp_rvlist[0] in ['same','all'] else gp_rvlist
     gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in rv_obj._gp_rvs()] if usegpRV!=[] else []
     rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
-                    amplitude=amplitude,lengthscale=lengthscale,gp_pck=gp_pck,verbose=verbose)
-    
+                    amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,gp_pck=gp_pck,
+                    GP_logUprior=rvGP_logUprior, verbose=verbose)
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
     ## Planet parameters
@@ -587,6 +686,12 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     #select string in rho_dur with []
     rho_dur = rho_dur[rho_dur.find("[")+1:rho_dur.find("]")]
     pl_pars[rho_dur] = _prior_value(_adump[2])
+    rhodur_logUprior = _adump[2].split("(")[0]
+    if rhodur_logUprior not in ["U", "LU"]:
+        assert rhodur_logUprior in ["N","F","TN"], f"prior distribution for {rho_dur} must one of ['U','LU','N','F','TN'] but {rhodur_logUprior} given"
+        rhodur_logUprior = True
+    else: 
+        rhodur_logUprior = False if rhodur_logUprior=="U" else True
     par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
         
     for n in range(1,nplanet+1):        #load parameters for each planet
@@ -631,7 +736,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     _skip_lines(_file,2)                                      #remove 2 comment lines
 
     #phase curve
-    D_occ,Fn,ph_off,A_ev,A_db = [],[],[],[],[]    
+    D_occ,Fn,ph_off,A_ev,f1_ev,A_db,pc_model = [],[],[],[],[],[],[]    
     dump   = _file.readline()
     while dump[0] != "#":
         _adump = dump.split()
@@ -639,7 +744,15 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
         Fn.append(_prior_value(_adump[2]))
         ph_off.append(_prior_value(_adump[3]))
         A_ev.append(_prior_value(_adump[4]))
-        A_db.append(_prior_value(_adump[5]))
+        if version < (3,3,11):
+            A_db.append(_prior_value(_adump[5]))
+            f1_ev.append(0)
+            pc_model.append("cosine")
+        else:
+            f1_ev.append(_prior_value(_adump[5]))
+            A_db.append(_prior_value(_adump[6]))
+            pc_model.append(_adump[7])
+
         dump = _file.readline()
     assert len(D_occ) == len(lc_obj._filnames), f"number of D_occ values must be equal to number of unique filters({len(lc_obj._filnames)}) but len(D_occ)={len(D_occ)}"
 
@@ -738,11 +851,11 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     assert len(cont_fac) == len(lc_obj._filnames), f"number of contamination factors must be equal to number of unique filters({len(lc_obj._filnames)}) but len(cont_fac)={len(cont_fac)}"
     _skip_lines(_file,1)                                      #remove 2 comment lines
     
-    lc_obj.planet_parameters(**pl_pars,verbose=verbose)
+    lc_obj.planet_parameters(**pl_pars, rhodur_logUprior=rhodur_logUprior,verbose=verbose)
     lc_obj.limb_darkening(q1,q2,verbose=verbose)
     lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
     lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,include_partial=incl_partial,per_LC_T0=per_LC_T0,verbose=verbose,print_linear_eph=False)
-    lc_obj.phasecurve(D_occ, Fn, ph_off, A_ev, A_db, verbose=verbose)
+    lc_obj.phasecurve(D_occ=D_occ, Fn=Fn, ph_off=ph_off, A_ev=A_ev, f1_ev=f1_ev, A_db=A_db, pc_model=pc_model,verbose=verbose)
     lc_obj.add_custom_LC_function(func=custom_lcfunc,x=func_x,func_args=func_args,extra_args=extra_args,op_func=op_func,replace_LCmodel=replace_LCmodel,verbose=verbose)
     rv_obj.add_custom_RV_function(func=custom_rvfunc,x=rvfunc_x,func_args=rvfunc_args,extra_args=rvextra_args,op_func=op_rvfunc,replace_RVmodel=replace_RVmodel,verbose=verbose)
     lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
@@ -754,8 +867,10 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
                                 D_occ=D_occ[0] if len(D_occ)>0 else 0, 
                                 Fn=Fn[0] if len(Fn)>0 else 0, 
                                 ph_off=ph_off[0] if len(ph_off)>0 else 0, 
-                                A_ev=A_ev[0] if len(A_ev)>0 else 0, 
-                                A_db=A_db[0] if len(A_db)>0 else 0, plot_model=False,
+                                A_ev=A_ev[0] if len(A_ev)>0 else 0,
+                                f1_ev=f1_ev[0] if len(f1_ev)>0 else 0, 
+                                A_db=A_db[0] if len(A_db)>0 else 0, 
+                                pc_model = pc_model, plot_model=False,
                                 setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
                                 enforce_pars=enforce_pars, verbose=verbose if use_decorr else False)
             if init_decorr:  #if not use_decorr, compare the  get_decorr pars to the user-defined ones and only use start values for user-defined ones

@@ -4,9 +4,12 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from astropy.io import fits
+from astropy.table import Table
+from astropy.units import UnitsWarning
 from astroquery.mast import Observations
 from .utils import rho_to_tdur
 from uncertainties import ufloat
+import warnings
 
 
 try:
@@ -27,7 +30,7 @@ class get_TESS_data(object):
     """
     Class to download and save TESS light curves from MAST (using the `lightkurve` package).
 
-    Parameters:
+    Parameters
     ----------
     planet_name : str
         Name of the planet.
@@ -52,7 +55,7 @@ class get_TESS_data(object):
         Search for TESS light curves on MAST using the lightkurve package.
         see documentation for lightkurve.search_lightcurve for more information.
 
-        Parameters:
+        Parameters
         ----------
         sectors : int or list of ints
             TESS sectors to search for light curves.
@@ -72,7 +75,7 @@ class get_TESS_data(object):
         """  
         Download TESS light curves from MAST using the lightkurve package
 
-        Parameters:
+        Parameters
         ----------
         sectors : int or list of ints
             TESS sector lightcurve to download.
@@ -113,7 +116,7 @@ class get_TESS_data(object):
         """
         Discard data at the start/end of the orbits (or large gaps) that typically feature ramps
 
-        Parameters:
+        Parameters
         ----------
         length : float,list
             length of data (in days) to discard at beginning of each orbit. give list of length for each sector or single value for all sectors.
@@ -173,7 +176,7 @@ class get_TESS_data(object):
         """
         Split the light curves into sections based on (1)gaps in the data, (2)given time intervals (3)given split time(s).
 
-        Parameters:
+        Parameters
         ----------
         gap_size : float
             minimum gap size at which data will be splitted. same unit as the time axis. Default is None.
@@ -240,7 +243,7 @@ class get_TESS_data(object):
         """
         Save TESS light curves as a CONAN light curve file.
 
-        Parameters:
+        Parameters
         ----------
         bjd_ref : float
             BJD reference time to use for the light curve file.
@@ -268,7 +271,7 @@ class get_Kepler_data(object):
     """
     Class to download and save Kepler light curves from MAST (using the `lightkurve` package).
 
-    Parameters:
+    Parameters
     ----------
     planet_name : str
         Name of the planet.
@@ -293,7 +296,7 @@ class get_Kepler_data(object):
         Search for TESS light curves on MAST using the lightkurve package.
         see documentation for lightkurve.search_lightcurve for more information.
 
-        Parameters:
+        Parameters
         ----------
         quarters : int or list of ints
             quarters to search for light curves.
@@ -311,7 +314,7 @@ class get_Kepler_data(object):
         """  
         Download Keplerlight curves from MAST using the lightkurve package
 
-        Parameters:
+        Parameters
         ----------
         quarters : int or list of ints
             Quarter lightcurve to download.
@@ -359,7 +362,7 @@ class get_Kepler_data(object):
         """
         Discard data at the start/end of the orbits (or large gaps) that typically feature ramps
 
-        Parameters:
+        Parameters
         ----------
         length : float,list
             length of data (in days) to discard at beginning of each orbit. give list of length for each quarter or single value for all quarters.
@@ -419,7 +422,7 @@ class get_Kepler_data(object):
         """
         Split the light curves into sections based on (1)gaps in the data, (2)given time intervals (3)given split time(s).
 
-        Parameters:
+        Parameters
         ----------
         gap_size : float
             minimum gap size at which data will be splitted. same unit as the time axis. Default is None.
@@ -486,7 +489,7 @@ class get_Kepler_data(object):
         """
         Save Kepler light curves as a CONAN light curve file.
 
-        Parameters:
+        Parameters
         ----------
         bjd_ref : float
             BJD reference time to use for the light curve file. Note that kepler time is in BJD-2454833
@@ -515,7 +518,7 @@ class get_CHEOPS_data(object):
     """
     Class to download and save CHEOPS light curves from CHEOPS archive (using `dace_query` and `pycheops`).
 
-    Parameters:
+    Parameters
     ----------
     planet_name : str
         Name of the planet.
@@ -534,11 +537,96 @@ class get_CHEOPS_data(object):
         self.planet_name = planet_name
         self.lc          = []
 
+    def load_pipe_file(self, folder=None, fits_filelist=None, reject_highpoints=True, 
+                        bg_MAD_reject=3, outlier_clip=4, outlier_window_width=11,outlier_clip_niter=1, 
+                        force_PIPE_setup=False, verbose=False):
+        """
+        Load CHEOPS light curves from pipe files. The PIPE fits files are obtained from the given folder or from fits_filelist.
+
+        Parameters
+        ----------
+        folder : str
+            Folder to load the pipe files from. Default is None in which case the current working directory is used.
+        fits_filelist : list of str
+            List of pipe files to load. Default is None in which case all fits files in the folder are loaded.
+        decontaminate : bool
+            Decontaminate the light curve. Default is True.
+        reject_highpoints : bool
+            Reject high points in the light curve. Default is True.
+        bg_MAD_reject : float
+            Number of median absolute deviations to reject high background points. Default is 3.
+        outlier_clip : float
+            Number of standard deviations to clip outliers. Default is 4.
+        outlier_window_width : int
+            Window width to use for clipping outliers. Default is 11.
+        outlier_clip_niter : int
+            Number of iterations to clip outliers. Default is 1.
+        force_PIPE_setup : bool
+            Force the setup of the PIPE file again. Default is False to check for the file in the pycheops working folder.
+            if not found, the PIPE file is created from the given folder.
+        verbose : bool
+            Verbose output. Default is False.
+        """
+
+        if folder is None: 
+            folder = os.getcwd()
+        
+        folder = folder if folder[-1] == "/" else folder+"/"
+        if fits_filelist is None:
+            fits_filelist = [f for f in os.listdir(folder) if f.endswith(".fits")]
+            assert len(fits_filelist) > 0, f"no fits files found in {folder}"
+        else:
+            assert isinstance(fits_filelist, (list,str)), "fits_filelist must be a list of fits filenames or a single fits filename"
+            if isinstance(fits_filelist, str): fits_filelist = [fits_filelist]
+            
+            for f in fits_filelist:
+                assert f.endswith(".fits"), f"fits_filelist must be a list of fits filenames or a single fits filename. {f} is not a fits file" 
+                assert os.path.exists(folder+f), f"pipe file {folder+f} does not exist"
+
+        for f in fits_filelist:
+            if force_PIPE_setup:
+                d = Dataset.from_pipe_file(folder+f, verbose=verbose)
+                print(f"pipe file created from {folder+f}")
+            else:
+                #extract file key of visit from dace 
+                if verbose:
+                    print("load_pipe_file(): searching for file key of PIPE file from DACE")
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UnitsWarning)
+                    pipedata = Table.read(folder+f)
+
+                obs_id   =  pipedata.meta['OBSID']
+                db       = Cheops.query_database(filters={'obs_id':{'equal':[obs_id]}})
+                file_key = db['file_key'][0][:-5]+'V9193'
+
+
+                try:  #try to load the pipefile from the pycheops folder using the file_key
+                    d = Dataset(file_key,view_report_on_download=False, verbose=False)
+                    print(f"pipe file with key {file_key} loaded from pycheops folder")
+                except: #if not found, load the pipe file from the given folder and save to pycheops folder
+                    d = Dataset.from_pipe_file(folder+f, verbose=verbose)
+                    print(f"pipe file {folder+f} loaded from given folder")
+
+            _ = d.get_lightcurve(reject_highpoints=reject_highpoints,verbose=False)
+            
+            #remove points with high background
+            d.lc["bg"] = d.lc["bg"]*d.flux_median
+            mask       = d.lc["bg"] > bg_MAD_reject*np.nanmedian(d.lc["bg"])
+            if verbose: print(f'    BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"]):.2f}]', end="->")
+            _,_,_       = d.mask_data(mask, verbose=False)
+
+            #iterative sigma clipping
+            for _ in range(outlier_clip_niter): 
+                t_,f_,e_ = d.clip_outliers(outlier_clip,outlier_window_width, verbose=verbose)
+            
+            print("\n")
+            self.lc.append(d)
+
     def search(self,filters=None):
         """   
         Query the cheops database to retrieve available visits. Filters and sorting order can be applied to the query via named arguments (see query_options)
         
-        Parameters:
+        Parameters
         ----------
         filters : dict
             Dictionary of filters to apply to the query. 
@@ -558,7 +646,7 @@ class get_CHEOPS_data(object):
         """   
         Download CHEOPS light curves from the cheops database using the dace_query package
 
-        Parameters:
+        Parameters
         ----------
         file_keys : list of str
             List of file keys to download. if "all" is given, all file_keys shown in `.search()` result will be downloaded.
@@ -579,12 +667,12 @@ class get_CHEOPS_data(object):
         outlier_window_width : int
             Window width to use for clipping outliers. Default is 11.
         outlier_clip_niter : int
-            Number of iterations to clip outliers. Default is 3.
+            Number of iterations to clip outliers. Default is 1.
         """
         
-        
         if isinstance(file_keys,str):
-            if file_keys=="all": file_keys = self.file_keys 
+            if file_keys=="all": 
+                file_keys = self.file_keys 
             else: 
                 file_keys = [file_keys]
         
@@ -593,8 +681,10 @@ class get_CHEOPS_data(object):
         else: 
             self.file_keys = file_keys
 
-        if isinstance(aperture,str): aperture = [aperture]*len(file_keys)
-        elif isinstance(aperture, list): assert len(aperture)==len(file_keys), "aperture must be a single string or list of the same length as file_keys"
+        if isinstance(aperture,str): 
+            aperture = [aperture]*len(file_keys)
+        elif isinstance(aperture, list): 
+            assert len(aperture)==len(file_keys), "aperture must be a single string or list of the same length as file_keys"
 
         for i,file_key in enumerate(file_keys):
             d     = Dataset(file_key,force_download=force_download, metadata=get_metadata, verbose=verbose)
@@ -604,33 +694,79 @@ class get_CHEOPS_data(object):
             #remove points with high background
             d.lc["bg"] = d.lc["bg"]*d.flux_median
             mask  = d.lc["bg"] > bg_MAD_reject*np.nanmedian(d.lc["bg"])
-            print(f'BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"])}]', end="->")
+            if verbose: print(f'    BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"]):.2f}]', end="->")
             _,_,_ = d.mask_data(mask, verbose=verbose)
 
             #iterative sigma clipping
-            for _ in range(outlier_clip_niter): t_,f_,e_ = d.clip_outliers(outlier_clip,outlier_window_width, verbose=verbose)
-
+            for _ in range(outlier_clip_niter): 
+                t_,f_,e_ = d.clip_outliers(outlier_clip,outlier_window_width, verbose=verbose)
+            
+            print("\n")
             self.lc.append(d)
 
-    def scatter(self, figsize=(10,4)):
+    def mask_data(self, condition=None, verbose=False):
+        """
+        Mask the light curves with the given mask. The mask is applied to all light curves.
+
+        Parameters
+        ----------
+        mask : array-like
+            Mask to apply to the light curves. Default is None.
+        """
+        if condition is None: 
+            return
+        
+        for i,d in enumerate(self.lc):
+            lc = d.lc
+            mask = eval(condition)
+            _,_,_ = d.mask_data(mask, verbose=verbose)
+
+    def scatter(self, plot_cols=("time","flux"), nrows_ncols = None, figsize=None):
         """
         Plot the scatter of the light curves.
         """
-        assert self.lc != {}, "No light curves downloaded yet. Run `.download()` first."
-        for d in self.lc:
-            plt.figure(figsize=figsize)
-            plt.scatter(d.lc["time"],d.lc["flux"],s=1, label=d.file_key)
-            plt.legend()
-            plt.xlabel(f"BJD - {d.bjd_ref}")
-            plt.ylabel("Flux")
-            plt.show()
+        assert self.lc != [], "No light curves downloaded yet. Run `.download()` first."
+        possible_cols = ['time','flux','flux_err','xoff','yoff','roll_angle','bg','contam','deltaT','smear']
+        assert isinstance(plot_cols, (list,tuple)) and len(plot_cols)==2, "plot_cols must be a list/tuple of two columns to plot"
+        for colname in plot_cols:
+            assert colname in possible_cols, f"column {colname} not found in light curve. Available columns are {possible_cols}"
+        
+        n_data = len(self.lc)
+        if n_data==1:
+            nrows_ncols = (1,1)  
+        else:
+            nrows_ncols = nrows_ncols if nrows_ncols!=None else (int(n_data/2), 2) if n_data%2==0 else (int(np.ceil(n_data/3)), 3)
+        
+        figsize = figsize if figsize!=None else (8,5) if n_data==1 else (14,3.5*nrows_ncols[0])
+        fig, ax = plt.subplots(nrows_ncols[0], nrows_ncols[1], figsize=figsize)
+        ax = [ax] if n_data==1 else ax.reshape(-1)
 
-    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None, rescale_data=True):
+
+        if plot_cols[0] == "time":
+            t_ref = min([d.lc["time"][0]+d.bjd_ref for d in self.lc]) # BJD time of first observation point
+
+        for i,d in enumerate(self.lc):
+            ax[i].set_title(f"{d.file_key}")
+            if plot_cols[0] == "time":
+                ax[i].scatter(d.lc["time"]+d.bjd_ref-t_ref,d.lc[plot_cols[1]],s=1)
+                if i >= len(ax)-nrows_ncols[1]: #only add xlabel to bottom row
+                    ax[i].set_xlabel(f"BJD - {t_ref}")
+            else:
+                ax[i].scatter(d.lc[plot_cols[0]],d.lc[plot_cols[1]],s=1)
+                if i >= len(ax)-nrows_ncols[1]:
+                    ax[i].set_xlabel(plot_cols[0])
+            if i % nrows_ncols[1] == 0:  #only add ylabel to leftmost plots
+                ax[i].set_ylabel(plot_cols[1])
+        plt.subplots_adjust(hspace=0.3)
+        plt.show()
+
+    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None, rescale_data=True, 
+                            columns=["time","flux","flux_err","xoff","yoff","roll_angle","bg","contam","deltaT"]):
         """
         Save CHEOPS light curves as a CONAN light curve file.
-        the output columns are [t, f, e, x_off, y_off, roll, bg, contam, deltaT]
+        the output columns are as given in the columns parameter.
 
-        Parameters:
+        Parameters
         ----------
         bjd_ref : float
             BJD reference time to use for the light curve file.
@@ -640,32 +776,47 @@ class get_CHEOPS_data(object):
             Name of the output file. Default is None in which case the file will be named as "{planet_name}_TG{file_key}.dat"
         rescale_data : bool
             Rescale the data to between 0 and 1. Default is True.
+        columns : list of str
+            List of columns to save in the light curve file. 
+            column names must be in 
+            ['time','flux','flux_err','xoff','yoff','roll_angle','bg','contam','deltaT','smear'].
+            Default is ['time','flux','flux_err','xoff','yoff','roll_angle','bg','contam','deltaT'].
+            Note that this list determines the order of the columns in the output file.
         """
     
-        rescale   = lambda x: (x - np.min(x))/np.ptp(x)          # between 0 and 1 
-        rescale_r = lambda x: (2*x-(x.min()+x.max()))/np.ptp(x)  #between -1 and 1 
+        rescale   = lambda x: (x - np.min(x))/np.ptp(x) if np.ptp(x)!=0 else x         # between 0 and 1 
+        rescale_r = lambda x: (2*x-(x.min()+x.max()))/np.ptp(x) if np.ptp(x)!=0 else x #between -1 and 1 
+        assert isinstance(columns, list), "columns must be a list of strings"
 
-        assert self.lc != {}, "No light curves downloaded yet. Run `.download()` first."
+        assert self.lc != [], "No light curves downloaded yet. Run `.download()` first."
         if not os.path.exists(folder): os.mkdir(folder)
-        
+
+        print(f"columns are ordered as {columns}")
         for d in self.lc:
-            t = d.lc["time"]+d.bjd_ref - bjd_ref
-            
-            if rescale_data:
-                lc_ = np.stack((t, d.lc["flux"], d.lc["flux_err"], rescale_r(d.lc["xoff"]),
-                                rescale_r(d.lc["yoff"]), self._resort_roll(d.lc["roll_angle"]),
-                                rescale(d.lc["bg"]), rescale(d.lc["contam"]), d.lc["deltaT"])).T
-            else:
-                lc_ = np.stack((t, d.lc["flux"], d.lc["flux_err"], d.lc["xoff"],
-                                d.lc["yoff"], d.lc["roll_angle"],
-                                d.lc["bg"], d.lc["contam"], d.lc["deltaT"])).T
+            data_out = {}
+            for i in range(len(columns)):
+                if columns[i] == "time": 
+                    data_out[f"col{i}"] = d.lc[columns[i]]+d.bjd_ref - bjd_ref
+                elif columns[i] in ["xoff","yoff"]: 
+                    data_out[f"col{i}"] = rescale_r(d.lc[columns[i]]) if rescale_data else d.lc[columns[i]]
+                elif columns[i] == "roll_angle":
+                    data_out[f"col{i}"] = self._resort_roll(d.lc[columns[i]]) if rescale_data else d.lc[columns[i]]
+                # elif columns[i] in ["bg","contam","smear"]:
+                #     data_out[f"col{i}"] = rescale(d.lc[columns[i]]) if rescale_data else d.lc[columns[i]]
+                else:
+                    data_out[f"col{i}"] = d.lc[columns[i]]
+
+            lc_ = np.stack([data_out[f"col{i}"] for i in range(len(columns))], axis=1)
             
             fkey = d.file_key.split("TG")[-1].split("_V")[0]
             prefix = d.target.replace(" ","")
             file = folder+"/"+prefix+"_"+fkey+".dat" if out_filename is None else f"{folder}/{out_filename}"
-            np.savetxt(file, lc_, fmt="%.8f", 
-                        header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s} {"x_off":10s} {"y_off":10s} {"roll":10s} {"bg":10s} {"contam":10s} {"deltaT":10s}')
-            print("columns are ordered as [0:time, 1:flux, 2:flux_err, 3:x_off, 4:y_off, 5:roll, 6:bg, 7:contam, 8:deltaT]")
+            header=f'{columns[0]}'
+            for i in range(1,len(columns)): 
+                header += f' {columns[i]:10s}'
+            header = header.replace("time",f"time - {bjd_ref}")
+            
+            np.savetxt(file, lc_, fmt="%.8f", header = header)
             print(f"saved file as {file}")
 
     def _resort_roll(self,x):
@@ -685,7 +836,7 @@ class get_JWST_data(object):
     """
     Class to download and save JWST light curves from the MAST archive (using `astroquery`).
 
-    Parameters:
+    Parameters
     ----------
     planet_name : str
         Name of the planet.
@@ -707,7 +858,7 @@ class get_JWST_data(object):
         """
         Search for JWST light curves on MAST using the astroquery package.
 
-        Parameters:
+        Parameters
         ----------
         instrument : str
             Name of the JWST instrument e.g 'NIRSPEC/SLIT','MIRI/SLITLESS','NIRCAM/GRISM','NIRCAM/IMAGE','NIRISS/SOSS'.
@@ -740,7 +891,7 @@ class get_JWST_data(object):
         """
         Download JWST white light curves from MAST using the astroquery package.
 
-        Parameters:
+        Parameters
         ----------
         selection_kws : dict
             Additional selection keywords to select specific observation e.g {"t_exptime":1200, "calib_level":3}
@@ -776,7 +927,7 @@ def get_EULER_data(FITS_filepath, out_folder=".", planet_name=None):
     """
     create .dat file for CONAN from the EULER fits file
 
-    Parameters:
+    Parameters
     ----------
     FITS_filepath : str
         Path to the EULER fits file.
@@ -811,7 +962,7 @@ class get_EULER_data_from_server(object):
     """ 
     class to get EULER data from the server at Geneva Observatory. This requires some login access
 
-    Parameters:
+    Parameters
     ----------
     planet_name : str
         Name of the planet.
@@ -834,7 +985,7 @@ class get_EULER_data_from_server(object):
         """
         Search for EULER light curves (pipeline fits files?) on the server at Geneva Observatory between the given dates.
 
-        Parameters:
+        Parameters
         ----------
         date_range : list of str
             List of dates to search for light curves. Format is ["YYYY-MM-DD","YYYY-MM-DD].
@@ -850,7 +1001,7 @@ class get_EULER_data_from_server(object):
         """
         Download EULER light curves from the server at Geneva Observatory.
 
-        Parameters:
+        Parameters
         ----------
         file_name : str
             Name of the file to download.
@@ -882,7 +1033,7 @@ class get_EULER_data_from_server(object):
         """
         Save EULER light curves as a CONAN light curve file.
 
-        Parameters:
+        Parameters
         ----------
         bjd_ref : float
             BJD reference time to use for the light curve file.
@@ -896,15 +1047,11 @@ class get_EULER_data_from_server(object):
         if not os.path.exists(folder): os.mkdir(folder)
 
 
-
-
-
-
 def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars", ps_select_index=None,overwrite_cache=False, check_rhostar=False):
     """
     get stellar and planet parameters from nasa exoplanet archive or exoplanet.eu
 
-    Parameters:
+    Parameters
     ----------
     planet_name : str
         Name of the planet.
@@ -920,6 +1067,33 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         Check if the stellar density is consistent with the Transit duration. 
         inconsistency may be due to rho_star not being the actual stellar density but just a proxy, value may therefore not be suitable as prior in CONAN.
         Default is False.
+
+    Returns
+    -------
+    params : dict
+        Dictionary with stellar and planet parameters.
+        The dictionary has the following structure:
+        {
+            "star": {
+                "Teff": (value, error),
+                "logg": (value, error),
+                "FeH": (value, error),
+                "radius": (value, error),
+                "mass": (value, error),
+                "density": (value, error)
+            },
+            "planet": {
+                "name": value,
+                "period": (value, error),
+                "rprs": (value, error),
+                "mass": (value, error),
+                "ecc": (value, error),
+                "w": (value, error),
+                "T0": (value, error),
+                "b": (value, error),
+                "T14": (value, error),
+                "aR": (value, error),
+                "K[m/s]": (value, error)
     """
     if os.path.exists(f"{planet_name.replace(' ','')}_sysparams.pkl") and overwrite_cache is False:
         print("Loading parameters from cache ...")
@@ -998,8 +1172,11 @@ def get_parameters(planet_name, database="exoplanetarchive", table="pscomppars",
         print(f"{'rho_star to Tdur:'} {tdur:.6f}\n{'T14:':17s} {ufloat(*params['planet']['T14']):.6f}")
 
         diff = tdur - ufloat(*params["planet"]["T14"])
-        if diff.n/diff.s <=1:   print("rho_star conversion to Tdur is consistent with literature T14 within 1 sigma") 
-        elif diff.n/diff.s <=3: print("rho_star conversion to Tdur is consistent with literature T14 within 3 sigma")
-        else:                   print("rho_star conversion to Tdur is not consistent with literature T14 within 3 sigma, rho_star may be incorrect")
+        if abs(diff.n/diff.s) <=1:   
+            print("rho_star conversion to Tdur is consistent with literature T14 within 1 sigma") 
+        elif abs(diff.n/diff.s) <=3: 
+            print("rho_star conversion to Tdur is consistent with literature T14 within 3 sigma")
+        else:                   
+            print("rho_star conversion to Tdur is not consistent with literature T14 within 3 sigma, rho_star may be incorrect")
     
     return params

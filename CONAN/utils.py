@@ -28,7 +28,7 @@ def light_travel_time_correction(t,t0,aR,P,inc,Rstar,ecc=0,w=1.57079):
         ecc: eccentricity. default is 0
         w: argument of periastron in radians. default is pi/2
 
-    Returns:
+    Returns
         tcorr: time array corrected for light travel time effects
     '''
     if ecc==0:
@@ -54,8 +54,8 @@ def light_travel_time_correction(t,t0,aR,P,inc,Rstar,ecc=0,w=1.57079):
 def phase_fold(t, per, t0,phase0=-0.5):
     """Phase fold a light curve.
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     t : array-like
         Time stamps.
     per : float
@@ -77,8 +77,8 @@ def phase_fold(t, per, t0,phase0=-0.5):
 def get_transit_time(t, per, t0):
     """Get the transit time within a light curve.
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     t : array-like
         Time stamps.
     per : float
@@ -108,8 +108,8 @@ class get_orbital_elements:
         """
         Calculate the mean,eccentric, and true anomaly for a given time t.
 
-        Parameters: 
-        ----------
+        Parameters 
+        -----------
         t : array-like
             timestamps
         T0 : float
@@ -157,12 +157,12 @@ class get_orbital_elements:
         """
         Get the phase of the planet at the given position.
 
-        Parameters:
-        ----------
+        Parameters
+        -----------
         position : str
             Position of the planet. Can be one of "transit","eclipse"
         
-        Returns:
+        Returns
         --------
         phase : float
         """
@@ -216,14 +216,14 @@ class get_orbital_elements:
         following the equations in Winn 2010 (https://arxiv.org/abs/1001.2010).
         Also return mask of transit and eclipse phases.
 
-        Parameters:
-        ----------
+        Parameters
+        -----------
         aR : float, None;
             semi-major axis over stellar radius
         inc : float, None;
             inclination in radians
 
-        Returns:
+        Returns
         --------
         rsky : array-like
             projected distance of the planet from the star in the orbital plane
@@ -251,15 +251,15 @@ class get_orbital_elements:
         Get the x,y,z coordinates of the planet in the orbital plane
         following the equations in Winn 2010 (https://arxiv.org/abs/1001.2010)
         
-        Parameters:
-        ----------
+        Parameters
+        -----------
         aR : float
             semi-major axis over stellar radius
         inc : float
             inclination in radians
 
-        Returns:
-        -------
+        Returns
+        --------
         x, y, z : array-like
             x, y, z coordinates of the planet in the orbital plane.
         """
@@ -283,7 +283,7 @@ class get_orbital_elements:
         """
         Get the time of eclipse.
 
-        Returns:
+        Returns
         -------
         t_eclipse : float
             Time of eclipse.
@@ -330,8 +330,8 @@ def esolve(M, ecc):
 def get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=None,verbose=True):
     """Get the time of conjunctions (transit and eclipse) for the given time array.
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     t : array-like
         Time stamps.
     per : float
@@ -385,8 +385,8 @@ def get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=N
 def _get_Tconjunctions(t, t0, per, ecc=0,omega=1.5707963,Rstar=None,aR=None,inc=None,verbose=True):
     """Get the time of conjunctions (transit and eclipse) for the given time array.
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     t : array-like
         Time stamps.
     per : float
@@ -434,8 +434,8 @@ def bin_data(t,f,err=None,statistic="mean",bins=20):
     """
     Bin data in time.
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     t : array-like
         Time stamps.
     f : array-like
@@ -509,8 +509,8 @@ def robust_std(data):
     Compute the robust standard deviation using the Median Absolute Deviation (MAD).
     https://en.m.wikipedia.org/wiki/Median_absolute_deviation
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     data: array-like
         The input data.
 
@@ -525,13 +525,12 @@ def robust_std(data):
     return robust_std
 
 def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_clipped_indices = False):
-
     """
     Remove outliers using a running median method. Points > clip*M.A.D are removed
     where M.A.D is the mean absolute deviation from the median in each window
     
-    Parameters:
-    ----------
+    Parameters
+    -----------
     x: array_like;
         dependent variable.
         
@@ -547,7 +546,7 @@ def outlier_clipping(x, y, yerr = None, clip=5, width=15, verbose=True, return_c
     width: int;
         Number of points in window to use when computing the running median. Must be odd. Default is 15
         
-    Returns:
+    Returns
     --------
     x_new, y_new, yerr_new: Each and array with the remaining points after clipping
     
@@ -576,7 +575,7 @@ def sesinw_secosw_to_ecc_omega(sesinw, secosw, angle_unit="radians"):
     """
     Convert sesinw and secosw to eccentricity and argument of periastron in angle_unit
 
-    Parameters:
+    Parameters
     -----------
     sesinw: array-like
         sqrt(ecc)*sin(omega)
@@ -586,7 +585,7 @@ def sesinw_secosw_to_ecc_omega(sesinw, secosw, angle_unit="radians"):
         unit in which to return the argument of periastron. one of ["radians", "degrees"]. 
         Default is "radians"
 
-    Returns:
+    Returns
     --------
     ecc: array-like
         eccentricity
@@ -606,8 +605,8 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
     This function calculates the prior values and limits for the eccentricity and omega parameters, 
     sesinw and secosw. It also converts the input values given as tuples to a SimpleNamespace object
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     ecc: float, tuple, SimpleNamespace;
         eccentricity value or tuple of (mean, width) or SimpleNamespace object with the following Attributes
         to_fit: str; "y" if to be fit, "n" if not to be fit
@@ -713,7 +712,7 @@ def rho_to_aR(rho, P, e=0, w=90, qm=0):
     convert stellar density to semi-major axis of planet with a particular period.
     uses eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x to account for eccentricity
 
-    Parameters:
+    Parameters
     -----------
     rho: float, ufloat, array-like;
         The density of the star in g/cm^3.
@@ -726,7 +725,7 @@ def rho_to_aR(rho, P, e=0, w=90, qm=0):
     qm: float, ufloat, array-like;
         The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
         
-    Returns:
+    Returns
     --------
     aR: array-like;
         The scaled semi-major axis of the planet.
@@ -750,7 +749,7 @@ def aR_to_rho(P,aR,e=0,w=90,qm=0):
     uses eqn 39 of kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x to account for eccentricity
     
     
-    Parameters:
+    Parameters
     -----------
     P: float, ufloat, array-like;
         The planet period in days
@@ -762,7 +761,7 @@ def aR_to_rho(P,aR,e=0,w=90,qm=0):
         The argument of periastron in degrees. Default is 90
     qm: float, ufloat, array-like;
         The mass ratio of the planet to the star. Default is 0 (Mp<<Ms)
-    Returns:
+    Returns
     --------
     rho: array-like;
         The stellar density in g/cm^3
@@ -787,8 +786,8 @@ def inclination(b, a, e=0, w=90, tra_occ="tra"):
     """
     Function to convert impact parameter b to inclination in degrees.
         
-    Parameters:
-    ----------
+    Parameters
+    -----------
     b: Impact parameter of the transit.
     a: Scaled semi-major axis i.e. a/R*.
     e: float;
@@ -817,8 +816,8 @@ def impact_parameter(inc, a, e=0, w=90, tra_occ="tra"):
     """
     Function to convert inclination in degrees to  impact parameter b.
         
-    Parameters:
-    ----------
+    Parameters
+    -----------
     inc: Inclination in degrees.
     a: Scaled semi-major axis i.e. a/R*.
     e: float;
@@ -849,7 +848,7 @@ def k_to_Mp(k, P, Ms, i, e, Mp_unit = "star"):
     """
     Compute the mass of a planet from the rv semi amplitude following https://iopscience.iop.org/article/10.1086/529429/pdf
 
-    Parameters:
+    Parameters
     -----------
     k: float, ufloat, array-like;
         The RV semi-amplitude in m/s.
@@ -870,7 +869,7 @@ def k_to_Mp(k, P, Ms, i, e, Mp_unit = "star"):
         The unit of the mass of the planet ["star","jup"]
         Default is "star" which returns the mass in units of the mass of the star.
 
-    Returns:
+    Returns
     --------
     Mp: array-like;
         The mass of the planet in Jupiter masses.
@@ -891,7 +890,7 @@ def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra",total=True):
     using eqn 30 and 31 of Kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
     it is a more precise modification of eq 14,16 of Winn2010 https://arxiv.org/pdf/1001.2010.pdf
 
-    Parameters:
+    Parameters
     -----------
     aR: float, ufloat, array-like;
         The scaled semi-major axis of the planet.
@@ -909,7 +908,8 @@ def aR_to_Tdur(aR, b, Rp, P,e=0,w=90, tra_occ="tra",total=True):
         select duration of transit (tra) or occultation (occ)
     total: bool;
         select total duration T14 (True) or full duration T23 (False)
-    Returns:
+
+    Returns
     --------
     Tdur: array-like;
         The transit duration in days (same unit as P).
@@ -946,7 +946,7 @@ def ingress_duration(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
     """
     Compute the ingress duration of transit or occultation in units of P
 
-    Parameters:
+    Parameters
     -----------
     aR: float, ufloat, array-like;
         The scaled semi-major axis of the planet.
@@ -963,7 +963,7 @@ def ingress_duration(aR, b, Rp, P,e=0,w=90, tra_occ="tra"):
     tra_occ: str;
         select duration of transit (tra) or occultation (occ)
         
-    Returns:
+    Returns
     --------
     Tdur: array-like;
         The ingress duration in days (same unit as P).
@@ -979,7 +979,7 @@ def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     using eqn 41 of Kipping 2010 https://doi.org/10.1111/j.1365-2966.2010.16894.x
     note (1+p^2) in the equation should instead be (1+p)^2
 
-    Parameters:
+    Parameters
     -----------
     Tdur: float, ufloat, array-like;
         The transit duration in days.
@@ -994,7 +994,7 @@ def Tdur_to_aR(Tdur, b, Rp, P,e=0,w=90, tra_occ = "tra"):
     w: float, ufloat, array-like;
         The argument of periastron in degrees.
         
-    Returns:
+    Returns
     --------
     aR: array-like;
         The scaled semi-major axis of the planet.
@@ -1018,7 +1018,7 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90, tra_occ="tra", total=True):
     """
     convert stellar density to transit duration in days https://doi.org/10.1093/mnras/stu318
 
-    Parameters:
+    Parameters
     -----------
     rho: float, ufloat, array-like;
         The density of the star in g/cm^3.
@@ -1037,7 +1037,7 @@ def rho_to_tdur(rho, b, Rp, P,e=0,w=90, tra_occ="tra", total=True):
     total: bool;
         select total duration T14 (True) or full duration T23 (False)
 
-    Returns:
+    Returns
     --------
     Tdur: array-like;
         The transit duration in days.
@@ -1050,7 +1050,7 @@ def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90,tra_occ="tra"):
     """
     convert transit duration to stellar density in g/cm^3 https://doi.org/10.1093/mnras/stu318
 
-    Parameters:
+    Parameters
     -----------
     Tdur: float, ufloat, array-like;
         The transit duration in days.
@@ -1067,7 +1067,7 @@ def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90,tra_occ="tra"):
     tra_occ: str;
         select duration of transit (tra) or occultation (occ)
 
-    Returns:
+    Returns
     --------
     rho: array-like;
         The stellar density in g/cm^3.
@@ -1076,12 +1076,48 @@ def tdur_to_rho(Tdur, b, Rp, P,e=0,w=90,tra_occ="tra"):
     rho = aR_to_rho(P,aR)
     return rho
 
+
+def transit_depth(RpRs, b):
+    """
+    Calculate the area of overlap between two circles (planet and star) given the impact parameter.
+    This gives the expected transit depth (accurate to <0.1ppm)for a planet transiting a uniform intensity star.
+    This uses the formula for the area of intersection of two circles. For full overlap, we get RpRs**2.
+
+    Parameters
+    -----------
+    RpRs : float, 
+        Radius of the planet in units of the star's radius.
+    b : float
+        Impact parameter (distance from the center of the star to the center of the planet).
+    
+    Returns
+    --------
+    transit_depth : float
+        The area of overlap between the two circles, normalized by the area of the star.
+    """
+
+    # Check conditions
+    if b >= RpRs + 1:
+        overlap_area = 0  # No overlap
+    elif b <= abs(1 - RpRs):
+        overlap_area = RpRs**2  # planet fully inside star
+    else:
+        # General case: partial overlap
+        part1 = RpRs**2 * np.arccos((b**2 + RpRs**2 - 1) / (2 * b * RpRs))
+        part2 = np.arccos((b**2 + 1**2 - RpRs**2) / (2 * b))
+        part3 = 0.5 * np.sqrt(
+            (-b + RpRs + 1) * (b + RpRs - 1) * (b - RpRs + 1) * (b + RpRs + 1)
+        )
+        overlap_area = (part1 + part2 - part3)/np.pi
+
+    return overlap_area
+    
 def convert_rho(rho, ecc=0, w=90, conv="true2obs"):
     """
     convert true stellar density to transit derived density or vice-versa 
 
-    Parameters:
-    ----------  
+    Parameters
+    -----------  
     rho : float 
         stellar density, true or observed
     ecc : float
@@ -1113,8 +1149,8 @@ def sinusoid(x, A=0, x0= None, P=None, n=1,trig="sin"):
     """
     Calculate the sinusoidal function y = A*sin(2*pi*(x-x0)/P) or y = A*cos(2*pi*(x-x0)/P) given the parameters.
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     x : array-like
         x values
     A : float
@@ -1161,8 +1197,8 @@ def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
     Fday and Fnight are obtained as the value of F at phi=pi and 0 respectively.
 
 
-    Parameters:
-    ----------
+    Parameters
+    -----------
     phi : array-like
         phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
     Fd : float
@@ -1175,7 +1211,7 @@ def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
         order of the cosine function. Default is 1
         
     Returns
-    -------
+    --------
     F : array-like
         planetary flux as a function of phase
     """
@@ -1199,30 +1235,100 @@ def gauss_atm_variation(phi,A=0,delta_deg=0,width_deg=90):
     # return A * (F - Fmin)/(Fmax-Fmin)
     return A * F
     
-def reflection_atm_variation(phase, Fd=0, A=0, delta_deg=0):
+def lambertian_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,inc_rad=np.pi/2, night_phase_var=False):
     """
-    Calculate the phase curve of a planet approximated by a cosine function with peak-to-peak amplitude  A=F_max-F_min.
-    The equation is given as F = Fmin + A/2(1-cos(phi + delta)) where
-    phi is the phase angle in radians = 2pi*phase
-    delta is the hotspot offset (in radians)
+    Calculate the phase curve of a planet approximated by a lambertian function.
+    Eq. 3 of Esteves+2013 (https://iopscience.iop.org/article/10.1088/0004-637X/772/1/51) is used to calculate the flux variation.
+    
 
-    Parameters:
-    ----------
-    phase : array-like
-        Phases.
+    Parameters
+    -----------
+    phi : array-like
+        phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
     Fd : float
         Dayside flux/occultation depth
-    A : float
-        peak-to-peak amplitude
+    Fn : float
+        night side flux
     delta_deg : float
         hotspot offset in degrees.
         
     Returns
-    -------
+    --------
     F : array-like
         planetary flux as a function of phase
+
     """
-    raise NotImplementedError("This function is not yet implemented")
+    res        = SimpleNamespace()
+    res.delta  = np.deg2rad(delta_deg)
+
+
+    alpha_day  = np.arccos( -np.sin(inc_rad)*np.cos(phi+res.delta) ) #see eq. 4 of Esteves+2013 (https://iopscience.iop.org/article/10.1088/0004-637X/772/1/51)
+    alpha_ngt  = np.arccos( -np.sin(inc_rad)*np.cos(phi) )
+
+    fluxvar_day =  (np.sin(alpha_day) + (np.pi - alpha_day) *np.cos(alpha_day) )/np.pi
+    fluxvar_ngt =  (np.sin(alpha_ngt) + (np.pi - alpha_ngt) *np.cos(alpha_ngt) )/np.pi if night_phase_var else np.ones_like(phi)
+
+    if night_phase_var:
+        res.pc   = Fd*fluxvar_day + Fn*fluxvar_ngt  
+    else:
+        res.pc   = Fn + (Fd-Fn)*fluxvar_day
+
+    res.Fmin = min(res.pc)
+    res.Fmax = max(res.pc)
+    res.Aatm = (res.Fmax - res.Fmin)/2
+
+    return res
+
+def ellipsoidal_variation_signal(phi, A_ev=0, f1_ev=0, inc_rad=1.571):
+    """
+    Calculate the ellipsoidal variation signal of a planet as a function of phase angle.
+    The equation is given as F = Aev * (1 - cos(2*phi) - f1*cos(phi) - f2*cos(3*phi)).  
+    The semi-amplitude of the ellipsoidal variation is A, f1 and f2 are fractional coefficients controlling 
+    the fundamental and second harmonics respectively. see eq.8 of Esteves+2013 (https://iopscience.iop.org/article/10.1088/0004-637X/772/1/51)
+
+    Parameters
+    -----------
+    phi : array-like
+        phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians. 
+    A_ev : float
+        semi-amplitude of the ellipsoidal variation signal
+    f1_ev : float
+        fractional coefficient controlling the fundamental harmonic
+    inc_rad : float
+        inclination of the planet orbit in radians. Default is 1.571 (90 degrees)
+    
+    Returns
+    --------
+    F_ev : array-like
+        ellipsoidal variation signal as a function of phase
+    """
+
+    f2_ev = 5/3 * (f1_ev*np.sin(inc_rad)**2)/(5*np.sin(inc_rad)**2 - 4)
+    f0    = 1 - f1_ev - f2_ev   # normalization factor to ensure stellar flux level is zero at mid occultation
+    F_ev  = - A_ev * ( np.cos(2*phi) + f1_ev*np.cos(phi) + f2_ev*np.cos(3*phi) - f0)
+    return F_ev
+
+def doppler_boosting_signal(phi, A_db=0):
+    """
+    Calculate the Doppler boosting signal of a planet as a function of phase angle.
+    The equation is given as F = A_db * sin(phi).
+    see eq. 4 of Esteves+2013 (https://iopscience.iop.org/article/10.1088/0004-637X/772/1/51)
+
+    Parameters
+    -----------
+    phi : array-like
+        phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
+    A_db : float
+        semi-amplitude of the Doppler boosting signal.
+
+    Returns
+    --------
+    F_db : array-like
+        Doppler boosting signal as a function of phase.
+    """
+    F_db = A_db * np.sin(phi)   # F_db is zero at mid occultation
+
+    return F_db
 
 def rescale0_1(x):
     """Rescale an array to the range [0,1]."""
@@ -1257,7 +1363,7 @@ class supersampling:
         """
         supersample long integration timestamps and rebin the data after computation with supersampled time 
         
-        Parameters:
+        Parameters
         -----------
         supersample_factor : int;
             number of points subdividing exposure
@@ -1265,11 +1371,11 @@ class supersampling:
         exp_time: float;
             exposure time of current data in same units as input time
 
-        Returns:
+        Returns
         --------
         ss : supersampling object with attributes containing supersampled_time (t_ss) and function to rebin the dependent data back to original cadence.
         
-        Example:
+        Examples
         --------
         >>> t = np.array([0,30,60,90])
 
@@ -1312,97 +1418,97 @@ class supersampling:
             return f"No Supersampling. Sampling at original cadence"
 
 def split_transits( t=None, P=None, t_ref=None, baseline_amount=0.25, input_t0s=None, flux =None,show_plot=True):
+
+    """
+    Function to split the transits in the data into individual transits and save them in separate files or to remove a certain amount of data points around the transits while keeping them in the original file.
+    Recommended to set show_plot=True to visually ensure that transits are well separated.
+
+    Parameters
+    -----------
+    P : float;
+        Orbital period in same unit as t.
+    t_ref : float;
+        reference time of transit - T0 from literature or visual estimate of a mid-transit time in the data 
+        Used to calculate expected time of transits in the data assuming linear ephemerides.
+    baseline_amount: float between 0.05 and 0.5 times the period P;
+        amount of baseline data to keep before and after each transit. Default is 0.3*P, has to be between 0.05P and 0.5P.   
+    input_t0s: array, list, (optional);
+        split transit using these mid-transit times
+    show_plot: bool;
+        set true to plot the data and show split points.
+    """        
+    assert t is not None, "t must be provided"
+
+    if baseline_amount == None:
+        pass
+    elif baseline_amount < 0.05 :
+        baseline_amount = 0.05
+        print("Baseline amount defaulted to minimum 0.05")
+    elif baseline_amount > 0.5 :
+        baseline_amount = 0.5
+        print("Baseline amount defaulted to maximum 0.5")  
     
-        """
-        Function to split the transits in the data into individual transits and save them in separate files or to remove a certain amount of data points around the transits while keeping them in the original file.
-        Recommended to set show_plot=True to visually ensure that transits are well separated.
+    t0s, Ps, plnum, trnum       = [], [], [],[]
+    tr_times, fluxes, indz      = [], [], []
+    t0_list, P_list, plnum_list = [], [], []
+    npl = len(P)
+    if input_t0s is None: input_t0s = [None]*npl
 
-        Parameters:
-        -----------
-        P : float;
-            Orbital period in same unit as t.
-        t_ref : float;
-            reference time of transit - T0 from literature or visual estimate of a mid-transit time in the data 
-            Used to calculate expected time of transits in the data assuming linear ephemerides.
-        baseline_amount: float between 0.05 and 0.5 times the period P;
-            amount of baseline data to keep before and after each transit. Default is 0.3*P, has to be between 0.05P and 0.5P.   
-        input_t0s: array, list, (optional);
-            split transit using these mid-transit times
-        show_plot: bool;
-            set true to plot the data and show split points.
-        """        
-        assert t is not None, "t must be provided"
+    for j in range(npl):
+        #t0s for each planet
+        if input_t0s[j] is not None: t0s.append(list(input_t0s[j]))
+        else: t0s.append(get_T0s(t, t_ref[j], P[j]))    #get all transit times of a planet in this data
+        if len(t0s[j]) > 0: 
+            Ps.append([P[j]]*len(t0s[j]))    #period of each t0
+            plnum.append([j]*len(t0s[j]) )         #planet number
+            trnum.append(list(np.arange(1,len(t0s[j])+1)))
+    
+    srt_t0s = np.argsort(np.concatenate(t0s))    #sort t0s
+    t0s     = np.concatenate(t0s)[srt_t0s]
+    Ps      = np.concatenate(Ps)[srt_t0s]
+    plnum   = np.concatenate(plnum)[srt_t0s]
+    trnum   = np.concatenate(trnum)[srt_t0s]
 
-        if baseline_amount == None:
-            pass
-        elif baseline_amount < 0.05 :
-            baseline_amount = 0.05
-            print("Baseline amount defaulted to minimum 0.05")
-        elif baseline_amount > 0.5 :
-            baseline_amount = 0.5
-            print("Baseline amount defaulted to maximum 0.5")  
-        
-        t0s, Ps, plnum, trnum       = [], [], [],[]
-        tr_times, fluxes, indz      = [], [], []
-        t0_list, P_list, plnum_list = [], [], []
-        npl = len(P)
-        if input_t0s is None: input_t0s = [None]*npl
+    #split data into individual/planet group transits. taking points around each tmid    
+    i=0
+    while i < len(t0s):
+        lo_cut = t0s[i]-baseline_amount*Ps[i] if baseline_amount!=None else min(t)
+        hi_cut = t0s[i]+baseline_amount*Ps[i] if baseline_amount!=None else max(t)
+        Phere  = [Ps[i]]
+        T0here = [t0s[i]]
+        plnum_here = [plnum[i]]
+        if i != len(t0s)-1 and baseline_amount!=None: #check if next npl transit is close to this one, if so, include it in this chunk
+            for _ in range(npl):   
+                if (i+1<=len(t0s)-1) and (Ps[i+1] not in Phere) and (hi_cut > t0s[i+1]-baseline_amount*Ps[i+1]):
+                    hi_cut = t0s[i+1]+baseline_amount*Ps[i+1]
+                    Phere.append(Ps[i+1])
+                    T0here.append(t0s[i+1])
+                    plnum_here.append(plnum[i+1])
+                    i+=1
+                else:
+                    break
+        t0_list.append(T0here)
+        P_list.append(Phere)
+        plnum_list.append(plnum_here)
+        tr_times.append(t[(t>=lo_cut) & (t<hi_cut)])
+        indz.append( np.argwhere((t>=lo_cut) & (t<hi_cut)).reshape(-1) )
+        fluxes.append(flux[indz[-1]])
+        i+=1
+            
+    tr_edges = [(tr_t[0], tr_t[-1]) for tr_t in tr_times]    #store start and end time of each transit
 
-        for j in range(npl):
-            #t0s for each planet
-            if input_t0s[j] is not None: t0s.append(list(input_t0s[j]))
-            else: t0s.append(get_T0s(t, t_ref[j], P[j]))    #get all transit times of a planet in this data
-            if len(t0s[j]) > 0: 
-                Ps.append([P[j]]*len(t0s[j]))    #period of each t0
-                plnum.append([j]*len(t0s[j]) )         #planet number
-                trnum.append(list(np.arange(1,len(t0s[j])+1)))
-        
-        srt_t0s = np.argsort(np.concatenate(t0s))    #sort t0s
-        t0s     = np.concatenate(t0s)[srt_t0s]
-        Ps      = np.concatenate(Ps)[srt_t0s]
-        plnum   = np.concatenate(plnum)[srt_t0s]
-        trnum   = np.concatenate(trnum)[srt_t0s]
-
-        #split data into individual/planet group transits. taking points around each tmid    
-        i=0
-        while i < len(t0s):
-            lo_cut = t0s[i]-baseline_amount*Ps[i] if baseline_amount!=None else min(t)
-            hi_cut = t0s[i]+baseline_amount*Ps[i] if baseline_amount!=None else max(t)
-            Phere  = [Ps[i]]
-            T0here = [t0s[i]]
-            plnum_here = [plnum[i]]
-            if i != len(t0s)-1 and baseline_amount!=None: #check if next npl transit is close to this one, if so, include it in this chunk
-                for _ in range(npl):   
-                    if (i+1<=len(t0s)-1) and (Ps[i+1] not in Phere) and (hi_cut > t0s[i+1]-baseline_amount*Ps[i+1]):
-                        hi_cut = t0s[i+1]+baseline_amount*Ps[i+1]
-                        Phere.append(Ps[i+1])
-                        T0here.append(t0s[i+1])
-                        plnum_here.append(plnum[i+1])
-                        i+=1
-                    else:
-                        break
-            t0_list.append(T0here)
-            P_list.append(Phere)
-            plnum_list.append(plnum_here)
-            tr_times.append(t[(t>=lo_cut) & (t<hi_cut)])
-            indz.append( np.argwhere((t>=lo_cut) & (t<hi_cut)).reshape(-1) )
-            fluxes.append(flux[indz[-1]])
-            i+=1
-                
-        tr_edges = [(tr_t[0], tr_t[-1]) for tr_t in tr_times]    #store start and end time of each transit
-
-        if show_plot:
-            assert fluxes is not None, f"plotting requires input flux"
-            plt.figure(figsize=(15,3))
-            plt.plot(t,flux,".",c="gray",ms=2)
-            [plt.plot(t,f,".",c="C0") for t,f in zip(tr_times,fluxes)]
-            [plt.axvspan(edg[0], edg[1], alpha=0.1, color='cyan') for edg in tr_edges]
-            [plt.plot(t0s[Ps == P[i]], (0.997*np.min(flux))*np.ones_like(t0s[Ps == P[i]]),"^") for i in range(npl)]
-            plt.xlabel("Time (days)", fontsize=14)
-            plt.title(f"Using t_ref: shaded regions={len(indz)} transit chunk(s);  triangles=expected linear ephemeris");
-        
-        return SimpleNamespace(t0s=list(t0s), t0_list=t0_list, plnum=list(plnum), trnum=list(trnum),plnum_list=plnum_list, P_list = P_list,
-                                n_chunks=len(tr_times),tr_times=tr_times, fluxes=fluxes, tr_edges=tr_edges, indices=indz)
+    if show_plot:
+        assert fluxes is not None, f"plotting requires input flux"
+        plt.figure(figsize=(15,3))
+        plt.plot(t,flux,".",c="gray",ms=2)
+        [plt.plot(t,f,".",c="C0") for t,f in zip(tr_times,fluxes)]
+        [plt.axvspan(edg[0], edg[1], alpha=0.1, color='cyan') for edg in tr_edges]
+        [plt.plot(t0s[Ps == P[i]], (0.997*np.min(flux))*np.ones_like(t0s[Ps == P[i]]),"^") for i in range(npl)]
+        plt.xlabel("Time (days)", fontsize=14)
+        plt.title(f"Using t_ref: shaded regions={len(indz)} transit chunk(s);  triangles=expected linear ephemeris");
+    
+    return SimpleNamespace(t0s=list(t0s), t0_list=t0_list, plnum=list(plnum), trnum=list(trnum),plnum_list=plnum_list, P_list = P_list,
+                            n_chunks=len(tr_times),tr_times=tr_times, fluxes=fluxes, tr_edges=tr_edges, indices=indz)
 
 
 def get_T0s(t, t_ref, P):

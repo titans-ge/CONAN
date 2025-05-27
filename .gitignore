@@ -36,6 +36,9 @@
 *.out
 *.app
 
+#pickle files
+*.pkl
+
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -192,3 +195,8 @@ cython_debug/
 # docs/tutorial/
 
 example/
+
+
+#ignore notebook result folders
+result_*
+

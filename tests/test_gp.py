@@ -58,14 +58,36 @@ def test_kernels(show_plot=False):
 
     #sho
     Q = 1/np.sqrt(2)
-    sp_sho   = spleaf_kernels["sho"](*gp_conv.get_values("sp_sho", data="lc", pars = [amp, len_sc]), Q=Q).eval(t)
-    log_s0, log_w0 =  gp_conv.get_values("ce_sho", data="lc", pars = [amp, len_sc], fixed_arg=Q)
-    ce_sho   = celerite_kernels["sho"](log_S0=log_s0, log_omega0=log_w0, log_Q=np.log(Q)).get_value(t)
+    sp_sho   = spleaf_kernels["sho"](*gp_conv.get_values("sp_sho", data="lc", pars = [amp, len_sc,Q])).eval(t)
+    ce_sho   = celerite_kernels["sho"](*gp_conv.get_values("ce_sho", data="lc", pars = [amp, len_sc,Q])).get_value(t)
     # plt.plot(t, sp_sho); plt.plot(t,ce_sho,":"); plt.axvline(len_sc); plt.show()
 
     equiv.append(sp_sho == pytest.approx(ce_sho, abs=0.01*1e-6))
+    
+    
+    #expsine2
+    eta = 0.6
+    sp_exps2 = spleaf_kernels["exps2"](*gp_conv.get_values("sp_exps2", data="lc", pars = [amp, len_sc,eta])).eval(t)
+    ge_exps2 = 1*george_kernels["exps2"](1,1)
+    ge_exps2.set_parameter_vector(gp_conv.get_values("ge_exps2", data="lc", pars = [amp, len_sc,eta]))
+    ge_exps2 = ge_exps2.get_value(np.atleast_2d(t).T)[0]
+    # plt.plot(t, sp_exps2); plt.plot(t,ge_exps2,":"); plt.axvline(len_sc); plt.show()
+
+    equiv.append(sp_exps2 == pytest.approx(ge_exps2, abs=0.01*1e-6))
 
     assert all(equiv)
 
+    #quasiperiodic
+    eta=0.6
+    P = 5.66
+    ls= 10
+    ge_qp = (1*george_kernels["qp"][0](1)) * (-1*george_kernels["qp"][1](1,1))
+    ge_qp.set_parameter_vector(gp_conv.get_values("ge_qp", data="lc", pars = [amp, ls,eta,P]))
+    ge_qp = ge_qp.get_value(np.atleast_2d(t).T)[0]
 
+    sp_qp  = spleaf_kernels["qp"](*gp_conv.get_values("sp_qp", data="lc", pars = [amp, ls,eta,P])).eval(t)
+    # sp_qp_mp = spleaf_kernels["qp_mp"](*gp_conv.get_values("sp_qp_mp", data="lc", pars = [amp, ls,eta,P**2])).eval(t)
+    # plt.plot(t, sp_qp); plt.plot(t,ge_qp,":"); plt.axvline(P); plt.axhline(0); plt.show()
+
+    equiv.append(sp_qp == pytest.approx(ge_qp, abs=0.01*1e-6))
 #TODO  test an instance of a gpfit e,g celerite or george example and see that it gives expected loglikelihood

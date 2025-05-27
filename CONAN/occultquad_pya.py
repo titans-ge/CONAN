@@ -334,7 +334,7 @@ class OccultQuadPy:
 
         Produces same result as the fortran code but ~30 times slower.
         
-        Parameters:
+        Parameters
         ----------
         z0 : array
             Impact parameter in units of stellar radius

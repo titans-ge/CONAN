@@ -1,3 +1,13 @@
+27-May-2025: version 3.3.11
+~~~~~~~~~~~~~
+* including GPkernels from with more than 2 parameters: quasiperiodic, expsine2, SHO,...
+* allow to pick between logUniform or uniform prior for GP params and also rho_star and Duration. default is logUniform
+* added option to chose planet phase variation model: cosine or lambert
+* elliposidal variation model now include fractional amplitude of the other cosine harmonics
+* added draft of Joss paper
+* imporved documentation with full API reference
+* notebook updates
+
 28-Feb-2025: version 3.3.8
 ~~~~~~~~~~~~~
 * implemented multiprocessing for plotting figures
