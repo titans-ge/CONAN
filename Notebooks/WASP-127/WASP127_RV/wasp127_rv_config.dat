@@ -7,8 +7,8 @@
 #      spline       : c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 
 #      ***********************************************************************************************************
 # -----------------------------------------------------------------------------------------------------------------------
-	LC_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/postdoc_work/CONAN_tutorial/WASP-127/WASP-127_RV/
-	RV_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_RV/../data/
+	LC_filepath: ../data/
+	RV_filepath: ../data/
 	n_planet: 1
 # -----------------------------------------PHOTOMETRY--------------------------------------------------------------------
 	LC_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5

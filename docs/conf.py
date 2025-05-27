@@ -8,13 +8,12 @@
 
 import os
 import sys
-import CONAN
-# sys.path.insert(0, os.path.abspath('../'))
+sys.path.insert(0, os.path.abspath('../'))
 
 project = 'CONAN'
 copyright = '2023, B. Akinsanmi, M. Lendl'
 author = 'B. Akinsanmi, M. Lendl'
-version = CONAN.__version__
+# version = CONAN.__version__
 root_doc = 'index'
 
 # -- General configuration ---------------------------------------------------
