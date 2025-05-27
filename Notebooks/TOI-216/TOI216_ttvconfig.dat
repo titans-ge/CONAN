@@ -1,4 +1,4 @@
-# ========================================== CONAN configuration file v3.3.0 ======================================== 
+# ========================================== CONAN configuration file v3.3.11 ======================================== 
 #      *********** KEYS *****************************************************************************************
 #      PRIORS: *Fix-F(val), *Norm-N(mu,std), *Uni-U(min,start,max), *TruncNorm–(min,max,mu,std), *LogUni-LU(min,start,max)
 #      Ssmp         : supersampling - x{factor} e.g. x30 to create 30 subexposures per point
@@ -7,8 +7,8 @@
 #      spline       : c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 
 #      ***********************************************************************************************************
 # -----------------------------------------------------------------------------------------------------------------------
-	LC_filepath: ./data/
-	RV_filepath: ./data/
+	LC_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/TOI-216/./data/
+	RV_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/TOI-216/
 	n_planet: 2
 # -----------------------------------------PHOTOMETRY--------------------------------------------------------------------
 	LC_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5
@@ -24,37 +24,37 @@
 	TOI-216_S5.dat V   0.6  |None c1:W15C5n3   None    |  y    0    0    0    0    0    0    0|n    6 ce None           
 # ============ Sinusoidal signals: Amp*trig(2𝜋/P*(x-x0)) - trig=sin or cos or both added==========================
 	name/filt      trig     n_harmonics  x     Amp[ppm]            P                   x0                
-# ============ Photometry GP properties ===========================================================================
-	name           par1 kern1 Amplitude1_ppm     length_scale      |op| par2 kern2 Amplitude2_ppm     length_scale2    
-	same           col0 mat32 LU(1,2000,4000)    LU(0.1,1,30)      |--| None None  None               None              
+# ============ Photometry GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) =========
+	name/filt      kern  par    h1:[Amp_ppm]       h2:[len_scale1]    h3:[Q,η,α,b]       h4:[P]       
+	same           mat32 col0   LU(1,2000,4000)    LU(0.1,1,30)       None               None        
 # -----------------------------------------RADIAL VELOCITY---------------------------------------------------------------
 	RV_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for the RVs
 	exclude_cols:   []                         # list of column numbers (e.g. [3,4]) to exclude from decorrelation.
 	enforce_pars:   []                         # list of decorr params (e.g. [B3, A5]) to enforce in decorrelation
 # ============ Input RV curves, baseline function, GP, spline,  gamma ============================================ 
-	name RVunit scl_col |col0 col3 col4 col5| sin GP spline_config   | gamma_km/s     
-# ============ RV GP properties ================================================================================== 
-	name par1 kern1 Amplitude1         length_scale      |op| par2 kern2 Amplitude2         length_scale2  
+	name   RVunit scl_col |col0 col3 col4 col5| sin GP spline_config   | gamma_km/s     
+# ============ RV GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) =======
+	name   kern  par    h1:[Amp_ppm]       h2:[len_scale]     h3:[Q,η,C,α,b]     h4:[P]      
 # -----------------------------------------------------------------------------------------------------------------------
 # ============ Planet parameters (Transit and RV) setup ========================================================== 
-	name                       fit  prior                                   note
-	[rho_star]/Duration        y    N(2.38,0.1)                             #choice in []|unit(gcm^-3/days)
+	name                       fit 	prior                              	note
+	[rho_star]/Duration        y   	N(2.38,0.1)                        	#choice in []|unit(gcm^-3/days)
 	--------repeat this line & params below for multisystem, adding '_planet_number' to the names e.g RpRs_1 for planet 1, ...
-	RpRs_1                     y    U(0.05,0.1,0.15)                        #range[-0.5,0.5]
-	Impact_para_1              y    U(0.5,0.948,1.2)                        #range[0,2]
-	T_0_1                      n    F(1342.42819461)                        #unit(days)
-	Period_1                   n    F(17.089)                               #range[0,inf]days
-	[Eccentricity_1]/sesinw_1  n    F(0)                                    #choice in []|range[0,1]/range[-1,1]
-	[omega_1]/secosw_1         n    F(90)                                   #choice in []|range[0,360]deg/range[-1,1]
-	K_1                        n    F(0)                                    #unit(same as RVdata)
+	RpRs_1                     y   	U(0.05,0.1,0.15)                   	#range[-0.5,0.5]
+	Impact_para_1              y   	U(0.5,0.948,1.2)                   	#range[0,2]
+	T_0_1                      n   	F(1342.42819461)                   	#unit(days)
+	Period_1                   n   	F(17.089)                          	#range[0,inf]days
+	[Eccentricity_1]/sesinw_1  n   	F(0)                               	#choice in []|range[0,1]/range[-1,1]
+	[omega_1]/secosw_1         n   	F(90)                              	#choice in []|range[0,360]deg/range[-1,1]
+	K_1                        n   	F(0)                               	#unit(same as RVdata)
 	------------
-	RpRs_2                     y    U(0.05,0.1,0.15)                        #range[-0.5,0.5]
-	Impact_para_2              y    U(0,0.15,0.5)                           #range[0,2]
-	T_0_2                      n    F(1331.28531)                           #unit(days)
-	Period_2                   n    F(34.556)                               #range[0,inf]days
-	[Eccentricity_2]/sesinw_2  n    F(0)                                    #choice in []|range[0,1]/range[-1,1]
-	[omega_2]/secosw_2         n    F(90)                                   #choice in []|range[0,360]deg/range[-1,1]
-	K_2                        n    F(0)                                    #unit(same as RVdata)
+	RpRs_2                     y   	U(0.05,0.1,0.15)                   	#range[-0.5,0.5]
+	Impact_para_2              y   	U(0,0.15,0.5)                      	#range[0,2]
+	T_0_2                      n   	F(1331.28531)                      	#unit(days)
+	Period_2                   n   	F(34.556)                          	#range[0,inf]days
+	[Eccentricity_2]/sesinw_2  n   	F(0)                               	#choice in []|range[0,1]/range[-1,1]
+	[omega_2]/secosw_2         n   	F(90)                              	#choice in []|range[0,360]deg/range[-1,1]
+	K_2                        n   	F(0)                               	#unit(same as RVdata)
 # ============ Limb darkening setup ============================================================================= 
 	filters	fit	q1               	q2               
 	V      	y  	U(0,0.44,1)      	U(0,0.24,1)      
@@ -65,8 +65,8 @@
 	Fit_TTVs	dt_priors(deviation from linear T0)	transit_baseline[P]	per_LC_T0 	include_partial
 	y       	U(-0.1,0,0.1)                      	             0.0700	False     	True
 # ============ Phase curve setup ================================================================================ 
-	filt  D_occ[ppm]           Fn[ppm]              ph_off[deg]          A_ev[ppm]            A_db[ppm]           
-	V    F(0)                 None                 None                 F(0)                 F(0)                
+	flt D_occ[ppm]         Fn[ppm]            ph_off[deg]  A_ev[ppm]       f1_ev[ppm]    A_db[ppm]       pc_model
+	V   F(0)               None               None         F(0)            F(0)          F(0)            cosine  
 # ============ Custom LC function (read from custom_LCfunc.py file)================================================
 	function        : None                                    	#custom function/class to combine with/replace LCmodel
 	x               : None                                    	#independent variable [time, phase_angle]
@@ -83,7 +83,7 @@
 	replace_RVmodel : False                                   	#if the custom function replaces the RV model
 # -----------------------------------------------------------------------------------------------------------------------
 # ============ contamination setup (give contamination as flux ratio) ======================================== 
-	filters	contam_factor
+	flt	contam_factor
 	V  	F(0)                
 # ============ Stellar input properties ======================================================================
 	# parameter     value 
@@ -104,7 +104,7 @@
 	nested_sampling(static/dynamic[pfrac])    static 
 	leastsq_for_basepar(y/n)                  n 
 	apply_LCjitter(y/n,list)                  y 
-	apply_RVjitter(y/n,list)                  y 
+	apply_RVjitter(y/n,list)                  [] 
 	LCjitter_loglims(auto/[lo,hi])            auto 
 	RVjitter_lims(auto/[lo,hi])               auto 
 	LCbasecoeff_lims(auto/[lo,hi])            auto 
