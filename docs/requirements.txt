@@ -4,3 +4,4 @@ sphinx_book_theme
 sphinx_autodoc_typehints
 sphinx-autoapi
 nbsphinx
+myst_parser
