@@ -8,11 +8,13 @@
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../'))
+import CONAN
+# sys.path.insert(0, os.path.abspath('../'))
 
 project = 'CONAN'
 copyright = '2023, B. Akinsanmi, M. Lendl'
 author = 'B. Akinsanmi, M. Lendl'
+version = CONAN.__version__
 root_doc = 'index'
 
 # -- General configuration ---------------------------------------------------
@@ -25,13 +27,33 @@ extensions = [
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
+    "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
     "sphinx.ext.autosummary",
-    "nbsphinx"
+    "nbsphinx",
+    'myst_parser',
+    # "myst_nb",
+    "IPython.sphinxext.ipython_console_highlighting",
+    'autoapi.extension'
     ]
 
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+autoapi_dirs = ["../CONAN"]
+autoapi_ignore = ["*_version*", "*/types*"]
+autoapi_options = [
+    "members",
+    "undoc-members",
+    "private-members",
+    "show-inheritance",
+    "show-module-summary",
+    # "special-members",
+    # "imported-members",
+]
+autoapi_template_dir   = "_autoapi_templates"
+suppress_warnings      = ["autoapi.python_import_resolution"]
+autoapi_own_page_level = "method"
+autoapi_member_order   = 'groupwise'
+templates_path         = ['_templates']
+exclude_patterns       = ['_build', 'Thumbs.db', '.DS_Store', "_autoapi_templates"]
 
 
 
@@ -39,32 +61,50 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 # html_theme = 'sphinx_rtd_theme'
-html_theme = 'sphinx_book_theme'
-
-html_static_path = ['_static']
-
-
-# Concatenates classes docstrings with the ones from the __init__
-autoclass_content = 'class'
-autodoc_class_signature = "separated"
-
-html_theme_options = {
-    'navigation_depth': 5,
-}
-autosummary_generate = True
-
-autodoc_default_options = {
-    'members': True,
-    'member-order': 'bysource',
-    "private-members":False,
-    # 'special-members': '__init__',
-    'undoc-members': False,
-    'exclude-members': '__weakref__',
-    "show-inheritance": True
+html_theme           = 'sphinx_book_theme'
+html_static_path     = ['_static']
+html_show_sourcelink = False
+html_theme_options   = {
+                        "path_to_docs": "docs",
+                        "repository_url": "https://github.com/titans-ge/CONAN",
+                        "repository_branch": "main",
+                        "launch_buttons": {
+                            "binderhub_url": "https://mybinder.org",
+                            "notebook_interface": "jupyterlab",
+                            },
+                        "use_edit_page_button": True,
+                        "use_issues_button": True,
+                        "use_repository_button": True,
+                        "use_download_button": True,
+                        "use_sidenotes": True,
 }
 
-numpydoc_show_class_members=False
 
-def setup(app):
-    # https://stackoverflow.com/a/43186995
-    app.add_css_file('my_theme.css')
+# # Concatenates classes docstrings with the ones from the __init__
+# autoclass_content = 'class'
+# autodoc_class_signature = "separated"
+
+# html_theme_options = {
+#     'navigation_depth': 5,
+# }
+# autosummary_generate = True
+
+# autodoc_default_options = {
+#     'members': True,
+#     'member-order': 'bysource',
+#     "private-members":False,
+#     # 'special-members': '__init__',
+#     'undoc-members': False,
+#     'exclude-members': '__weakref__',
+#     "show-inheritance": True
+# }
+
+# numpydoc_show_class_members=False
+
+# def setup(app):
+#     # https://stackoverflow.com/a/43186995
+#     app.add_css_file('my_theme.css')
+
+nb_execution_mode = "cache"
+nb_execution_excludepatterns = []
+nb_execution_timeout = -1
