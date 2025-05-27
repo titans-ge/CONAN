@@ -76,6 +76,7 @@ Detecting and characterizing exoplanets, planets orbiting stars other than our S
 There are similar tools to `CONAN` for performing joint fit to exoplanet data, each with its own strengths and limitations. Some of these include `Juliet`[@juliet], PyOrbit [@pyorbit], `exoplanet`[@exoplanet], `Pyaneti`[@pyaneti], `ExoFAST`[@exofast]. One of the main strengths of `CONAN`
  compared to these tools is its capability to fit a wider variety of planetary signals. None of these publicly available tools can model full-orbit phasecurves of exoplanets using different phase functions. Perhaps, more impressive is that `CONAN` allows the user to define the custom model they would like to use in fitting the data, opening up practically unlimited use cases for `CONAN`. Additionally, `CONAN`'s capability to automatically select the best decorrelation vectors for a dataset makes it especially well-suited to modeling ground-based observations.
 
+The full documentation can be accessed at [https://conan-exoplanet.readthedocs.io](https://conan-exoplanet.readthedocs.io/en/latest/)
 
 # Acknowledgements
 
