@@ -104,7 +104,7 @@
 	nested_sampling(static/dynamic[pfrac])    static 
 	leastsq_for_basepar(y/n)                  n 
 	apply_LCjitter(y/n,list)                  y 
-	apply_RVjitter(y/n,list)                  [] 
+	apply_RVjitter(y/n,list)                  y 
 	LCjitter_loglims(auto/[lo,hi])            auto 
 	RVjitter_lims(auto/[lo,hi])               auto 
 	LCbasecoeff_lims(auto/[lo,hi])            auto 

@@ -140,7 +140,11 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         _, res_bins = bin_data_with_gaps(np.concatenate(phase_filter)[srt], np.concatenate(res_filter)[srt], binsize=binsize/ period[n])
         srt_sm = np.argsort(np.concatenate(phsm_filter))
 
-        if model_PC[filt_index] or (min(pbin) < 0 < max(pbin) and min(pbin) < 0.5 < max(pbin)):  # if modeling a full phase curve (or there's transit & eclipse) in this filter create new panel to show zoom
+        
+        # if (only one planet) & (non-zero occ_deppt) & (modeling phase curve or there's transit & eclipse phases) in this filter, then create new panel to show zoom
+        occ_ind     = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+filt_index
+        plot_PCzoom = (npl==1) and (params_all[occ_ind]>0) and (model_PC[filt_index] or (min(pbin) < 0 < max(pbin) and min(pbin) < 0.5 < max(pbin)))
+        if plot_PCzoom:  
             fig, ax = plt.subplots(3, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (1.5, 2, 1)})
         else:
             fig, ax = plt.subplots(2, 1, figsize=(12, 12), sharex=True, gridspec_kw={"height_ratios": (3, 1)})
@@ -156,7 +160,7 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[0].legend()
 
 
-        if model_PC[filt_index] or (min(pbin) < 0 < max(pbin) and min(pbin) < 0.5 < max(pbin)):  # if modeling a full phase curve (or there's transit & eclipse) in this filter create new panel to show zoom
+        if plot_PCzoom:  # if modeling a full phase curve (or there's transit & eclipse) in this filter create new panel to show zoom
             occ_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+filt_index
             aev_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+len(filnames)*3 + filt_index
             adb_ind = 1+7*npl+_ind_para["nttv"]+_ind_para["nddf"]+len(filnames)*4 + filt_index

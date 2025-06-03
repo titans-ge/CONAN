@@ -22,7 +22,7 @@
 	lc4bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    0    1    0    0|n    4 n  None           
 	lc5bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    2    2    0    2    1    0    0|n    5 n  None           
 	lc6bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    2    1    0    0|n    6 n  None           
-	lc7bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    2    1    0    0|n    7 n  None           
+	lc7bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    2    1    0    0|n    7 n  None            
 # ============ Sinusoidal signals: Amp*trig(2𝜋/P*(x-x0)) - trig=sin or cos or both added==========================
 	name/filt  trig     n_harmonics  x     Amp[ppm]            P                   x0                
 # ============ Photometry GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) =========

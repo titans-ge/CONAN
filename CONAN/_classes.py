@@ -54,12 +54,28 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
         
     if nrow_ncols is None: 
         nrow_ncols = (1,1) if n_data==1 else (int(n_data/2), 2) if n_data%2==0 else (int(np.ceil(n_data/3)), 3)
-    if figsize is None: figsize=(8,5) if n_data==1 else (14,3.5*nrow_ncols[0])
+    if figsize is None: 
+        figsize=(8,5) if n_data==1 else (14,3.5*nrow_ncols[0])
 
-    fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
-    ax = [ax] if n_data==1 else ax.reshape(-1)
+    # Create figure
+    fig = plt.figure(figsize=figsize)
+
+    # Create outer grid: nrows X ncols
+    import matplotlib.gridspec as gridspec
+    outer_grid = gridspec.GridSpec(*nrow_ncols)#, wspace=0.3, hspace=0.4)
 
     for i, d in enumerate(fnames):
+        i_row = i // nrow_ncols[1]
+        i_col = i % nrow_ncols[1]
+
+        # Create inner grid for each subplot: 2 rows (main + residual)
+        inner_grid = gridspec.GridSpecFromSubplotSpec(2, 1, 
+                                                    subplot_spec=outer_grid[i_row, i_col],
+                                                    height_ratios=[3, 1], hspace=0.01)
+        # Create axes
+        ax_main = fig.add_subplot(inner_grid[0])
+
+
         p1,p2,p3 = [input_data[d][f"col{n}"] for n in cols]   #select columns to plot
         if fit_mod is not None:
             p3 = fit_mod[i].err
@@ -70,17 +86,17 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
         title_str = fnames[i]
         if (fit_mod and detrend): title_str += ": detrended"
         if phase_plot>0:          title_str += f", phase-folded(pl{phase_plot})"
-        ax[i].set_title(title_str)
+        ax_main.set_title(title_str)
 
         if fit_mod and plot_cols[1] != "res":
-            if detrend:     #remove trend model from data
+            if detrend:                  #remove trend model from data
                 if plot_cols[0]==0:      # if xaxis is time
                     if phase_plot>0:     # if phasefold is on
                         assert isinstance(phase_plot, int) and phase_plot<=len(fit_mod[i].phase.keys()), f"plot():phase_plot must be an integer <= number of planets ({len(fit_mod[i].phase.keys())})"
                         col_labels = ("phase",col_labels[1])
                         p1    = fit_mod[i].phase[f"pl{phase_plot}"]
                         p1_sm = fit_mod[i].phase_smooth[f"pl{phase_plot}"]
-                        ax[i].set_xlim([min(p1),max(p1)])
+                        ax_main.set_xlim([min(p1),max(p1)])
                     else:
                         p1_sm = fit_mod[i].time_smooth
 
@@ -94,20 +110,20 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                 planet_mod_smooth = fit_mod[i].planet_mod_smooth if obj._obj_type=="lc_obj" else fit_mod[i].planet_mod_smooth-fit_mod[i].gamma
                 
                 if plot_cols[0]==0 and binsize!=0: 
-                    ax[i].plot(p1[p1_srt],dt_flux[p1_srt], "C0.", ms=4, alpha=0.6)
+                    ax_main.plot(p1[p1_srt],dt_flux[p1_srt], "C0.", ms=4, alpha=0.6)
                     if p3 is not None: 
                         t_bin,y_bin,e_bin = bin_data_with_gaps(p1[p1_srt],dt_flux[p1_srt],p3[p1_srt],binsize=binsize)
                     else: 
                         t_bin,y_bin = bin_data_with_gaps(p1[p1_srt],dt_flux[p1_srt],binsize=binsize); e_bin=None
                     
-                    ax[i].errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3,label=f"{binsize*24*60:.0f}min bins")
+                    ax_main.errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3,label=f"{binsize*24*60:.0f}min bins")
                 else: 
-                    ax[i].errorbar(p1[p1_srt],dt_flux[p1_srt],p3 if p3 is None else p3[p1_srt],fmt=".", ms=6, color="C0", alpha=0.6, capsize=2)
+                    ax_main.errorbar(p1[p1_srt],dt_flux[p1_srt],p3 if p3 is None else p3[p1_srt],fmt=".", ms=6, color="C0", alpha=0.6, capsize=2)
 
                 if tsm: 
-                    ax[i].plot(p1_sm[p1_sm_srt], planet_mod_smooth[p1_sm_srt],"r",zorder=4,label="planet_model")
+                    ax_main.plot(p1_sm[p1_sm_srt], planet_mod_smooth[p1_sm_srt],"r",zorder=4,label="planet_model")
                 else: 
-                    ax[i].plot(p1[p1_srt],planet_mod[p1_srt],"r",zorder=5,label="planet_model")
+                    ax_main.plot(p1[p1_srt],planet_mod[p1_srt],"r",zorder=5,label="planet_model")
             
             else: 
                 if plot_cols[0]==0:
@@ -118,50 +134,63 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                     p1_srt = np.arange(len(p1))
 
                 if plot_cols[0]==0 and binsize!=0: 
-                    ax[i].plot(p1[p1_srt],p2[p1_srt],"C0.",ms=4,alpha=0.6)      #data
+                    ax_main.plot(p1[p1_srt],p2[p1_srt],"C0.",ms=4,alpha=0.6)      #data
                     if p3 is not None: 
                         t_bin,y_bin,e_bin = bin_data_with_gaps(p1[p1_srt],p2[p1_srt],p3[p1_srt],binsize=binsize)
                     else: 
                         t_bin,y_bin = bin_data_with_gaps(p1[p1_srt],p2[p1_srt],binsize=binsize); e_bin=None
                     
-                    ax[i].errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3, label=f"{binsize*24*60:.0f}min bins")
+                    ax_main.errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3, label=f"{binsize*24*60:.0f}min bins")
                 else: 
-                    ax[i].errorbar(p1[p1_srt],p2[p1_srt],yerr=p3 if p3 is None else p3[p1_srt], fmt=".",ms=6, color="C0", alpha=0.6, capsize=2)
+                    ax_main.errorbar(p1[p1_srt],p2[p1_srt],yerr=p3 if p3 is None else p3[p1_srt], fmt=".",ms=6, color="C0", alpha=0.6, capsize=2)
                 
-                ax[i].plot(p1[p1_srt],fit_mod[i].tot_trnd_mod[p1_srt],c="darkgoldenrod",zorder=4,label="detrend_model")  #detrend model plot
+                ax_main.plot(p1[p1_srt],fit_mod[i].tot_trnd_mod[p1_srt],c="darkgoldenrod",zorder=4,label="detrend_model")  #detrend model plot
 
                 if tsm: 
-                    ax[i].plot(p1_sm[p1_sm_srt],fit_mod[i].planet_mod_smooth[p1_sm_srt],"r",zorder=4,label="planet_model")
+                    ax_main.plot(p1_sm[p1_sm_srt],fit_mod[i].planet_mod_smooth[p1_sm_srt],"r",zorder=4,label="planet_model")
                 else: 
-                    ax[i].plot(p1[p1_srt],fit_mod[i].planet_mod[p1_srt],"r",zorder=5,label="planet_model")
+                    ax_main.plot(p1[p1_srt],fit_mod[i].planet_mod[p1_srt],"r",zorder=5,label="planet_model")
             
-            ymin    = ax[i].get_ylim()[0]
-            res_lvl = ymin - max(fit_mod[i].residual) #np.ptp(fit_mod[i].residual)
-            ax[i].axhline(res_lvl, color="k", ls="--", alpha=0.2)
+            # Plot residuals
+            for label in ax_main.get_xticklabels():
+                label.set_visible(False)  # Hide x-axis tick labels on main plot only
+        
+            ax_res = fig.add_subplot(inner_grid[1], sharex=ax_main)
+            ax_res.axhline(0, color='gray', linestyle='--', linewidth=0.8)
             if plot_cols[0]==0 and binsize!=0: 
-                ax[i].plot(p1,fit_mod[i].residual+res_lvl,".",ms=3,c="gray",alpha=0.3)
+                rms = np.std(fit_mod[i].residual)*1e6 if obj._obj_type=="lc_obj" else np.std(fit_mod[i].residual)
+                ax_res.plot(p1,fit_mod[i].residual,".",ms=3,c="gray",alpha=0.3, label=f"{rms:.2f}ppm" if obj._obj_type=="lc_obj" else f"{rms:.2f}")
                 t_bin,res_bin = bin_data_with_gaps(p1[p1_srt],fit_mod[i].residual[p1_srt],binsize=binsize)
-                ax[i].errorbar(t_bin,res_bin+res_lvl, fmt="o",ms=5, color="k", capsize=2, zorder=3)
+                ax_res.errorbar(t_bin,res_bin, fmt="o",ms=5, color="k", capsize=2, zorder=3)
             else:
-                ax[i].plot(p1,fit_mod[i].residual+res_lvl,".",ms=5,c="gray")
+                ax_res.plot(p1,fit_mod[i].residual,".",ms=5,c="gray")
 
-            ax[i].text(min(p1), max(fit_mod[i].residual+res_lvl),"residuals",va="bottom")
-            ax[i].axhline(max(fit_mod[i].residual+res_lvl), color="k", ls="-",lw=1)
-            ax[i].legend(fontsize=10)
+            # Set consistent residual limits
+            max_res = np.max(np.abs(fit_mod[i].residual)) * 1.2
+            ax_res.set_ylim(-max_res, max_res)
+            ax_res.legend(fontsize=8)
+
+            #remove unused subplots
+            if i in range(len(fnames),np.prod(nrow_ncols)): 
+                ax_main.axis("off")   
+                ax_res.axis("off")
+
         else:
-            ax[i].errorbar(p1,p2,yerr=p3, fmt=".", color="C0", ms=5, ecolor="gray")
-            
+            ax_main.errorbar(p1,p2,yerr=p3, fmt=".", color="C0", ms=5, ecolor="gray")
+            #remove unused subplots
+            if i in range(len(fnames),np.prod(nrow_ncols)): 
+                ax_main.axis("off")   
 
         if fit_order>0:
             pfit = np.polyfit(p1,p2,fit_order)
             srt = np.argsort(p1)
-            ax[i].plot(p1[srt],np.polyval(pfit,p1[srt]),"r",zorder=3)
-    plt.subplots_adjust(top=0.94,hspace=0.3 if hspace is None else hspace , wspace = wspace if wspace!=None else None)
-    
-    for i in range(len(fnames),np.prod(nrow_ncols)): 
-        ax[i].axis("off")   #remove unused subplots
+            ax_main.plot(p1[srt],np.polyval(pfit,p1[srt]),"r",zorder=3)
 
-    fig.suptitle(f"{col_labels[0]} against {col_labels[1]}", y=ax[0].get_position().y1+0.1, fontsize=18)
+
+        
+
+    plt.subplots_adjust(top=0.94,hspace=0.3 if hspace is None else hspace , wspace = wspace if wspace!=None else None)
+    fig.suptitle(f"{col_labels[0]} against {col_labels[1]}", y=fig.get_axes()[0].get_position().y1+0.07, fontsize=18)
     
     plt.tight_layout()
 
@@ -1571,7 +1600,7 @@ class load_lightcurves:
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
             plt.subplots_adjust(hspace=0.3,top=0.94)
-            fig.suptitle("Masking Points",y=ax[0].get_position().y1+0.1)
+            fig.suptitle("Masking Points",y=ax[0].get_position().y1+0.05)
 
         for i,file in enumerate(lc_list):
             assert file in self._names, f"mask_points(): filename {file} not in loaded lightcurves."
@@ -1670,7 +1699,7 @@ class load_lightcurves:
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
             plt.subplots_adjust(hspace=0.3,top=0.94)
-            fig.suptitle("Outlier clipping",y=ax[0].get_position().y1+0.1)
+            fig.suptitle("Outlier clipping",y=ax[0].get_position().y1+0.05)
 
         for i,file in enumerate(lc_list):
             assert file in self._names, f"clip_outliers(): filename {file} not in loaded lightcurves."
@@ -1973,7 +2002,7 @@ class load_lightcurves:
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
             plt.subplots_adjust(hspace=0.3,top=0.94)
-            fig.suptitle("Spline knots",y=ax[0].get_position().y1+0.1)
+            fig.suptitle("Spline knots",y=ax[0].get_position().y1+0.05)
 
         for i,lc in enumerate(lc_list):
             ind = self._names.index(lc)    #index of lc in self._names
@@ -4521,7 +4550,7 @@ class load_rvs:
             fig, ax = plt.subplots(nrow_ncols[0], nrow_ncols[1], figsize=figsize)
             ax = [ax] if n_data==1 else ax.reshape(-1)
             plt.subplots_adjust(hspace=0.3,top=0.94)
-            fig.suptitle("Spline knots",y=ax[0].get_position().y1+0.1)
+            fig.suptitle("Spline knots",y=ax[0].get_position().y1+0.05)
 
         for i,rv in enumerate(rv_list):
             ind = self._names.index(rv)    #index of rv in self._names

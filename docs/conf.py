@@ -10,8 +10,18 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('../'))
 
+#copy notebooks to tutorials folder for sphinx to find them
+os.system("cp ../Notebooks/TOI-216/TOI-216_TTV_fit.ipynb tutorial/")
+os.system("cp ../Notebooks/TOI469/TOI469_multiplanet_LC_RV.ipynb tutorial/")
+os.system("cp ../Notebooks/KELT-20/kelt-20_cheops_roll_compare.ipynb tutorial/")
+os.system("cp ../Notebooks/WASP-127/WASP127_RV/CONAN_WASP-127_RV_tutorial.ipynb tutorial/")
+os.system("cp ../Notebooks/WASP-127/WASP-127_EULER_LC/CONAN_WASP127_EULER.ipynb tutorial/")
+os.system("cp ../Notebooks/WASP-127/WASP127_LC_RV/CONAN_WASP-127_LC_RV_tutorial.ipynb tutorial/")
+#----------------
+
+
 project = 'CONAN'
-copyright = '2023, B. Akinsanmi, M. Lendl'
+copyright = '2025, B. Akinsanmi, M. Lendl'
 author = 'B. Akinsanmi, M. Lendl'
 # version = CONAN.__version__
 root_doc = 'index'
@@ -62,6 +72,7 @@ exclude_patterns       = ['_build', 'Thumbs.db', '.DS_Store', "_autoapi_template
 # html_theme = 'sphinx_rtd_theme'
 html_theme           = 'sphinx_book_theme'
 html_static_path     = ['_static']
+html_js_files        = ['gurubase-widget.js']
 html_show_sourcelink = False
 html_theme_options   = {
                         "path_to_docs": "docs",

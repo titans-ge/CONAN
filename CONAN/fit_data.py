@@ -1806,6 +1806,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         fig.savefig(out_folder+"/bestfit_LC_detrended.png", bbox_inches="tight",dpi=200)
         fig = result.lc.plot_bestfit(detrend=True, phase_plot=1)
         fig.savefig(out_folder+"/bestfit_LC_detrended_phased.png", bbox_inches="tight",dpi=200)
+        plt.close()
     if result.rv.names != []:
         fig = result.rv.plot_bestfit()
         fig.savefig(out_folder+"/bestfit_RV.png", bbox_inches="tight",dpi=200)
@@ -1813,6 +1814,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         fig.savefig(out_folder+"/bestfit_RV_detrended.png", bbox_inches="tight",dpi=200)
         fig = result.rv.plot_bestfit(detrend=True, phase_plot=1)
         fig.savefig(out_folder+"/bestfit_RV_detrended_phased.png", bbox_inches="tight",dpi=200)
+        plt.close()
     matplotlib.use(__default_backend__)
 
 
@@ -1824,6 +1826,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         fig=result.lc.plot_lcttv()
         fig.savefig(out_folder+"/TTVs_lc.png", bbox_inches="tight",dpi=200)
+        plt.close()
         matplotlib.use(__default_backend__)
 
     #make print out statement in the fashion of conan the barbarian
