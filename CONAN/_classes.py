@@ -10,7 +10,7 @@ from lmfit import minimize, Parameters, Parameter
 
 from os.path import splitext
 from ldtk import SVOFilter
-from .models import RadialVelocity_Model, Transit_Model, spline_fit
+from .models import Planet_RV_Model, Planet_LC_Model, spline_fit
 from .utils import outlier_clipping, rho_to_tdur, rescale0_1, ecc_om_par,sesinw_secosw_to_ecc_omega
 from .utils import rescale_minus1_1, split_transits,sinusoid, robust_std
 from .geepee import gp_params_convert, celerite_kernels, george_kernels,spleaf_kernels, gp_h3h4names, npars_gp
@@ -387,7 +387,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
 
         cst_pars = {p:tr_params[p].value for p in custom_LCfunc.func_args.keys()} if custom_LCfunc is not None else {}
 
-        TM  = Transit_Model(rho_star, dur, t0, rp, b, per, sesinw, secosw,ddf=0,q1=tr_params["q1"].value,
+        TM  = Planet_LC_Model(rho_star, dur, t0, rp, b, per, sesinw, secosw,ddf=0,q1=tr_params["q1"].value,
                             q2=tr_params["q2"].value,occ=tr_params["D_occ"].value,Fn=tr_params["Fn"].value,
                             delta=tr_params["ph_off"].value,A_ev=tr_params["A_ev"].value,f1_ev=tr_params["f1_ev"].value,
                             A_db=tr_params["A_db"].value,cst_pars=cst_pars,npl=npl)
@@ -622,7 +622,7 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
 
         cst_pars = {p:rv_params[p].value for p in custom_RVfunc.func_args.keys()} if custom_RVfunc is not None else {}
 
-        mod_RV,_  = RadialVelocity_Model(t, t0, per, K, sesinw, secosw, rv_params["gamma"], cst_pars=cst_pars, 
+        mod_RV,_  = Planet_RV_Model(t, t0, per, K, sesinw, secosw, rv_params["gamma"], cst_pars=cst_pars, 
                                         npl=npl, custom_RVfunc=custom_RVfunc)
         
         return mod_RV

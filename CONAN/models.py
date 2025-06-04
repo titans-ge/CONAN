@@ -118,7 +118,7 @@ def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, pe
         secosw_    = list(np.array(secosw)[plnum])
         imp_par    = list(np.array(b)[plnum])
 
-        TM = Transit_Model(rho_star=rho_star, dur=dur, T0=this_t0, RpRs=rprs, b=imp_par, per=P, sesinw=sesinw_, secosw=secosw_, 
+        TM = Planet_LC_Model(rho_star=rho_star, dur=dur, T0=this_t0, RpRs=rprs, b=imp_par, per=P, sesinw=sesinw_, secosw=secosw_, 
                             ddf=ddf, occ=occ, Fn=Fn, delta=delta, A_ev=A_ev, f1_ev=f1_ev, A_db=A_db, q1=q1, q2=q2,cst_pars=cst_pars, npl=len(this_t0))
         this_trans,_ = TM.get_value(tarr_split,ss=ss,grprs=grprs,vcont=vcont,Rstar=Rstar,model_phasevar=False,custom_LCfunc=custom_LCfunc)  #compute the transit model for this chunk of data
         mm[ind]     += (this_trans-1)   #add the zero-baseline transit chunk to the zero baseline total model
@@ -126,7 +126,7 @@ def TTV_Model(tarr, rho_star=None, dur=None, T0_list=None, RpRs=None, b=None, pe
     mm += 1   #take total baseline to 1
     return mm, {"pl_1": mm}
 
-class Transit_Model:
+class Planet_LC_Model:
     """
     computes the transit model for a given set of parameters along with the baseline
 
@@ -176,8 +176,8 @@ class Transit_Model:
 
     Examples
     --------
-    >>> from CONAN.models import Transit_Model
-    >>> TM  = Transit_Model(rho_star= 0.565, T0=0, RpRs=0.1, b=0.1, per=3, sesinw=0, sesinw=0, q1=0.2, q2=0.3)
+    >>> from CONAN.models import Planet_LC_Model
+    >>> TM  = Planet_LC_Model(rho_star= 0.565, T0=0, RpRs=0.1, b=0.1, per=3, sesinw=0, sesinw=0, q1=0.2, q2=0.3)
     >>> flux,_ = TM.get_value(time)
     """
 
@@ -477,7 +477,7 @@ def para_minfunc(icoeff, ivars, mm, LCdata):
 
 
 ####### radial velocity model
-def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=None,custom_RVfunc=None):
+def Planet_RV_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=None,custom_RVfunc=None):
     """ 
     Model the radial velocity curve of planet(s). 
     T0, per, K, sesinw, secosw are given as lists of the same length (npl), each element corresponding to a planet.
@@ -512,7 +512,7 @@ def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=N
 
     Examples
     --------
-    >>> from CONAN.models import RadialVelocity_Model
+    >>> from CONAN.models import Planet_RV_Model
     >>> import matplotlib.pyplot as plt
     >>> import numpy as np   
 
@@ -523,7 +523,7 @@ def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=N
     >>> sesinw = 0
     >>> secosw = 0
 
-    >>> RV = RadialVelocity_Model(time, T0, per, K, sesinw,secosw)
+    >>> RV = Planet_RV_Model(time, T0, per, K, sesinw,secosw)
 
     >>> plt.plot(time, RV)
     >>> plt.axhline(0,ls="--")
@@ -538,7 +538,7 @@ def RadialVelocity_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=N
 
     mod_RV = np.zeros(len(tt))
     npl    = len(T0)
-    assert npl == len(per) or npl == len(K) or npl == len(sesinw) or npl == len(secosw),f"RadialVelocity_Model(): T0, per, K, sesinw, secosw must be lists of the same length!"
+    assert npl == len(per) or npl == len(K) or npl == len(sesinw) or npl == len(secosw),f"Planet_RV_Model(): T0, per, K, sesinw, secosw must be lists of the same length!"
 
     model_components = {}   #components of the model RV curve for each planet
     for n in range(npl):

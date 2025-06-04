@@ -3,7 +3,7 @@ import batman
 import numpy as np
 from CONAN.utils import (rho_to_aR, convert_LD, Tdur_to_aR, inclination,sesinw_secosw_to_ecc_omega,
                             rho_to_tdur, get_orbital_elements, get_Tconjunctions,convert_rho)
-from CONAN.models import Transit_Model
+from CONAN.models import Planet_LC_Model
 import matplotlib.pyplot as plt
 
 rho_star = 1.5
@@ -144,7 +144,7 @@ def test_batman_transit(show_plot=False):
         #                             sesinw=sesinw,secosw=secosw,q1=q1, q2=q2, occ=occ, Fn=None, delta=delta, A_ev=A_ev, 
         #                             A_db=A_db,npl=npl)
 
-        conan_mod = Transit_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
+        conan_mod = Planet_LC_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
                                     sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
                                     delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time)[0]
         
@@ -192,10 +192,10 @@ def test_duration(show_plot=False):
         analytic_tdur = rho_to_tdur(rho_star,b,RpRs,per,e,w)            #analytical duration
         time = np.linspace(T0-0.7*analytic_tdur, T0+0.7*analytic_tdur, int(1.4*analytic_tdur*24*60*2))
 
-        conan_mod = Transit_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
+        conan_mod = Planet_LC_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
                                 sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
                                 delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time)[0]
-        conan_mod2 = Transit_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
+        conan_mod2 = Planet_LC_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
                                 sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
                                 delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time, approx_EA=True)[0]
         bat_mod,m1,m2,params   = batman_transit(time, rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per, 
@@ -272,7 +272,7 @@ def test_orbital_elements(show_plot=False):
         sesinw = np.sqrt(e)*np.sin(w*np.pi/180)
         secosw = np.sqrt(e)*np.cos(w*np.pi/180)
 
-        conan_mod = Transit_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
+        conan_mod = Planet_LC_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per,
                                 sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
                                 delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time)[0]
         bat_mod,m1,m2,params   = batman_transit(time, rho_star=rho_star, dur=None, T0=T0, RpRs=RpRs, b=b, per=per, 
@@ -358,7 +358,7 @@ def test_LTT(show_plot=False):
         plt.show()
 
 
-    TM = Transit_Model(dur=t14, T0=0, RpRs=RpRs, b=b,per=P,
+    TM = Planet_LC_Model(dur=t14, T0=0, RpRs=RpRs, b=b,per=P,
                         sesinw=sesinw,secosw=secosw, occ=4000)
 
     t = np.linspace(P/2-0.07,P/2+0.07,1500)
@@ -409,10 +409,10 @@ def test_ecc_occ_shift(show_plot=False):
         w_rad  = np.radians(w)
 
 
-        TM     = Transit_Model(dur=t14, T0=0, RpRs=RpRs, b=b,per=P,
+        TM     = Planet_LC_Model(dur=t14, T0=0, RpRs=RpRs, b=b,per=P,
                                 sesinw=0,secosw=0, occ=4000,Fn=50,delta=0)
 
-        TM_ecc = Transit_Model(dur=t14, T0=0, RpRs=RpRs, b=b,per=P,
+        TM_ecc = Planet_LC_Model(dur=t14, T0=0, RpRs=RpRs, b=b,per=P,
                                 sesinw=sesinw,secosw=secosw, occ=4000,Fn=50,delta=0)
 
         t          = np.linspace(-0.25*P,0.75*P,5000)
@@ -448,13 +448,13 @@ def test_flat_transit():
     time     = np.linspace(T0-0.15*per, T0+0.15*per, int(0.3*per*24*60/2)) #2min cadence
 
     #Non-transiting
-    conan_mod = Transit_Model(rho_star=None, dur=0.112, T0=T0, RpRs=RpRs, b=1.5+RpRs, per=per,
+    conan_mod = Planet_LC_Model(rho_star=None, dur=0.112, T0=T0, RpRs=RpRs, b=1.5+RpRs, per=per,
                             sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
                             delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time)[0]
     equiv.append(pytest.approx(conan_mod,abs=1e-6) == 1)
 
     #zero radius
-    conan_mod = Transit_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=0, b=b, per=per,
+    conan_mod = Planet_LC_Model(rho_star=rho_star, dur=None, T0=T0, RpRs=0, b=b, per=per,
                             sesinw=sesinw, secosw=secosw, q1=q1, q2=q2, occ=occ, Fn=None, 
                             delta=delta, A_ev=A_ev, A_db=A_db,npl=npl).get_value(time)[0]
     equiv.append(pytest.approx(conan_mod,abs=1e-6) == 1)

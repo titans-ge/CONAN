@@ -1,3 +1,7 @@
+4-June-2025: version 3.3.12
+~~~~~~~~~~~~~
+* renamed Transit_Model and RadialVelocity_Model to Planet_LC_Model and Planet_RV_Model respectively
+
 27-May-2025: version 3.3.11
 ~~~~~~~~~~~~~
 * including GPkernels from with more than 2 parameters: quasiperiodic, expsine2, SHO,...

@@ -108,12 +108,13 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             params_all[pnames_all == s_recip] = params_all[pnames_all == sp]
 
     # conditionals
-    for cond in conditionals.keys():
-        if eval(conditionals[cond], globals={k:v for k,v in zip(pnames_all, params_all)}) == False:
-            if inmcmc=='n': 
-                print(f"logprob_multi(): {conditionals[cond]=} is not satisfied")
-            if inmcmc=='y': 
-                return -np.inf
+    if isinstance(conditionals, dict) and len(conditionals)>0:
+        for cond in conditionals.keys():
+            if eval(conditionals[cond], globals={k:v for k,v in zip(pnames_all, params_all)}) == False:
+                if inmcmc=='n': 
+                    print(f"logprob_multi(): {conditionals[cond]=} is not satisfied")
+                if inmcmc=='y': 
+                    return -np.inf
     if debug:
         _ = [print(f"{k}:{v}") for k,v in zip(pnames_all[jumping], params_all[jumping])]
 
@@ -326,7 +327,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                                         q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                         custom_LCfunc=custom_LCfunc if ncustom>0 else None, cst_pars=cst_pars)
             else:
-                TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
+                TM = Planet_LC_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
                                     occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in, q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
                 LCmod,compo = TM.get_value(t_in, ss=s_samp[j],grprs=grprs_here,vcont=cont_in,Rstar=Rstar,model_phasevar=model_phasevar[k],
                                             custom_LCfunc=custom_LCfunc if ncustom>0 else None, pc_model=pc_model[k])
@@ -340,7 +341,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                                     ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
                                     custom_LCfunc=custom_LCfunc if ncustom>0 else None,cst_pars=cst_pars)
         else:
-            TM = Transit_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
+            TM = Planet_LC_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
                                         occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
             mt0, _ = TM.get_value(t_in,ss=s_samp[j], grprs=grprs_here, vcont=cont_in,Rstar=Rstar,model_phasevar=model_phasevar[k],
                                     custom_LCfunc=custom_LCfunc if ncustom>0 else None, pc_model=pc_model[k])   
@@ -782,13 +783,13 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     cstRV_pars[list(custom_RVfunc.par_dict.keys())[kk]] = params_all[cst_ind]
         
         if get_planet_model:   #skip other calculations and return the RV model for this dataset
-            RVmodel,compo = RadialVelocity_Model(t_in,T0in,perin,Kin,sesinwin,secoswin,Gamma=0,cst_pars=cstRV_pars,npl=npl,
+            RVmodel,compo = Planet_RV_Model(t_in,T0in,perin,Kin,sesinwin,secoswin,Gamma=0,cst_pars=cstRV_pars,npl=npl,
                                                     custom_RVfunc=custom_RVfunc if ncustomRV>0 else None)
             model_outputs.rv[name] = RVmodel,compo
             continue     # skip the rest of the loop, go to next rv file
 
         #compute planet RV model
-        mod_RV, _    = RadialVelocity_Model(t_in,T0in,perin,Kin,sesinwin,secoswin,Gamma=0,cst_pars=cstRV_pars,npl=npl,
+        mod_RV, _    = Planet_RV_Model(t_in,T0in,perin,Kin,sesinwin,secoswin,Gamma=0,cst_pars=cstRV_pars,npl=npl,
                                             custom_RVfunc=custom_RVfunc if ncustomRV>0 else None)
         mod_RV_gamma = mod_RV + Gamma_in
 

@@ -1,4 +1,4 @@
-from CONAN.models import RadialVelocity_Model, Transit_Model
+from CONAN.models import Planet_RV_Model, Planet_LC_Model
 import radvel
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,7 +30,7 @@ def test_radvel_model(show_plot=False):
 
 
         pars       = [0,1,28,sesinw,secosw]
-        conan_rv,_ = RadialVelocity_Model(phases,*pars)
+        conan_rv,_ = Planet_RV_Model(phases,*pars)
         radvel_rv = radvel_model(phases, pars)
 
         equiv.append( conan_rv == pytest.approx(radvel_rv,rel=1e-2) )
