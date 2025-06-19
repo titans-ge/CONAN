@@ -32,7 +32,7 @@ Key features:
 - **Science data download**: Built-in support for downloading data from various instruments (including TESS, CHEOPS, and Kepler) and also system parameters from [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/).
 - **Quick result visualization and manipulation**: Instant plot of the best-fit model and a result object that can be easily manipulated for customized analysis.
 
-The full documentation can be accessed at [https://conan-exoplanet.readthedocs.io](https://conan-exoplanet.readthedocs.io/en/latest/)
+The full documentation can be accessed at [https://conan-exoplanet.readthedocs.io](https://conan-exoplanet.readthedocs.io/en/latest/). The [github wiki](https://github.com/titans-ge/CONAN/wiki) details specific CONAN functionalities
 
 
 ## Installation

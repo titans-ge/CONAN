@@ -350,6 +350,9 @@ class Planet_LC_Model:
                 else:
                     lc_mod = mm0.copy()* (1+ellps+dopp)  #add the ellipsoidal variation to the model
 
+            if np.all(np.isnan(lc_mod)):   #if all values are NaN, return a flat model
+                lc_mod = np.ones_like(lc_mod)
+
             # save the model components (rebinned to the original cadence)
             model_components[f"pl_{n+1}"] = ss.rebin_flux(lc_mod.copy()) if ss is not None else lc_mod.copy() 
 
@@ -365,7 +368,8 @@ class Planet_LC_Model:
             mm = custom_LCfunc.op_func(mm,cst_model)
 
         mm = ss.rebin_flux(mm) if ss is not None else mm    #rebin the full model to the original cadence
-        if self.npl==1: model_components[f"pl_{n+1}"] = mm  #save the model components for the single planet system
+        if self.npl==1: 
+            model_components[f"pl_{n+1}"] = mm  #save the model components for the single planet system
 
         return mm, model_components
 

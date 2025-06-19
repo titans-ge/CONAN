@@ -68,7 +68,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         uni_low, uni_up,rv_gp_colnames, gp_colnames, gpkerns, LTT, conditionals, GPstepsizes, sameLCgp, \
         npl, useSpline_lc, useSpline_rv, s_samp, rvGPobjects, rvGPparams, rvGPindex, input_lcs, input_rvs, \
         RVunit, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler, shared_params) = argvals if 'shared_params' in args.keys() else argvals+[{}]
-
+    #TODO pass wavelength into args
+    
     Rstar = LTT.Rstar if type(LTT) == SimpleNamespace else None   #get Rstar value to use for LTT correction
     if type(custom_LCfunc) != SimpleNamespace: custom_LCfunc = None
     if type(sine_conf)     != SimpleNamespace: sine_conf = SimpleNamespace(flag=None)

@@ -764,6 +764,10 @@ class load_lightcurves:
     data_filepath : str;
         Filepath where lightcurves files are located. Default is None which implies the data is 
         in the current working directory.
+    input_lc : dict;
+        dictionary of input lightcurves. If provided, it overrides the file_list and data_filepath parameters.
+        Each key is the name of the lightcurve and the value is a numpy array with the lightcurve data.
+        The array must be of shape (N,M) where N is the number of data points and M is the number of columns (>=3).
     filter : list, str, None;
         filter for each lightcurve in file_list. if a str is given, it is used for all lightcurves,
         if None, the default of "V" is used for all.
@@ -817,7 +821,7 @@ class load_lightcurves:
     >>>                                  wl = [0.6,0.8] )
     
     """
-    def __init__(self, file_list=None, data_filepath=None, filters=None, wl=None, nplanet=1, sort=False,
+    def __init__(self, file_list=None, data_filepath=None, input_lc=None, filters=None, wl=None, nplanet=1, sort=False,
                     verbose=True, show_guide=False,lamdas=None):
         self._obj_type = "lc_obj"
         self._nplanet  = nplanet
@@ -825,12 +829,20 @@ class load_lightcurves:
         if self._fpath[-1] != "/": 
             self._fpath += "/"
 
-        self._names    = [file_list] if isinstance(file_list, str) else [] if file_list is None else file_list
+        if input_lc is not None:
+            assert isinstance(input_lc, dict), f"load_lightcurves(): input_lc is of type {type(input_lc)}, it should be a dictionary."
+            if verbose: 
+                print(f"load_lightcurves(): input_lc is provided, using it to load lightcurves.")
+            self._names  = list(input_lc.keys()) 
+        else:
+            self._names    = [file_list] if isinstance(file_list, str) else [] if file_list is None else file_list
+            for lc in self._names: 
+                assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
+            if verbose: 
+                print(f"load_lightcurves(): loading lightcurves from path -  {self._fpath}")
+            
         self._nphot    = len(self._names)
 
-        for lc in self._names: 
-            assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
-        
         if lamdas is not None:
             warnings.warn("The 'lamdas' parameter  in `load_lightcurves()` is deprecated and will be discontinued in future versions. Use 'wl' instead.", DeprecationWarning)
             if wl is None: wl = lamdas
@@ -869,9 +881,13 @@ class load_lightcurves:
         self._input_lc = {}     #dictionary to hold input lightcurves
         self._rms_estimate, self._jitt_estimate = [], []
         for f in self._names:
-            fdata = np.loadtxt(self._fpath+f)
+            fdata = np.loadtxt(self._fpath+f) if input_lc is None else input_lc[f]
+            assert fdata.ndim==2 and fdata.shape[1]>=3, f"load_lightcurves(): input file {f} must have at least 3 columns (time, flux, error)."
+
             nrow,ncol = fdata.shape
-            if ncol < 9:
+            if ncol > 9:
+                warnings.warn(f"load_lightcurves(): input file {f} has more than 9 columns, only the first 9 columns will be used.", UserWarning)
+            elif ncol < 9:
                 # if verbose: print(f"writing ones to the missing columns of file: {f}")
                 new_cols = np.ones((nrow,9-ncol))
                 fdata = np.hstack((fdata,new_cols))
@@ -990,7 +1006,7 @@ class load_lightcurves:
     def get_decorr(self, T_0=None, Period=None, rho_star=None, Duration=None, D_occ=0, Impact_para=0, RpRs=1e-5,
                     Eccentricity=None, omega=None, sesinw=None, secosw=None, Fn=None, ph_off=None, A_ev=0, f1_ev=0,
                     A_db=0, K=0, q1=0, q2=0, cont=0.0,fit_offset=None, mask=False, ss_exp=None,Rstar=None, 
-                    ttv=False,delta_BIC=-5, decorr_bound =(-10,10), exclude_cols=[], enforce_pars=[],
+                    ttv=False,delta_BIC=-5, decorr_bound =(-10,10), exclude_cols=[], enforce_pars=[], exclude_pars=[],
                     show_steps=False, plot_model=True, use_jitter_est=False,setup_baseline=True, 
                     setup_planet=False, pc_model="cosine",custom_LCfunc=None, verbose=True):
         """
@@ -1044,6 +1060,8 @@ class load_lightcurves:
         exclude_cols : list of int;
             list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is []. 
             Can also specify "all" to only fit an offset
+        exclude_pars : list of str;
+            list of decorr parameters (e.g. ['B3', 'A5']) to exclude from decorrelation. Default is [].
         enforce_pars : list of int;
             list of decorr params (e.g. ['B3', 'A5']) to enforce in decorrelation. Default is [].
         show_steps : Bool, optional;
@@ -1107,10 +1125,10 @@ class load_lightcurves:
 
         if isinstance(pc_model, str): 
             pc_model = [pc_model]*self._nphot
-        elif isinstance(pc_model, list): 
+        if isinstance(pc_model, list): 
             assert len(pc_model)== self._nphot, f"get_decorr(): pc_model must be a list of same length as number of input lcs ({self._nphot})"
             for pcm in pc_model: 
-                assert isinstance(pcm, str), f"get_decorr(): pc_model must be a float or list of str."
+                assert isinstance(pcm, str) and pcm in ["cosine","lambert"], f"get_decorr(): pc_model must be a str or list of str."
         else: 
             _raise(TypeError, "get_decorr(): pcm must be a str or list of str.")
 
@@ -1138,6 +1156,8 @@ class load_lightcurves:
             assert rho_star is not None, f"get_decorr(): rho_star must be given for multiplanet system but {rho_star} given."
             assert  Duration==None, f"get_decorr(): Duration must be None for multiplanet systems, since transit model uses rho_star but {Duration=} given."
         else:
+            if rho_star is None and Duration is None: 
+                Duration = 0
             #check that rho_star and Duration are not both given
             if rho_star is not None: assert Duration is None, "get_decorr(): Duration must be None if rho_star is given."
             if Duration is not None: assert rho_star is None, "get_decorr(): rho_star must be None if Duration is given."
@@ -1155,20 +1175,28 @@ class load_lightcurves:
         else:
             _raise(ValueError, "get_decorr(): Either Eccentricity–omega or sesinw–secosw combination must be given, not both.")
 
+        input_pars = {k:(0 if v is None else v) for k,v in input_pars.items()}   # set to zero if None
+
         self._tra_occ_pars = dict(T_0=T_0, Period=Period, D_occ=D_occ, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw,\
                                     secosw=secosw, Fn=Fn, ph_off=ph_off,A_ev=A_ev,f1_ev=f1_ev,A_db=A_db) #transit/occultation parameters
         # add rho_star/Duration to input_pars and self._tra_occ_pars if given
         if rho_star is not None: 
-            input_pars["rho_star"] = rho_star; self._tra_occ_pars["rho_star"] = rho_star
+            input_pars["rho_star"]         = rho_star
+            self._tra_occ_pars["rho_star"] = rho_star
         if Duration is not None: 
-            input_pars["Duration"] = Duration; self._tra_occ_pars["Duration"] = Duration
+            input_pars["Duration"]         = Duration
+            self._tra_occ_pars["Duration"] = Duration
 
         
         for p in self._tra_occ_pars:
             if p not in ["rho_star","Duration","Fn","ph_off","D_occ","A_ev","f1_ev","A_db"]:
-                if isinstance(self._tra_occ_pars[p], (int,float,tuple)): self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
-                if isinstance(self._tra_occ_pars[p], (list)): assert len(self._tra_occ_pars[p]) == self._nplanet, \
+                if isinstance(self._tra_occ_pars[p], (int,float,tuple)): 
+                    self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
+                elif isinstance(self._tra_occ_pars[p], (list)): 
+                    assert len(self._tra_occ_pars[p]) == self._nplanet, \
                     f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
+                elif isinstance(self._tra_occ_pars[p],type(None)):
+                    self._tra_occ_pars[p] = [0]*self._nplanet
             else:
                 assert isinstance(self._tra_occ_pars[p],(int,float,tuple,type(None))),f"get_decorr(): {p} must be one of int/float/tuple/None but {self._tra_occ_pars[p]} given "
 
@@ -1289,7 +1317,8 @@ class load_lightcurves:
         ### begin computation
         self._tmodel = []              #list to hold determined trendmodel for each lc
         decorr_cols = [0,3,4,5,6,7,8]  #decorrelation columns
-        for c in exclude_cols: assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude_cols." 
+        for c in exclude_cols: 
+            assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude_cols." 
         _ = [decorr_cols.remove(c) for c in exclude_cols]  #remove excluded columns from decorr_cols
 
         for j,file in enumerate(self._names):
@@ -1298,6 +1327,11 @@ class load_lightcurves:
                 print(_text_format.BOLD + f"\ngetting decorr params for lc{j+1:02d}: {file} (spline={spline[j]!=None}, sine={sinusoid[file]!=None}, gp={GP[file]!=None}, s_samp={ss_exp[j]!=None}, jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.1f}ppm)" + _text_format.END)
             
             all_par  = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]]     #A0,B0,A3,B3,...
+            for ep in exclude_pars:
+                assert ep in all_par, f"get_decorr(): excluded parameter {ep} not in {all_par}. ensure that col{ep[-1]} is not in exclude_cols."
+                assert ep not in enforce_pars, f"get_decorr(): excluded parameter {ep} cannot be in enforce_pars list {enforce_pars}."
+
+            _        = [all_par.remove(ep) for ep in exclude_pars if ep in all_par]  #remove excluded parameters from all_par if there
             sin_pars = sinusoid[file].params if sinusoid[file]!=None else {}   #sin(C5)_Amp, sin(C5)_P,...
             gp_pars  = GP[file].params if GP[file]!=None else {}               #log_GP_Amp, log_GP_len,...
     
@@ -2674,8 +2708,10 @@ class load_lightcurves:
         self._planet_pars = {}
 
         for par in DA.keys():
-            if isinstance(DA[par], (float,int,tuple)): DA[par] = [DA[par]]*self._nplanet
-            if isinstance(DA[par], list): assert len(DA[par])==self._nplanet, f"planet_parameters: {par} must be a list of length {self._nplanet} or float/int/tuple."
+            if isinstance(DA[par], (float,int,tuple)): 
+                DA[par] = [DA[par]]*self._nplanet
+            if isinstance(DA[par], list): 
+                assert len(DA[par])==self._nplanet, f"planet_parameters: {par} must be a list of length {self._nplanet} or float/int/tuple."
 
         for n in range(self._nplanet):    #n is planet number
             self._planet_pars[f"pl{n+1}"] = {}
@@ -3519,8 +3555,10 @@ class load_lightcurves:
         """
         if not (isinstance(plot_cols, tuple) and len(plot_cols) in [2,3]): 
             raise TypeError(f"plot: plot_cols must be tuple of length 2 or 3, but is {type(plot_cols)} and length of {len(plot_cols)}.")
-        if detrend: assert show_decorr_model, "plot(): detrend can only be True if `show_decorr_model=True`."
-        if plot_cols[1] == "res": assert show_decorr_model, "plot(): plot_cols[1] can only be 'res' if decorrelation has been done, and show_decorr_model=True."
+        if detrend: 
+            show_decorr_model = True #"plot(): detrend can only be True if `show_decorr_model=True`."
+        if plot_cols[1] == "res": 
+            assert show_decorr_model, "plot(): plot_cols[1] can only be 'res' if decorrelation has been done, and show_decorr_model=True."
 
         assert col_labels is None or ((isinstance(col_labels, tuple) and len(col_labels)==2)), \
             f"plot: col_labels must be tuple of length 2, but is {type(col_labels)} and length of {len(col_labels)}."
@@ -3557,6 +3595,10 @@ class load_rvs:
         filepath where rvs files are located
     file_list : list;
         list of filenames for the rvs
+    input_rv : dict;
+        dictionary of input RV data. If provided, it overrides the file_list and data_filepath parameters.
+        Each key is the name of the lightcurve and the value is a numpy array with the lightcurve data.
+        The array must be of shape (N,M) where N is the number of data points and M is the number of columns (>=3).        
     nplanet : int;
         number of planets in the system. Default is 1.
     rv_unit : str;
@@ -3597,16 +3639,27 @@ class load_rvs:
     ---------
     >>> rv_obj = load_rvs(file_list=["rv1.dat","rv2.dat"], data_filepath="/path/to/data/", rv_unit="km/s")
     """
-    def __init__(self, file_list=None, data_filepath=None, nplanet=1, rv_unit="km/s",lc_obj=None,
-                    verbose=True, show_guide =False):
+    def __init__(self, file_list=None, data_filepath=None, input_rv=None, nplanet=1, rv_unit="km/s",
+                    lc_obj=None, verbose=True, show_guide =False):
         self._obj_type = "rv_obj"
         self._nplanet  = nplanet
         self._fpath    = os.getcwd()+"/" if data_filepath is None else data_filepath
-        if self._fpath[-1]!="/": self._fpath += "/"
-        self._names    = [] if file_list is None else file_list 
-        self._input_rv = {}
-        self._RVunit   = rv_unit
-        self._nRV      = len(self._names)
+        if self._fpath[-1]!="/": 
+            self._fpath += "/"
+        
+        if input_rv is not None:  #if input_rv is given, use it instead of file_list and data_filepath
+            assert isinstance(input_rv, dict), "load_rvs(): input_rv must be a dictionary of input RV data."
+            if verbose:
+                print(f"load_rvs(): input_rv is provided, using it to load rvs.")
+            self._names= list(input_rv.keys())
+        else:
+            self._names    = [file_list] if isinstance(file_list,str) else [] if file_list is None else file_list 
+            for rv in self._names: 
+                assert os.path.exists(self._fpath+rv), f"file {rv} does not exist in the path {self._fpath}."
+            if verbose:
+                print(f"load_rvs(): loading RVs from path - {self._fpath}")
+
+        self._nRV = len(self._names)
 
         if lc_obj is None:   #if lc_obj is not given, get it from the linker object otherwise create an empty one
             if _linker.lc_obj != None:
@@ -3615,31 +3668,37 @@ class load_rvs:
             else:
                 if verbose: print("lightcurve object not found. Creating empty lc_obj.")
                 lc_obj = load_lightcurves(nplanet=self._nplanet)
-
         self._lcobj    = lc_obj
         
+        self._RVunit   = rv_unit
         assert rv_unit in ["m/s","km/s"], f"load_rvs(): rv_unit must be one of ['m/s','km/s'] but {rv_unit} given." 
 
-        for rv in self._names: assert os.path.exists(self._fpath+rv), f"file {rv} does not exist in the path {self._fpath}."
         if show_guide: print("Next: use method `rv_baseline` to define baseline model for for the each rv")
         
         #modify input files to have 6 columns as CONAN expects
+        self._input_rv = {}
         self._rms_estimate, self._jitt_estimate = [], []
         for f in self._names:
-            fdata = np.loadtxt(self._fpath+f)
+            fdata = np.loadtxt(self._fpath+f) if input_rv is None else input_rv[f]
+            assert fdata.ndim==2 and fdata.shape[1]>=3, f"load_rvs():input file {f} must have at least 3 columns (time, rv, error)." 
+
             nrow,ncol = fdata.shape
-            if ncol < 6:
+            if ncol > 6:
+                warnings.warn(f"load_lightcurves(): input file {f} has more than 9 columns, only the first 9 columns will be used.", UserWarning)
+            elif ncol < 6:
                 # if verbose: print(f"Expected at least 6 columns for RV file: writing ones to the missing columns of file: {f}")
                 new_cols = np.ones((nrow,6-ncol))
                 fdata = np.hstack((fdata,new_cols))
-                np.savetxt(self._fpath+f,fdata,fmt='%.8f')
+                # np.savetxt(self._fpath+f,fdata,fmt='%.8f')
+            
             #remove nan rows
             n_nan = np.sum(np.isnan(fdata).any(axis=1))
             if n_nan > 0: print(f"removed {n_nan} row(s) with NaN values from file: {f}")
             fdata = fdata[~np.isnan(fdata).any(axis=1)]
             #store input files in rv object
             self._input_rv[f] = {}
-            for i in range(6): self._input_rv[f][f"col{i}"] = fdata[:,i]
+            for i in range(6): 
+                self._input_rv[f][f"col{i}"] = fdata[:,i]
 
             #compute estimate of rms  and jitter
             self._rms_estimate.append(np.std(fdata[:,1]))   #std of rv
@@ -3774,7 +3833,7 @@ class load_rvs:
         self._rescaled_data = SN(flag=True, config=method)
 
     def get_decorr(self, T_0=None, Period=None, K=None, Eccentricity=None, omega=None, sesinw=None, secosw=None,
-                    gamma=0, delta_BIC=-5, decorr_bound =(-1000,1000), exclude_cols=[],enforce_pars=[],
+                    gamma=0, delta_BIC=-5, decorr_bound =(-1000,1000), exclude_cols=[],enforce_pars=[],exclude_pars=[],
                     show_steps=False, plot_model=True, use_jitter_est=False, setup_baseline=True, 
                     setup_planet=False, custom_RVfunc=None, verbose=True ):
         """
@@ -3802,6 +3861,8 @@ class load_rvs:
             list of column numbers (e.g. [3,4]) to exclude from decorrelation. Default is [].
         enforce_pars : list of int;
             list of decorr params (e.g. ['B3', 'A5']) to enforce in decorrelation. Default is [].
+        exclude_pars : list of str;
+            list of decorr parameters (e.g. ['B3', 'A5']) to exclude from decorrelation. Default is [].
         show_steps : Bool, optional;
             Whether to show the steps of the forward selection of decorr parameters. Default is False
         plot_model : Bool, optional;
@@ -3853,12 +3914,16 @@ class load_rvs:
         else:
             _raise(ValueError, "get_decorr(): Either Eccentricity–omega or sesinw–secosw combination must be given, not both.")
 
+        input_pars = {k:(0 if v is None else v) for k,v in input_pars.items()}   # set to zero if None
+
         self._rv_pars = dict(T_0=T_0, Period=Period, K=K, sesinw=sesinw, secosw=secosw, gamma=gamma) #rv parameters
         for p in self._rv_pars:
             if p != "gamma":
-                if isinstance(self._rv_pars[p], (int,float,tuple)): self._rv_pars[p] = [self._rv_pars[p]]*self._nplanet
-                if isinstance(self._rv_pars[p], (list)): assert len(self._rv_pars[p]) == self._nplanet, \
-                    f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._rv_pars[p])} given."
+                if isinstance(self._rv_pars[p], (int,float,tuple)): 
+                    self._rv_pars[p] = [self._rv_pars[p]]*self._nplanet
+                if isinstance(self._rv_pars[p], (list)): 
+                    assert len(self._rv_pars[p]) == self._nplanet, \
+                        f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._rv_pars[p])} given."
 
         #check spline setup
         if [self._rvspline[rv].conf for rv in self._names] == ["None"]*self._nRV: #if no input spline in lc_obj, set to None
@@ -3874,8 +3939,13 @@ class load_rvs:
             df = self._input_rv[file]
             if verbose: 
                 print(_text_format.BOLD + f"\ngetting decorr params for rv{j+1:02d}: {file} (jitt={self._jitt_estimate[j] if use_jitter_est else 0:.2f}{self._RVunit})" + _text_format.END)
+            
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
-
+            for ep in exclude_pars:
+                assert ep in all_par, f"get_decorr(): excluded parameter {ep} not in {all_par}. ensure that col{ep[-1]} is not in exclude_cols."
+                assert ep not in enforce_pars, f"get_decorr(): excluded parameter {ep} cannot be in enforce_pars list {enforce_pars}."
+            _   = [all_par.remove(ep) for ep in exclude_pars if ep in all_par]  #remove excluded parameters from all_par if there
+            
             out = _decorr_RV(df, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet,
                             jitter=self._jitt_estimate[j] if use_jitter_est else 0, custom_RVfunc=custom_RVfunc)    #no trend, only offset
             best_bic = out.bic
@@ -5169,21 +5239,24 @@ class load_result:
                             outdata      = self._load_result_array(["lc"],verbose=verbose),
                             #load each lcfile as a pandas dataframe and store all in dictionary
                             indata       = {fname:pd.DataFrame(df) for fname,df in input_lcs.items()}, 
+                            check_corr   = self._create_res_obj("lc").get_decorr,
                             _obj_type    = "lc_obj"
                                         )
+            
             self.lc.plot_bestfit = self._plot_bestfit_lc
             self.lc.plot_ttv     = self._ttvplot
             self.lc.plot_lcttv   = self._ttv_lcplot
             
             #RV data and functions
             self.rv = SN(   names        = self._rvnames,
-                            filters      = self._ind_para["filters"],
+                            # filters      = self._ind_para["filters"],
                             evaluate     = self._evaluate_rv,
                             get_baseline = self._get_rvbaseline,
                             outdata      = self._load_result_array(["rv"],verbose=verbose),
                             #load each rvfile as a pandas dataframe and store all in dictionary
-                            indata    = {fname:pd.DataFrame(df) for fname,df in input_rvs.items()},
-                            _obj_type = "rv_obj"
+                            indata       = {fname:pd.DataFrame(df) for fname,df in input_rvs.items()},
+                            check_corr   = self._create_res_obj("rv").get_decorr,
+                            _obj_type    = "rv_obj"
                             )
             self.rv.plot_bestfit = self._plot_bestfit_rv
 
@@ -5686,6 +5759,26 @@ class load_result:
             results[fname_with_ext] = df
         if verbose: print(f"{data} Output files, {all_files}, loaded into result object")
         return results
+
+    def _create_res_obj(self, data=["lc","rv"]):
+
+        out_data   = self._load_result_array([data],verbose=False)
+        
+        # load input data and replace columns 1 and 2 with residuals and errors from output data
+        resid_data    = {fname:pd.DataFrame(df) for fname,df in self._ind_para[f"input_{data}s"].items()}
+        for k in resid_data.keys():
+            resid_data[k]["col1"] = 1+out_data[k]["residual"] if data=="lc" else out_data[k]["residual"]
+            resid_data[k]["col2"] = out_data[k]["error"]
+        resid_data = { k:np.array(list(v.values)) for k,v in resid_data.items()}
+
+        if data=="lc":
+            res_obj = load_lightcurves( input_lc = resid_data, 
+                                        filters  = self._ind_para["filters"],
+                                        nplanet  = self._nplanet)
+        elif  data=="rv":
+            res_obj = load_rvs(input_rv = resid_data, nplanet=self._nplanet)
+
+        return res_obj
 
     def make_output_file(self, stat="median",out_folder=None):
         """

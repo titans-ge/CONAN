@@ -1,6 +1,9 @@
+
 4-June-2025: version 3.3.12
 ~~~~~~~~~~~~~
 * renamed Transit_Model and RadialVelocity_Model to Planet_LC_Model and Planet_RV_Model respectively
+* added exclude+pars argument in get_decorr() to exclude specific parameters from the decorrelation model
+* allow loading lightcurves/rvs from a dictionary instead of from files 
 
 27-May-2025: version 3.3.11
 ~~~~~~~~~~~~~

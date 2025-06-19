@@ -567,10 +567,10 @@ class get_CHEOPS_data(object):
         verbose : bool
             Verbose output. Default is False.
         """
-
         if folder is None: 
             folder = os.getcwd()
         
+        self.file_keys = []
         folder = folder if folder[-1] == "/" else folder+"/"
         if fits_filelist is None:
             fits_filelist = [f for f in os.listdir(folder) if f.endswith(".fits")]
@@ -621,6 +621,7 @@ class get_CHEOPS_data(object):
             
             print("\n")
             self.lc.append(d)
+            self.file_keys.append(d.file_key)
 
     def search(self,filters=None):
         """   
@@ -676,10 +677,10 @@ class get_CHEOPS_data(object):
             else: 
                 file_keys = [file_keys]
         
-        if self.file_keys:
-            for f in file_keys: assert f in self.file_keys, f"file_key must be in {self.file_keys}"
-        else: 
-            self.file_keys = file_keys
+        for f in file_keys: 
+            assert f in self.file_keys, f"file_key must be in {self.file_keys}"
+            
+        self.file_keys = file_keys
 
         if isinstance(aperture,str): 
             aperture = [aperture]*len(file_keys)
@@ -743,7 +744,7 @@ class get_CHEOPS_data(object):
 
 
         if plot_cols[0] == "time":
-            t_ref = min([d.lc["time"][0]+d.bjd_ref for d in self.lc]) # BJD time of first observation point
+            t_ref = int(min([d.lc["time"][0]+d.bjd_ref for d in self.lc])) # BJD time of first observation point
 
         for i,d in enumerate(self.lc):
             ax[i].set_title(f"{d.file_key}")
