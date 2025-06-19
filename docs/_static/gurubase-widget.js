@@ -18,10 +18,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.appendChild(markedScript);
 
     // Load the GuruBase widget
-    const guruScript = document.createElement("script");
-    guruScript.src = "https://widget.gurubase.io/widget.latest.min.js";
-    guruScript.defer = true;
-    guruScript.id = "guru-widget-id";
+    // const guruScript = document.createElement("script");
+    markedScript.onload = () => {
+        guruScript.src = "https://widget.gurubase.io/widget.latest.min.js";
+        guruScript.defer = true;
+        guruScript.id = "guru-widget-id";
+    };
 
     // Add widget settings as data attributes
     Object.entries({

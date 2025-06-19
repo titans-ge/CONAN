@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.abspath('../'))
 
 #copy notebooks to tutorials folder for sphinx to find them
+print("\nCopying notebooks to tutorial folder...")
 os.system("cp ../Notebooks/TOI-216/TOI-216_TTV_fit.ipynb tutorial/")
 os.system("cp ../Notebooks/TOI469/TOI469_multiplanet_LC_RV.ipynb tutorial/")
 os.system("cp ../Notebooks/KELT-20/kelt-20_cheops_roll_compare.ipynb tutorial/")
