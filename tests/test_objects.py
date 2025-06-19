@@ -33,6 +33,8 @@ def test_WASP127_LC_RV_init(init_only=True, verbose=False):
 def test_WASP127_eulerLC_init(init_only=True, verbose=False):
     try:
         lc_obj, rv_obj, fit_obj = load_configfile(  configfile  = 'Notebooks/WASP-127/WASP-127_EULER_LC/wasp127_euler_config.dat', 
+                                                    lc_path     = 'Notebooks/WASP-127/data/',
+                                                    rv_path     = 'Notebooks/WASP-127/data/',
                                                     verbose     = verbose)
         result = run_fit(   lc_obj      = lc_obj,
                             rv_obj      = rv_obj,
@@ -50,6 +52,8 @@ def test_WASP127_eulerLC_init(init_only=True, verbose=False):
 def test_WASP127_RV_init(init_only=True, verbose=False):
     try:
         lc_obj, rv_obj, fit_obj = load_configfile(  configfile  = 'Notebooks/WASP-127/WASP127_RV/wasp127_rv_config.dat', 
+                                                    lc_path     = 'Notebooks/WASP-127/data/',
+                                                    rv_path     = 'Notebooks/WASP-127/data/',
                                                     verbose     = verbose)
         result = run_fit(   lc_obj      = lc_obj,
                             rv_obj      = rv_obj,
@@ -66,7 +70,8 @@ def test_WASP127_RV_init(init_only=True, verbose=False):
 def test_TTV_TOI_216_init(init_only=True, verbose=False):
     """TESTS GP and ttv"""
     try:
-        lc_obj, rv_obj, fit_obj = load_configfile(  configfile  = 'Notebooks/TOI-216/TOI216_ttvconfig.dat', 
+        lc_obj, rv_obj, fit_obj = load_configfile(  configfile  = 'Notebooks/TOI-216/TOI216_ttvconfig.dat',
+                                                    lc_path     = 'Notebooks/TOI-216/data/', 
                                                     verbose     = verbose)
         result = run_fit(   lc_obj      = lc_obj,
                             rv_obj      = rv_obj,
@@ -84,6 +89,8 @@ def test_TOI_469_init(init_only=True, verbose=False):
     """TESTS GP, multiplanet, for lc and rv"""
     try:
         lc_obj, rv_obj, fit_obj = load_configfile(  configfile  = 'Notebooks/TOI469/TOI469_lc_rvconfig.dat', 
+                                                    lc_path     = 'Notebooks/TOI469/data/',
+                                                    rv_path     = 'Notebooks/TOI469/data/',
                                                     verbose     = verbose)
         result = run_fit(   lc_obj      = lc_obj,
                             rv_obj      = rv_obj,

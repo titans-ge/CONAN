@@ -11,6 +11,12 @@ document.addEventListener('DOMContentLoaded', function() {
         overlapContent: "false" // Optional - Whether to overlap the main content or shrink its width with the sidebar
     };
 
+    // Load marked.js
+    const markedScript = document.createElement('script');
+    markedScript.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+    markedScript.async = true;
+    document.body.appendChild(markedScript);
+
     // Load the GuruBase widget
     const guruScript = document.createElement("script");
     guruScript.src = "https://widget.gurubase.io/widget.latest.min.js";
