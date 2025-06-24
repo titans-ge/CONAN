@@ -7,6 +7,7 @@
 :maxdepth: 2
 
 installation
+Ask AI <https://gurubase.io/g/conan>
 ```
 
 

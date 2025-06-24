@@ -73,8 +73,10 @@ exclude_patterns       = ['_build', 'Thumbs.db', '.DS_Store', "_autoapi_template
 # html_theme = 'sphinx_rtd_theme'
 html_theme           = 'sphinx_book_theme'
 html_static_path     = ['_static']
-html_js_files        = ['gurubase-widget.js']
-html_show_sourcelink = False
+html_js_files = [
+    'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
+    'gurubase-widget.js']
+html_show_sourcelink = True
 html_theme_options   = {
                         "path_to_docs": "docs",
                         "repository_url": "https://github.com/titans-ge/CONAN",

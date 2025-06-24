@@ -2,6 +2,9 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/conan-exoplanet)
 [![Upload Python Package](https://github.com/titans-ge/CONAN/actions/workflows/python-publish-pypi.yml/badge.svg)](https://github.com/titans-ge/CONAN/actions/workflows/python-publish-pypi.yml)
 ![PyPI - Version](https://img.shields.io/pypi/v/conan-exoplanet)
+<!-- add static badge -->
+[![Static Badge](https://img.shields.io/badge/Ask%20AI%20-%20green?style=for-the-badge)](https://gurubase.io/g/conan)
+
 
 
 # CONAN
