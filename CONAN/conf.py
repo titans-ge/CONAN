@@ -136,17 +136,18 @@ def _prior_value(str_prior):
     >>> _prior_value("TN(0,1,0.2,0.1)")
     (0,1,0.2,0.1)
     """
-    str_prior = str_prior.replace(" ","")   #remove spaces
-    if "None" in str_prior: 
+    prior_str = str_prior.replace(" ","")   #remove spaces
+    if "None" in prior_str: 
         return None
-    assert '(' in  str_prior and str_prior.endswith(')'), f"prior value must be one of ['N(mu,std)','F(val)','U(min,start,max)','LU(min,start,max)'] but {str_prior} given. check parenthesis/spaces"
-    str_prior = str_prior[str_prior.find("(")+1:str_prior.find(")")].split(",")
-    tuple_prior = [float(v) for v in str_prior]
+    assert '(' in  prior_str and prior_str.endswith(')'), f"prior value must be one of ['N(mu,std)','F(val)','U(min,start,max)','LU(min,start,max)'] but {str_prior} given. check parenthesis/spaces"
+    prior_str   = prior_str[prior_str.find("(")+1:prior_str.find(")")].split(",")
+    tuple_prior = [float(v) for v in prior_str]
     tuple_prior = [(int(v) if v.is_integer() else float(v)) for v in tuple_prior]
-    len_tup = len(tuple_prior)
-    val = tuple_prior[0] if len_tup==1 else tuple(tuple_prior)
-    return val
+    if str_prior.startswith("LU("):
+        tuple_prior.append("LU") #add LU str to indicate log-uniform prior
 
+    val = tuple_prior[0] if len(tuple_prior)==1 else tuple(tuple_prior)
+    return val
 
 
 def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_config.dat",verify=False): 
@@ -444,18 +445,17 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     # ========== GP input ====================
     gp_lclist,op = [],[]
-    gp_pars, kernels, amplitude, lengthscale, h3, h4, lcGP_logUprior = [],[],[],[],[],[],[]
+    gp_pars, kernels, amplitude, lengthscale, h3, h4 = [],[],[],[],[],[]
 
     dump =_file.readline()
     if version < (3,3,11):
         while dump[0] != "#":
-            lcGPpdist = []
             _adump = dump.split()
             gp_lclist.append(_adump[0])
             gp_pars.append(_adump[1])
             kernels.append(_adump[2])
-            amplitude.append(_prior_value(_adump[3])); lcGPpdist.append(_adump[3].split("(")[0])
-            lengthscale.append(_prior_value(_adump[4])); lcGPpdist.append(_adump[4].split("(")[0])
+            amplitude.append(_prior_value(_adump[3]))
+            lengthscale.append(_prior_value(_adump[4]))
             h3.append(None)
             h4.append(None)
 
@@ -463,29 +463,25 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             if op[-1] != "--":    #if theres a second kernel 
                 gp_pars[-1]     = (gp_pars[-1],_adump[7])
                 kernels[-1]     = (kernels[-1],_adump[8])
-                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9])); lcGPpdist.append(_adump[9].split("(")[0])
-                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10])); lcGPpdist.append(_adump[10].split("(")[0])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9]))
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10]))
                 h3.append(None)
                 h4.append(None)
 
-            lcGPpdist = [x for x in lcGPpdist if x in ["U", "LU"]]  #remove all other prior types
-            if lcGPpdist!=[]: 
-                assert len(set(lcGPpdist))==1, f"prior distribution must be the same for all LC's GP hyperparameters but {lcGPpdist} given for the LCs: {gp_lclist[-1]}"
-                lcGP_logUprior.append(False if lcGPpdist[0]=="U" else True)
             #move to next LC
             dump =_file.readline()
 
     else:
         while dump[0] != "#":
-            lcGPpdist = []
+            # lcGPpdist = []
             _adump = dump.split()
             gp_lclist.append(_adump[0])
             kernels.append(_adump[1])
             gp_pars.append(_adump[2])
-            amplitude.append(_prior_value(_adump[3])); lcGPpdist.append(_adump[3].split("(")[0])
-            lengthscale.append(_prior_value(_adump[4])); lcGPpdist.append(_adump[4].split("(")[0])
-            h3.append(_prior_value(_adump[5])); lcGPpdist.append(_adump[5].split("(")[0])
-            h4.append(_prior_value(_adump[6])); lcGPpdist.append(_adump[6].split("(")[0])
+            amplitude.append(_prior_value(_adump[3]))
+            lengthscale.append(_prior_value(_adump[4]))
+            h3.append(_prior_value(_adump[5]))
+            h4.append(_prior_value(_adump[6]))
 
             #move to next line
             dump   = _file.readline()
@@ -494,23 +490,14 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
                 op.append(_adump[0].strip("|"))
                 kernels[-1]     = (kernels[-1],_adump[1])
                 gp_pars[-1]     = (gp_pars[-1],_adump[2])
-                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3])); lcGPpdist.append(_adump[3].split("(")[0])
-                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4])); lcGPpdist.append(_adump[4].split("(")[0])
-                h3[-1]          = (h3[-1],_prior_value(_adump[5])); lcGPpdist.append(_adump[5].split("(")[0])
-                h4[-1]          = (h4[-1],_prior_value(_adump[6])); lcGPpdist.append(_adump[6].split("(")[0])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3]))
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4]))
+                h3[-1]          = (h3[-1],_prior_value(_adump[5]))
+                h4[-1]          = (h4[-1],_prior_value(_adump[6]))
                 #move to next rv file    
                 dump =_file.readline()
             else:
                 op.append("--")
-
-            lcGPpdist = [x for x in lcGPpdist if x in ["U", "LU"]]  #remove all other prior types
-            if lcGPpdist!=[]: 
-                assert len(set(lcGPpdist))==1, f"prior distribution must be the same for all LC's GP hyperparameters but {lcGPpdist} given for the LCs: {gp_lclist[-1]}"
-                lcGP_logUprior.append(False if lcGPpdist[0]=="U" else True)
-        
-    if lcGP_logUprior != []:
-        assert len(set(lcGP_logUprior)) == 1, f"prior distribution must be the same for all LCs GP hyperparameters but {lcGP_logUprior} given for the hyperparameters of {gp_lclist}"    
-    lcGP_logUprior = lcGP_logUprior[0] if (version >= (3,3,11) and lcGP_logUprior!= [])  else True
 
     #check that the elements of _clip_cols are the same
     if len(_clip_cols) > 1:
@@ -532,7 +519,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in lc_obj._gp_lcs()]if _useGPphot!=[] else []
     lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
                     amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,gp_pck=gp_pck,
-                    GP_logUprior=lcGP_logUprior, verbose=verbose)
+                    verbose=verbose)
     lc_obj._fit_offset = _offset
 
     ## RV ==========================================================
@@ -593,19 +580,17 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     
     # RV GP
     gp_rvlist,op = [],[]
-    gp_pars, kernels, amplitude, lengthscale, h3, h4, rvGP_logUprior = [],[],[],[],[],[],[]
+    gp_pars, kernels, amplitude, lengthscale, h3, h4 = [],[],[],[],[],[]
 
     dump =_file.readline()
     if version < (3,3,11):
         while dump[0] != "#":
-            rvGPpdist = []
-
             _adump = dump.split()
             gp_rvlist.append(_adump[0])
             gp_pars.append(_adump[1])
             kernels.append(_adump[2])
-            amplitude.append(_prior_value(_adump[3])); rvGPpdist.append(_adump[3].split("(")[0])
-            lengthscale.append(_prior_value(_adump[4])); rvGPpdist.append(_adump[4].split("(")[0])
+            amplitude.append(_prior_value(_adump[3]))
+            lengthscale.append(_prior_value(_adump[4]))
             h3.append(None)
             h4.append(None)
             
@@ -613,30 +598,24 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             if op[-1] != "--":    #if theres a second kernel 
                 gp_pars[-1]     = (gp_pars[-1],_adump[7])
                 kernels[-1]     = (kernels[-1],_adump[8])
-                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9])); rvGPpdist.append(_adump[9].split("(")[0])
-                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10])); rvGPpdist.append(_adump[10].split("(")[0])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[9]))
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[10]))
                 h3.append(None)
                 h4.append(None)
-            
-            rvGPpdist = [x for x in rvGPpdist if x in ["U", "LU"]]  #remove all other prior types
-            if rvGPpdist!=[]:
-                assert len(set(rvGPpdist))==1, f"prior distribution must be the same for all RVs GP hyperparameters but {rvGPpdist} given for the hyperparameters of {gp_rvlist[-1]}"
-                rvGP_logUprior.append(False if rvGPpdist[0]=="U" else True)
+
             #move to next RV
             dump =_file.readline()
 
     else:
         while dump[0] != "#":
-            rvGPpdist = []
-
             _adump = dump.split()
             gp_rvlist.append(_adump[0])
             kernels.append(_adump[1])
             gp_pars.append(_adump[2])
-            amplitude.append(_prior_value(_adump[3])); rvGPpdist.append(_adump[3].split("(")[0])
-            lengthscale.append(_prior_value(_adump[4])); rvGPpdist.append(_adump[4].split("(")[0])
-            h3.append(_prior_value(_adump[5])); rvGPpdist.append(_adump[5].split("(")[0])
-            h4.append(_prior_value(_adump[6])); rvGPpdist.append(_adump[6].split("(")[0])
+            amplitude.append(_prior_value(_adump[3]))
+            lengthscale.append(_prior_value(_adump[4]))
+            h3.append(_prior_value(_adump[5]))
+            h4.append(_prior_value(_adump[6]))
             
             #move to next line
             dump   = _file.readline()
@@ -645,24 +624,14 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
                 op.append(_adump[0].strip("|"))
                 kernels[-1]     = (kernels[-1],_adump[1])
                 gp_pars[-1]     = (gp_pars[-1],_adump[2])
-                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3])); rvGPpdist.append(_adump[3].split("(")[0])
-                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4])); rvGPpdist.append(_adump[4].split("(")[0])
-                h3[-1]          = (h3[-1],_prior_value(_adump[5])); rvGPpdist.append(_adump[5].split("(")[0])
-                h4[-1]          = (h4[-1],_prior_value(_adump[6])); rvGPpdist.append(_adump[6].split("(")[0])
+                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3]))
+                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4]))
+                h3[-1]          = (h3[-1],_prior_value(_adump[5]))
+                h4[-1]          = (h4[-1],_prior_value(_adump[6]))
                 #move to next rv file    
                 dump =_file.readline()
             else:
                 op.append("--")
-            
-
-            rvGPpdist = [x for x in rvGPpdist if x in ["U", "LU"]]  #remove all other prior types
-            if rvGPpdist!=[]:
-                assert len(set(rvGPpdist))==1, f"prior distribution must be the same for all RVs GP hyperparameters but {rvGPpdist} given for the hyperparameters of {gp_rvlist[-1]}"
-                rvGP_logUprior.append(False if rvGPpdist[0]=="U" else True)
-            
-    if rvGP_logUprior != []:
-        assert len(set(rvGP_logUprior)) == 1, f"prior distribution must be the same for all RVs GP hyperparameters but {rvGP_logUprior} given for the RVs: {gp_rvlist}"    
-    rvGP_logUprior = rvGP_logUprior[0] if (version >= (3,3,11) and rvGP_logUprior != []) else True
     
     rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,rv_unit=RVunit,lc_obj=lc_obj)
     rv_obj.rv_baseline(*np.array(RVbases).T, gamma=gammas,gp=usegpRV,verbose=False) 
@@ -675,7 +644,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in rv_obj._gp_rvs()] if usegpRV!=[] else []
     rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
                     amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,gp_pck=gp_pck,
-                    GP_logUprior=rvGP_logUprior, verbose=verbose)
+                    verbose=verbose)
     _skip_lines(_file,2)                                      #remove 2 comment lines
     
     ## Planet parameters
@@ -686,12 +655,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     #select string in rho_dur with []
     rho_dur = rho_dur[rho_dur.find("[")+1:rho_dur.find("]")]
     pl_pars[rho_dur] = _prior_value(_adump[2])
-    rhodur_logUprior = _adump[2].split("(")[0]
-    if rhodur_logUprior not in ["U", "LU"]:
-        assert rhodur_logUprior in ["N","F","TN"], f"prior distribution for {rho_dur} must one of ['U','LU','N','F','TN'] but {rhodur_logUprior} given"
-        rhodur_logUprior = True
-    else: 
-        rhodur_logUprior = False if rhodur_logUprior=="U" else True
+    
     par_names = ["RpRs","Impact_para", "T_0", "Period", "Eccentricity","omega", "K"]
         
     for n in range(1,nplanet+1):        #load parameters for each planet
@@ -851,7 +815,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     assert len(cont_fac) == len(lc_obj._filnames), f"number of contamination factors must be equal to number of unique filters({len(lc_obj._filnames)}) but len(cont_fac)={len(cont_fac)}"
     _skip_lines(_file,1)                                      #remove 2 comment lines
     
-    lc_obj.planet_parameters(**pl_pars, rhodur_logUprior=rhodur_logUprior,verbose=verbose)
+    lc_obj.planet_parameters(**pl_pars, verbose=verbose)
     lc_obj.limb_darkening(q1,q2,verbose=verbose)
     lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
     lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,include_partial=incl_partial,per_LC_T0=per_LC_T0,verbose=verbose,print_linear_eph=False)

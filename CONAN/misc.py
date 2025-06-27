@@ -105,7 +105,7 @@ def _print_output(self, section: str, file=None):
         DA = self._GP_dict
         max_namefilt_len = max([len(n) for n in self._names+self._filters]+[9])      #max length of lcname/filtname
         _print_gp = f"""# ============ Photometry GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) ========="""
-        _print_gp += f"""\n{spacing}{"name/filt":{max_namefilt_len}s} {"kern":5s} {'par':6s} {'h1:[Amp_ppm]':18s} {'h2:[len_scale1]':18s} {'h3:[Q,η,α,b]':18s} {'h4:[P]':12s} """
+        _print_gp += f"""\n{spacing}{"name/filt":{max_namefilt_len}s} {"kern":5s} {'par':6s} {'h1:[Amp]':18s} {'h2:[len_scale1]':18s} {'h3:[Q,η,α,b]':18s} {'h4:[P]':12s} """
         if DA != {}: 
             if self._sameLCgp.filtflag:
                 for f in self._sameLCgp.filters:
@@ -505,6 +505,12 @@ class _param_obj():
                 lo_lim = v[0] if lo==None else lo
                 hi_lim = v[2] if hi==None else hi
                 params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,user_input,user_data,f'U({v[0]},{v[1]},{v[2]})' if prior_str==None else prior_str]
+            elif len(v)==4 and v[-1]=="LU": #loguniform prior
+                assert v[0]<=v[1]<=v[2],f"{func_call} wrongly defined uniform prior. must be of form (min,start,max) with min<=start<=max but {v} given."
+                step = min(0.001,0.001*np.ptp(v[:-1])) if step==None else step
+                lo_lim = v[0] if lo==None else lo
+                hi_lim = v[2] if hi==None else hi
+                params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,user_input,user_data,f'LU({v[0]},{v[1]},{v[2]})']
             elif len(v)==4: #truncated normal prior
                 assert v[0]<=v[2]<=v[1] and v[3]>0,f"{func_call} wrongly defined trucated normal prior. must be of form (min,max,mean,std) with min<=mean<=max  and std>0, but {v} given."
                 step = 0.1*v[3] if step==None else step

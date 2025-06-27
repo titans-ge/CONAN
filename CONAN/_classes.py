@@ -721,23 +721,30 @@ def get_parameter_names(lc_obj=None, rv_obj=None, fit_obj=None, shared_params={}
     fit_obj : fit object;
         fit object created by the fit_setup class.
     shared_params : dict;
-        dictionary of shared parameters.
+        dictionary of shared parameters, shared_params will be removed from varying parameters
     varying : bool;
         if True, returns only the varying parameters else returns all parameters. Default is True
 
     Returns
     --------
     par_names : list;
-        list of varying or all parameter names .
+        list of varying or all parameter names.
+    prior_dict : dict;
+        dictionary of parameter names and their priors.
+    vary_indices : list;
+        list of indices of the varying parameters in the full parameter names list.
     """
     from .fit_data import run_fit
-    par_names, vary_indices  = run_fit(lc_obj, rv_obj, fit_obj, get_parameter_names=True, 
-                                        shared_params=shared_params, verbose=False)
-    
-    varying_pars = par_names[vary_indices]
-    all_pars     = par_names
+    par_names, vary_indices, prior_str  = run_fit(lc_obj, rv_obj, fit_obj, get_parameter_names=True, 
+                                                    shared_params=shared_params, verbose=False)
+    if varying:
+        prior_dict = {p:prior_str[i] for i,p in enumerate(par_names) if i in vary_indices} 
+        pnames     = par_names[vary_indices] 
+    else:
+        prior_dict = {p:prior_str[i] for i,p in enumerate(par_names)}
+        pnames     = par_names
 
-    return varying_pars if varying else all_pars
+    return pnames, prior_dict, vary_indices
 
 
 class _obj_linker:
@@ -2275,7 +2282,7 @@ class load_lightcurves:
             _print_output(self,"sinusoid")
 
     def add_GP(self, lc_list=None, par=["col0"], kernel=["mat32"], operation=[""],amplitude=[], 
-                lengthscale=[], h3=None, h4= None, gp_pck="ce", GP_logUprior=True,verbose=True):
+                lengthscale=[], h3=None, h4= None, gp_pck="ce", verbose=True):
         """  
         Define GP hyperparameters for each lc. The first hyperparameter h1 is amplitude (standard deviation) 
         in ppm while the second h2 is lengthscale in unit of the desired column. h3 and h4 are the 
@@ -2285,8 +2292,9 @@ class load_lightcurves:
         The priors for the hyperparameters can be defined in following ways:\n
         - fixed value as float or int, e.g amplitude = 2\n
         - normal prior as tuple of len 2, (mu, std) e.g. amplitude = (2, 1)\n
-        - uniform (or loguniform prior) as tuple of length 3, (min,start, max) e.g. amplitude = (1,2,5)\n
-        depending on if `GP_logUprior` is True or False. Default is True
+        - uniform (or loguniform prior) as tuple of length 3, (min,start, max) e.g. amplitude = (1,2,5)
+        - loguniform: add "LU" to a  for loguniform e.g (1,2,5,"LU")
+        - truncnorm as tuple of length 4, (min, max, mu, std) e.g. q1 = (0,1,0.3,0.1)
 
         Note: using GP on a lc sets fit_offset="n" for that lc. users can turn it back on for each lc
         from the ._fit_offset list attribute. e.g. lc_obj._fit_offset = ["y","y","y"]
@@ -2335,9 +2343,6 @@ class load_lightcurves:
         gp_pck : str, list;
             package to use for the GP. Must be one of ["ge","ce","sp"]. Default is "ce" for celerite.
             A str or list of str can be given to specify package for each lc file in GP lc_list.
-        GP_logUprior : bool;
-            whether to use loguniform prior for the GP hyperparameters when tuple of length 3 is given.
-            Default is True. If False, the hyperparameter priors are uniform between min and max
         verbose : bool;
             print output. Default is True.   
 
@@ -2351,13 +2356,9 @@ class load_lightcurves:
             list of GP packages to use for each lc file. Default is None for no GP.
         _allLCgp : bool
             flag to indicate if GP is to be used for all lcs. Default is False.
-        _lcGP_logUprior : bool
-            whether to use loguniform prior for the GP hyperparameters when tuple of length 3 is given.
         _fit_offset : list
             list of flags to indicate if offset is to be fit for each lc file. Default is "y" for all.
             This is set to "n" for the lcs where GP is used.
-        _lcGP_logUprior : bool
-            specifies whether loguniform prior is used for the GP hyperparameters when tuple of length 3 is given.
         """
         # supported 2-hyperparameter kernels
         george_allowed   = dict(kernels=list(george_kernels.keys()),   columns=["col0","col3","col4","col5","col6","col7","col8"])
@@ -2372,7 +2373,6 @@ class load_lightcurves:
         self._GP_dict  = {}
         self._sameLCgp = SN(flag=False, first_index=None, filtflag=False) #flag to indicate if same GP is to be used for all lcs
         self._allLCgp  = False
-        self._lcGP_logUprior = GP_logUprior
 
         if isinstance(lc_list, str) and lc_list in self._names+list(self._filnames):
             lc_list = [lc_list]
@@ -2455,7 +2455,9 @@ class load_lightcurves:
         _  = [DA.pop(item) for item in ["self","verbose"]]
 
         for p in ["par","kernel","operation","amplitude","lengthscale","h3","h4"]:
-            if isinstance(DA[p], (str,int,float,tuple,type(None))): DA[p] = [DA[p]]
+            if isinstance(DA[p], (str,int,float,tuple,type(None))): 
+                DA[p] = [DA[p]]
+                
             if isinstance(DA[p], list): 
                 if self._sameLCgp.flag: 
                     assert len(DA[p])==1, f"add_GP(): {p} must be a list of length 1 (if same GP is to be used for all LCs)."
@@ -2532,23 +2534,24 @@ class load_lightcurves:
                     assert list_item in ["+","*",""],f'add_GP(): {p} must be one of ["+","*",""] but {list_item} given.'
 
                 if p in ["amplitude", "lengthscale","h3","h4"]:
-                    if isinstance(list_item, (int,float,type(None))): pass
+                    if isinstance(list_item, (int,float,type(None))): 
+                        pass
                     elif isinstance(list_item, tuple):
                         if isinstance(DA["par"][i],tuple): #if 2 kernels defined
                             for tup in list_item:
-                                if isinstance(tup, (int,float,type(None))): pass
+                                if isinstance(tup, (int,float,type(None))): 
+                                    pass
                                 elif isinstance(tup, tuple): 
                                     assert len(tup) in [2,3,4],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
-                                    if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
-                                    if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
+                                    # if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
+                                    # if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
                                 else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {tup} given.")
                         else:
                             assert len(list_item) in [2,3,4],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
-                            if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
-                            if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
+                            # if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
+                            # if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
                     else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {list_item} given.")
 
-        pdist = "LU" if self._lcGP_logUprior else "U"
         #setup parameter objects
         for i,lc in enumerate(lc_list):
             self._fit_offset[self._names.index(lc)] = "n" # do not fit offset if fitting using GP
@@ -2603,7 +2606,16 @@ class load_lightcurves:
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],   #bounds_lo has a lower limit of 1minute (0.0007d) or 0.0007ppm
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
-                                                                        prior_str=f'{pdist}({v[0]},{v[1]},{v[2]})')
+                                                                        prior_str=f'U({v[0]},{v[1]},{v[2]})')
+                        elif len(v)==4 and v[-1]=="LU":
+                            if (self._sameLCgp.flag and lc!=self._sameLCgp.LCs[0]): steps=0 
+                            elif (self._sameLCgp.filtflag and lc!=self._sameLCgp.LCs[filt][0]): steps=0
+                            else: steps = min(0.001,0.001*np.ptp(v[:-1]))
+                            self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
+                                                                        prior="n", prior_mean=v[1], prior_width_lo=0,
+                                                                        prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],   #bounds_lo has a lower limit of 1minute (0.0007d) or 0.0007ppm
+                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        prior_str=f'LU({v[0]},{v[1]},{v[2]})')
                         elif len(v)==4:
                             if (self._sameLCgp.flag and lc!=self._sameLCgp.LCs[0]): steps=0 
                             elif (self._sameLCgp.filtflag and lc!=self._sameLCgp.LCs[filt][0]): steps==0
@@ -2621,7 +2633,7 @@ class load_lightcurves:
     
     def planet_parameters(self, RpRs=0, Impact_para=0, rho_star=None, Duration=None, T_0=0, Period=0, 
                             Eccentricity=None, omega=None, sesinw=None, secosw=None, K=0, 
-                            rhodur_logUprior=True,verbose=True):
+                            verbose=True):
         """
         Define parameters and priors of model parameters. By default, the parameters are fixed to 
         the given values. The parameters can be defined in following ways:\n
@@ -2631,8 +2643,8 @@ class load_lightcurves:
         - uniform prior given as tuple of length 3, (min, start, max) e.g. RpRs = (0,0.1,0.2). \n
         
         if tuple of length 3 is specified for rho_star or Duration, the user can specify whether to use 
-        uniform or loguniform by setting the rhodur_logUprior flag. The default True to use loguniform 
-        prior (see https://iopscience.iop.org/article/10.3847/1538-3881/ac7f2f)
+        uniform or loguniform. loguniform maybe be preferred for rho_star and Duration priors 
+        (see https://iopscience.iop.org/article/10.3847/1538-3881/ac7f2f)
 
         Users can choose the between Eccentricity-omega or sesinw-secosw parameterization. Note that
         Eccentricity-omega is still converted to sesinw-secosw for efficient sampling. 
@@ -2660,8 +2672,6 @@ class load_lightcurves:
             Default is None which fixes both values to 0, which implies Eccentricity=0, omega=90
         K : float, tuple;
             Radial velocity semi-amplitude in same unit as the data. Default is 0.
-        rhodur_logUprior : bool;
-            whether to use loguniform or uniform prior for rho_star and Duration. Default is True.
         verbose : bool;
             print output. Default is True.
 
@@ -2670,7 +2680,6 @@ class load_lightcurves:
         _planet_pars : dict
             dictionary of planet parameters for each planet.
         """
-        self._rhodur_logUprior = rhodur_logUprior
         if rho_star is None and Duration is None: rho_star = 0
         if self._nplanet > 1: 
             rho_star = rho_star if rho_star is not None else 0
@@ -2732,9 +2741,6 @@ class load_lightcurves:
                     if len(DA[par][n]) in [3,4]:
                         if par in ["rho_star", "Duration", "Impact_para", "Eccentricity", "Period", "K"]:
                             assert DA[par][n][0]>=0, f'planet_parameters(): lower bound of {par} must be >=0 but {DA[par][n][0]} given.'
-                    if len(DA[par][n])==3:   
-                        if par in ["rho_star", "Duration"]: 
-                            pr_str = f"LU({DA[par][n][0]},{DA[par][n][1]},{DA[par][n][2]})" if self._rhodur_logUprior else f"U({DA[par][n][0]},{DA[par][n][1]},{DA[par][n][2]})" 
                 
                 #fitting parameter object
                 DA[par][n] = _param_obj.from_tuple(DA[par][n],lo=lo_lim ,hi=up_lim,user_input=DA[par][n],prior_str=pr_str,func_call="planet_parameters():")
@@ -2811,7 +2817,7 @@ class load_lightcurves:
                 lo_lim, up_lim = None,None
                 if isinstance(DA[par][n], tuple):
                     if len(DA[par][n])==2:   #set bounds for the parameter so the normal prior is truncated
-                        if par == "rho_star":                   lo_lim, up_lim = 0., 10.
+                        if par == "rho_star":                   lo_lim, up_lim = 0., 20.
                         elif par == "Eccentricity":             lo_lim, up_lim = 0., 1.
                         elif par in ["Period", "K","Duration"]: lo_lim, up_lim = 0., None
                         elif par == "RpRs":                     lo_lim, up_lim = -1., 1.
@@ -3361,7 +3367,8 @@ class load_lightcurves:
         bound_hi1 = bound_hi2 = 0
         sig_lo1 = sig_lo2 = 0
         sig_hi1 = sig_hi2 = 0
-        step1 = step2 = 0 
+        step1 = step2 = 0
+        prior_str1 = prior_str2 = "F(0)" 
 
         DA = deepcopy(locals())
         _ = DA.pop("self")            #remove self from dictionary
@@ -3379,6 +3386,7 @@ class load_lightcurves:
                 if isinstance(d, (int,float)):  #fixed
                     DA[par][i] = d
                     DA[f"step{par[-1]}"][i] = DA[f"bound_lo{par[-1]}"][i] = DA[f"bound_hi{par[-1]}"][i] = 0
+                    DA[f"prior_str{par[-1]}"][i] = f"F({d})"
                 elif isinstance(d, tuple):
                     if len(d) == 2:  #normal prior
                         DA[par][i] = d[0]
@@ -3386,6 +3394,7 @@ class load_lightcurves:
                         DA[f"bound_lo{par[-1]}"][i] = 0
                         DA[f"bound_hi{par[-1]}"][i] = 1
                         DA[f"step{par[-1]}"][i] = 0.1*DA[f"sig_lo{par[-1]}"][i]
+                        DA[f"prior_str{par[-1]}"][i] = f"N({d[0]:.4f},{d[1]:.4f})"
 
                     if len(d) == 3:  #uniform prior
                         assert d[0]<=d[1]<=d[2],f'limb_darkening(): uniform prior be (lo_lim, start_val, uplim) where lo_lim <= start_val <= uplim but {d} given.'
@@ -3395,15 +3404,27 @@ class load_lightcurves:
                         DA[f"bound_hi{par[-1]}"][i] = d[2]
                         DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = 0
                         DA[f"step{par[-1]}"][i] = min(0.001, np.ptp([d[0],d[2]]))
+                        DA[f"prior_str{par[-1]}"][i] = f"U({d[0]:.4f},{d[1]:.4f},{d[2]:.4f})"
+
+                    if len(d) == 4 and d[-1]=="LU":  #loguniform prior
+                        assert d[0]<=d[1]<=d[2],f'limb_darkening(): uniform prior be (lo_lim, start_val, uplim) where lo_lim <= start_val <= uplim but {d} given.'
+                        assert (d[0]>=0  and d[2]<=1),f'limb_darkening(): uniform prior must be (lo_lim, val, uplim) where lo_lim>=0 and uplim<=1 but {d} given.'
+                        DA[par][i] = d[1]
+                        DA[f"bound_lo{par[-1]}"][i] = d[0]
+                        DA[f"bound_hi{par[-1]}"][i] = d[2]
+                        DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = 0
+                        DA[f"step{par[-1]}"][i] = min(0.001, np.ptp([d[0],d[2]]))
+                        DA[f"prior_str{par[-1]}"][i] = f"LU({d[0]:.4f},{d[1]:.4f},{d[2]:.4f})"
 
                     if len(d) == 4:  #trunc norm prior
                         assert d[0]<=d[2]<=d[1],f'limb_darkening(): truncated normal must be (min,max,mu, sigma) where min < mu < max  but {d} given.'
                         assert (d[0]>=0  and d[1]<=1),f'limb_darkening(): truncated normal must be (min,max,mu, sigma) where min>=0 and max<=1'
-                        DA[par][i] = d[1]
+                        DA[par][i] = d[2]
                         DA[f"bound_lo{par[-1]}"][i] = d[0]
                         DA[f"bound_hi{par[-1]}"][i] = d[1]
                         DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = d[3]
                         DA[f"step{par[-1]}"][i] = 0.1*DA[f"sig_lo{par[-1]}"][i]
+                        DA[f"prior_str{par[-1]}"][i] = f"TN({d[0]:.4f},{d[1]:.4f},{d[2]:.4f},{d[3]:.4f})"
 
         DA["priors"] = [0]*nfilt
         for i in range(nfilt):
@@ -4238,7 +4259,7 @@ class load_rvs:
 
 
     def add_rvGP(self, rv_list=None, par=["col0"], kernel=["mat32"], operation=[""],amplitude=[], 
-                lengthscale=[], h3=None, h4=None, gp_pck="ce", GP_logUprior=True, verbose=True):
+                lengthscale=[], h3=None, h4=None, A=None, B=None, gp_pck="ce",  verbose=True):
         """  
         Define GP hyperparameters for each RV. The first hyperparameter h1 is amplitude (standard deviation) 
         in RV unit while the second h2 is lengthscale in unit of the desired column. h3 and h4 are 
@@ -4248,8 +4269,9 @@ class load_rvs:
         The priors can be defined in following ways:\n
         - fixed value as float or int, e.g amplitude = 2\n
         - normal prior as tuple of len 2, (mu, std) e.g. amplitude = (2, 1)\n
-        - uniform (or loguniform prior) as tuple of length 3, (min,start, max) e.g. amplitude = (1,2,5)\n
-        depending on if `GP_logUprior` is True or False. Default is True
+        - uniform as tuple of length 3, (min, start, max) e.g. amplitude = (1,2,5). 
+        - loguniform: add "LU" to a  for loguniform e.g (1,2,5,"LU")
+        - truncnorm as tuple of length 4, (min, max, mu, std) e.g. q1 = (0,1,0.3,0.1)
 
         if multiplying two GP kernels together, the amplitudes are degenerate and only one amplitude is 
         required. set the second amplitude to –1 to disable it.
@@ -4290,12 +4312,10 @@ class load_rvs:
         h3 : float, tuple, list;
             3rd hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4
         h4 : float, tuple, list;
-            4th hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4        
+            4th hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4  
+        A  : float, tuple, list;      
         gp_pck : str, list;
             package to use for the GP. Must be one of ["ge","ce","sp"]. Default is "ce" for celerite.
-        GP_logUprior : bool;
-            whether to use loguniform prior for the GP hyperparameters when tuple of length 3 is given.
-            Default is True. If False, the hyperparameter priors are uniform between  min and max
         verbose : bool;
             print output. Default is True.   
 
@@ -4307,14 +4327,10 @@ class load_rvs:
             namespace object to indicate if same GP is used for all RVs  
         _allRVgp : bool;
             whether all RVs have GP
-        _rvGP_logUprior : bool;
-            whether loguniform prior is used for the GP hyperparameters
         _useGPrv : list;
             list of 'n', 'ce','ge','sp' for each light curve indicating if a GP is to be fitted.
         _gp_rvs : list;
             list of rvs with GP fitting
-        _rvGP_logUprior : bool;
-            specifies whether loguniform prior is used for the GP hyperparameters when tuple of length 3 is given.
 
         """
         # supported 2-hyperparameter kernels
@@ -4330,7 +4346,6 @@ class load_rvs:
         self._rvGP_dict = {}
         self._sameRVgp  = SN(flag = False, first_index =None)
         self._allRVgp = False
-        self._rvGP_logUprior = GP_logUprior
 
 
         if rv_list is None or rv_list == []:
@@ -4372,12 +4387,16 @@ class load_rvs:
         _  = [DA.pop(item) for item in ["self","verbose"]]
 
         for p in ["par","kernel","operation","amplitude","lengthscale","h3","h4"]:
-            if isinstance(DA[p], (str,int,float,tuple,type(None))): DA[p] = [DA[p]]   #convert to list
+            if isinstance(DA[p], (str,int,float,tuple,type(None))): 
+                DA[p] = [DA[p]]   #convert to list
+
             if isinstance(DA[p], list): 
                 if self._sameRVgp.flag:    #ensure same inputs for all rvs with indicated gp
                     assert len(DA[p])==1 or len(DA[p])==len(rv_list), f"add_rvGP(): {p} must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
-                    if len(DA[p])==2: assert DA[p][0] == DA[p][1],f"add_rvGP(): {p} must be same for all rv files if sameGP is used."
-                if len(DA[p])==1: DA[p] = DA[p]*len(rv_list)
+                    if len(DA[p])==2: 
+                        assert DA[p][0] == DA[p][1],f"add_rvGP(): {p} must be same for all rv files if sameGP is used."
+                if len(DA[p])==1: 
+                    DA[p] = DA[p]*len(rv_list)
             
             assert len(DA[p])==len(rv_list), f"add_rvGP(): {p} must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
             
@@ -4438,23 +4457,24 @@ class load_rvs:
                     assert list_item in ["+","*",""],f'add_rvGP(): {p} must be one of ["+","*",""] but {list_item} given.'
 
                 if p in ["amplitude", "lengthscale","h3","h4"]:
-                    if isinstance(list_item, (int,float,type(None))): pass
+                    if isinstance(list_item, (int,float,type(None))): 
+                        pass
                     elif isinstance(list_item, tuple):
                         if isinstance(DA["par"][i],tuple):
                             for tup in list_item:
-                                if isinstance(tup, (int,float,type(None))): pass
+                                if isinstance(tup, (int,float,type(None))): 
+                                    pass
                                 elif isinstance(tup, tuple): 
                                     assert len(tup) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3 but {tup} given.'
-                                    if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
-                                    if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
+                                    # if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
+                                    # if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
                                 else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3 or float/int but {tup} given.")
                         else:
                             assert len(list_item) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3 but {tup} given.'
-                            if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
-                            if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
+                            # if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
+                            # if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
                     else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3 or float/int but {list_item} given.")
 
-        pdist = "LU" if self._rvGP_logUprior else "U"
         #setup parameter objects
         for i,rv in enumerate(rv_list):
             self._rvGP_dict[rv] = {}
@@ -4500,7 +4520,14 @@ class load_rvs:
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
-                                                                        prior_str=f'{pdist}({v[0]},{v[1]},{v[2]})')
+                                                                        prior_str=f'U({v[0]},{v[1]},{v[2]})')
+                        elif len(v)==4 and v[-1]=="LU":
+                            steps = 0 if (self._sameRVgp.flag and i!=0) else min(0.001,0.001*np.ptp(v[:-1]))
+                            self._rvGP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
+                                                                        prior="n", prior_mean=v[1], prior_width_lo=0,
+                                                                        prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],
+                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        prior_str=f'LU({v[0]},{v[1]},{v[2]})')                            
                         elif len(v)==4:
                             steps = 0 if (self._sameRVgp.flag and i!=0) else 0.1*v[3]   #if sameRVgp is set, only first pars will jump and be used for all rvs
                             self._GP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[2],step_size=steps,prior="p", 

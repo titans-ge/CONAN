@@ -465,6 +465,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     prior    = np.concatenate(([rhoSt_Dur.prior_mean],    [CP[f"pl{n}"][key].prior_mean     for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Prior centers
     priorlow = np.concatenate(([rhoSt_Dur.prior_width_lo],[CP[f"pl{n}"][key].prior_width_lo for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Prior sigma low side
     priorup  = np.concatenate(([rhoSt_Dur.prior_width_hi],[CP[f"pl{n}"][key].prior_width_hi for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Prior sigma high side
+    prior_str= np.concatenate(([rhoSt_Dur.prior_str],     [CP[f"pl{n}"][key].prior_str      for n in range(1,npl+1)  for key in CP[f"pl1"].keys()]))  # Prior type (p or y)
     pnames   = np.concatenate((["rho_star" if rho_dur=='rho' else "Duration"],  [nm+(f"_{n}" if npl>1 else "")      for n in range(1,npl+1)  for nm in pnames]))
 
     extcens  = np.concatenate(([rhoSt_Dur.prior_mean],     [CP[f"pl{n}"][key].prior_mean     for n in range(1,npl+1)  for key in CP[f"pl1"].keys()])) # External parameter prior mean
@@ -498,6 +499,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior     = np.concatenate((prior,    [lc_obj._ttvs.prior[i].prior_mean]))
             priorlow  = np.concatenate((priorlow, [lc_obj._ttvs.prior[i].prior_width_lo]))
             priorup   = np.concatenate((priorup,  [lc_obj._ttvs.prior[i].prior_width_hi]))
+            prior_str = np.concatenate((prior_str, [lc_obj._ttvs.prior[i].prior_str]))
             pnames    = np.concatenate((pnames,   [lc_obj._ttvs.fit_labels[i]]))
             njumpphot = njumpphot+1
     else:
@@ -515,6 +517,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior         = np.concatenate((prior,    [drprs.prior_mean]))
             priorlow      = np.concatenate((priorlow, [drprs.prior_width_lo]))
             priorup       = np.concatenate((priorup,  [drprs.prior_width_hi]))
+            prior_str    = np.concatenate((prior_str, [drprs.prior_str]))
             pnames        = np.concatenate((pnames,   [f+'_dRpRs']))
             
     nocc = len(filnames)
@@ -527,6 +530,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_occ[f].prior_mean]))
         priorlow   = np.concatenate((priorlow, [DA_occ[f].prior_width_lo]))
         priorup    = np.concatenate((priorup,  [DA_occ[f].prior_width_hi]))
+        prior_str = np.concatenate((prior_str, [DA_occ[f].prior_str]))
         pnames     = np.concatenate((pnames,   [f+'_DFocc']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_occ[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
@@ -540,6 +544,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_Fn[f].prior_mean]))
         priorlow   = np.concatenate((priorlow, [DA_Fn[f].prior_width_lo]))
         priorup    = np.concatenate((priorup,  [DA_Fn[f].prior_width_hi]))
+        prior_str  = np.concatenate((prior_str, [DA_Fn[f].prior_str]))
         pnames     = np.concatenate((pnames,   [f+'_Fn']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_Fn[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
@@ -553,6 +558,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_off[f].prior_mean]))
         priorlow   = np.concatenate((priorlow, [DA_off[f].prior_width_lo]))
         priorup    = np.concatenate((priorup,  [DA_off[f].prior_width_hi]))
+        prior_str  = np.concatenate((prior_str, [DA_off[f].prior_str]))
         pnames     = np.concatenate((pnames,   [f+'_ph_off']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_off[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
@@ -566,6 +572,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_Aev[f].prior_mean]))
         priorlow   = np.concatenate((priorlow, [DA_Aev[f].prior_width_lo]))
         priorup    = np.concatenate((priorup,  [DA_Aev[f].prior_width_hi]))
+        prior_str  = np.concatenate((prior_str, [DA_Aev[f].prior_str]))
         pnames     = np.concatenate((pnames,   [f+'_Aev']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_Aev[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
@@ -579,6 +586,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_Adb[f].prior_mean]))
         priorlow   = np.concatenate((priorlow, [DA_Adb[f].prior_width_lo]))
         priorup    = np.concatenate((priorup,  [DA_Adb[f].prior_width_hi ]))
+        prior_str  = np.concatenate((prior_str,[DA_Adb[f].prior_str]))
         pnames     = np.concatenate((pnames,   [f+'_Adb']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_Adb[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1  
@@ -592,6 +600,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_f1ev[f].prior_mean]))
         priorlow   = np.concatenate((priorlow, [DA_f1ev[f].prior_width_lo]))
         priorup    = np.concatenate((priorup,  [DA_f1ev[f].prior_width_hi]))
+        prior_str  = np.concatenate((prior_str,[DA_f1ev[f].prior_str]))
         pnames     = np.concatenate((pnames,   [f+'_f1ev']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_f1ev[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1
@@ -605,6 +614,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_cont[f].prior_mean]))
         priorlow   = np.concatenate((priorlow, [DA_cont[f].prior_width_lo]))
         priorup    = np.concatenate((priorup,  [DA_cont[f].prior_width_hi ]))
+        prior_str  = np.concatenate((prior_str,[DA_cont[f].prior_str]))
         pnames     = np.concatenate((pnames,   [f+'_cont']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_cont[f].step_size != 0.: njumpphot[k]=njumpphot[k]+1          
@@ -618,6 +628,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [DA_ld["q1"][i],        DA_ld["q2"][i]]))
         priorlow   = np.concatenate((priorlow, [DA_ld["sig_lo1"][i],   DA_ld["sig_lo2"][i]]))
         priorup    = np.concatenate((priorup,  [DA_ld["sig_hi1"][i],   DA_ld["sig_hi2"][i]]))
+        prior_str  = np.concatenate((prior_str,[DA_ld["prior_str1"][i], DA_ld["prior_str2"][i]]))
         pnames     = np.concatenate((pnames,   [f+'_q1',f+'_q2']))
         k = np.where(np.array(lc_obj._filters)== f)     #  get indices where the filter name is the same as the one in the input file
         if DA_ld["step1"][i] != 0.: njumpphot[k]=njumpphot[k]+1
@@ -636,6 +647,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
+            prior_str   = np.concatenate((prior_str,[f"U({pmin[-1]:.4f},{jitt_start[i]:.4f},{pmax[-1]:.4f})"]), axis=0)
             pnames      = np.concatenate((pnames,  [f"lc{i+1}_logjitter"]), axis=0)
 
         else:
@@ -646,6 +658,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
+            prior_str   = np.concatenate((prior_str,["F(-50)"]), axis=0)
             pnames      = np.concatenate((pnames,  [f"lc{i+1}_logjitter"]), axis=0)
     
     if custom_LCfunc.func != None: 
@@ -657,6 +670,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [custom_LCfunc.par_dict[key].prior_mean     for key in custom_LCfunc.par_dict.keys()]))
         priorlow   = np.concatenate((priorlow, [custom_LCfunc.par_dict[key].prior_width_lo for key in custom_LCfunc.par_dict.keys()]))
         priorup    = np.concatenate((priorup,  [custom_LCfunc.par_dict[key].prior_width_hi for key in custom_LCfunc.par_dict.keys()]))
+        prior_str  = np.concatenate((prior_str, [custom_LCfunc.par_dict[key].prior_str     for key in custom_LCfunc.par_dict.keys()]))
         pnames     = np.concatenate((pnames,   list(custom_LCfunc.par_dict.keys())) )
         njumpphot  = njumpphot + custom_LCfunc.nfree
 
@@ -690,6 +704,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         prior      = np.concatenate((prior,    [sinus.__dict__[p].prior_mean]),     axis=0)
                         priorlow   = np.concatenate((priorlow, [sinus.__dict__[p].prior_width_hi]), axis=0)
                         priorup    = np.concatenate((priorup,  [sinus.__dict__[p].prior_width_hi]), axis=0)
+                        prior_str  = np.concatenate((prior_str,[sinus.__dict__[p].prior_str]),      axis=0)
                         pnames     = np.concatenate((pnames,   [f'{trig}_{f"{n}*" if n>1 else ""}{col_alias}_{p}_same']))  #e.g Same_sin(2*C5)_Amp
                         # if sinus.__dict__[p].step_size>0: njumpphot  = njumpphot + 1
                         sine_conf.pars["same"].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars list
@@ -716,6 +731,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             prior      = np.concatenate((prior,    [sinus.__dict__[p].prior_mean]),     axis=0)
                             priorlow   = np.concatenate((priorlow, [sinus.__dict__[p].prior_width_hi]), axis=0)
                             priorup    = np.concatenate((priorup,  [sinus.__dict__[p].prior_width_hi]), axis=0)
+                            prior_str  = np.concatenate((prior_str,[sinus.__dict__[p].prior_str]),      axis=0)
                             pnames     = np.concatenate((pnames,   [f'{filt}_{trig}_{f"{n}*" if n>1 else ""}{col_alias}_{p}']))  #e.g V_sin(2*C5)_Amp
                             sine_conf.pars[filt].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars list
                             if p!="Amp": break # only continue the n loop for Amp and not for P and x0 which remain same
@@ -745,6 +761,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             prior      = np.concatenate((prior,    [sinus.__dict__[p].prior_mean]),     axis=0)
                             priorlow   = np.concatenate((priorlow, [sinus.__dict__[p].prior_width_hi]), axis=0)
                             priorup    = np.concatenate((priorup,  [sinus.__dict__[p].prior_width_hi]), axis=0)
+                            prior_str  = np.concatenate((prior_str,[sinus.__dict__[p].prior_str]),      axis=0)
                             pnames     = np.concatenate((pnames,   [f'{lc_alias}_{trig}_{f"{n}*" if n>1 else ""}{col_alias}_{p}']))  #e.g lc1_sin(2*C5)_Amp
                             sine_conf.pars[nm].append(sinus.__dict__[p].start_value)  #append the start values to the sine_conf.pars_dict
                             if p!="Amp": break # only continue the n loop for Amp and not for P and x0 which remain same
@@ -763,6 +780,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior       = np.concatenate((prior,   [rv_dict["gamma"][i].prior_mean]),     axis=0)
         priorlow    = np.concatenate((priorlow,[rv_dict["gamma"][i].prior_width_lo]), axis=0)
         priorup     = np.concatenate((priorup, [rv_dict["gamma"][i].prior_width_hi]), axis=0)
+        prior_str   = np.concatenate((prior_str,[rv_dict["gamma"][i].prior_str]),     axis=0)
         pnames      = np.concatenate((pnames,  [f"rv{i+1}_gamma"]), axis=0)
         if rv_dict["gamma"][i].step_size!=0: njumpRV[i]=njumpRV[i]+1
 
@@ -778,6 +796,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
+            prior_str   = np.concatenate((prior_str,[f"U({pmin[-1]:.4f},{rvjitt_start[i]:.4f},{pmax[-1]:.4f})"]), axis=0)
             pnames      = np.concatenate((pnames,  [f"rv{i+1}_jitter"]), axis=0)
 
         else:
@@ -788,6 +807,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             prior       = np.concatenate((prior,   [0.]), axis=0)
             priorlow    = np.concatenate((priorlow,[0.]), axis=0)
             priorup     = np.concatenate((priorup, [0.]), axis=0)
+            prior_str   = np.concatenate((prior_str,["F(0)"]), axis=0)
             pnames      = np.concatenate((pnames,  [f"rv{i+1}_jitter"]), axis=0)
     
     if custom_RVfunc.func != None: 
@@ -799,6 +819,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior      = np.concatenate((prior,    [custom_RVfunc.par_dict[key].prior_mean     for key in custom_RVfunc.par_dict.keys()]))
         priorlow   = np.concatenate((priorlow, [custom_RVfunc.par_dict[key].prior_width_lo for key in custom_RVfunc.par_dict.keys()]))
         priorup    = np.concatenate((priorup,  [custom_RVfunc.par_dict[key].prior_width_hi for key in custom_RVfunc.par_dict.keys()]))
+        prior_str  = np.concatenate((prior_str, [custom_RVfunc.par_dict[key].prior_str     for key in custom_RVfunc.par_dict.keys()]))
         pnames     = np.concatenate((pnames,   list(custom_RVfunc.par_dict.keys())) )
         njumpRV    = njumpRV + custom_RVfunc.nfree        
 
@@ -812,6 +833,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     GPstepsizes = []  # list to hold the GP step sizes for each lc
     GPindex     = []  # this array contains the lightcurve index of the lc it applies to
     GPprior     = []  # list to hold the GP priors for each lc
+    GPprior_str = []  # list to hold the GP prior strings for each lc
     GPpriwid    = []  # list to hold the GP prior widths for each lc
     GPlimup     = []  # list to hold the GP upper limits for each lc
     GPlimlo     = []  # list to hold the GP lower limits for each lc
@@ -844,7 +866,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         
         #baseline parameters
         # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
-        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dcol8, dsin, dCNM, nbc = basecoeff(bases[i],useSpline_lc[LCnames[i]],bases_init[i],lcbases_lims[i],fit_offset[i])  # the baseline coefficients for this lightcurve; each is a 2D array
+        offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dcol8, dsin, dCNM, nbc, pr_str = basecoeff(bases[i],useSpline_lc[LCnames[i]],bases_init[i],lcbases_lims[i],fit_offset[i])  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot      = nbc_tot+nbc # add up the number of jumping baseline coeff
         njumpphot[i] = njumpphot[i]+nbc   # each LC has another jump pm
 
@@ -863,7 +885,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior     = np.concatenate((prior,    np.zeros(22)))
         priorlow  = np.concatenate((priorlow, np.zeros(22)))
         priorup   = np.concatenate((priorup,  np.zeros(22)))
-        pnames    = np.concatenate((pnames, [f"lc{i+1}_off",f"lc{i+1}_A0",f"lc{i+1}_B0",f"lc{i+1}_C0",f"lc{i+1}_D0",
+        prior_str = np.concatenate((prior_str, pr_str))
+        pnames    = np.concatenate((pnames, [f"lc{i+1}_off",
+                                            f"lc{i+1}_A0",f"lc{i+1}_B0",f"lc{i+1}_C0",f"lc{i+1}_D0",
                                             f"lc{i+1}_A3",f"lc{i+1}_B3",
                                             f"lc{i+1}_A4",f"lc{i+1}_B4",
                                             f"lc{i+1}_A5",f"lc{i+1}_B5",
@@ -915,6 +939,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 GPpriwid    = np.concatenate((GPpriwid,    [thisLCgp[f"amplitude{n}"].prior_width_lo, thisLCgp[f"lengthscale{n}"].prior_width_lo, thisLCgp[f"h3{n}"].prior_width_lo, thisLCgp[f"h4{n}"].prior_width_lo]), axis=0)
                 GPlimup     = np.concatenate((GPlimup,     [thisLCgp[f"amplitude{n}"].bounds_hi, thisLCgp[f"lengthscale{n}"].bounds_hi, thisLCgp[f"h3{n}"].bounds_hi, thisLCgp[f"h4{n}"].bounds_hi]), axis=0)
                 GPlimlo     = np.concatenate((GPlimlo,     [thisLCgp[f"amplitude{n}"].bounds_lo, thisLCgp[f"lengthscale{n}"].bounds_lo, thisLCgp[f"h3{n}"].bounds_lo, thisLCgp[f"h4{n}"].bounds_lo]), axis=0)
+                GPprior_str = np.concatenate((GPprior_str, [thisLCgp[f"amplitude{n}"].prior_str, thisLCgp[f"lengthscale{n}"].prior_str, thisLCgp[f"h3{n}"].prior_str, thisLCgp[f"h4{n}"].prior_str]), axis=0)
                 if sameLCgp.flag:
                     if i == sameLCgp.first_index:
                         GPnames = np.concatenate((GPnames,     [f"GPlcSame_Amp{n+1}_{gpcol}",f"GPlcSame_len{n+1}_{gpcol}",f"GPlcSame_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",f"GPlcSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), axis=0)
@@ -1018,7 +1043,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if verbose: print('Setting up Spline fitting for RVs ...')  
     
     rvGPobjects,rvGPnames,rv_pargps,rv_gpkerns,rv_gp_colnames  = [],[],[],[],[]
-    rvGPparams,rvGPstepsizes,rvGPindex,rvGPprior,rvGPpriwid,rvGPlimup,rvGPlimlo = [],[],[],[],[],[],[]
+    rvGPparams,rvGPstepsizes,rvGPindex,rvGPprior,rvGPprior_str,rvGPpriwid,rvGPlimup,rvGPlimlo = [],[],[],[],[],[],[],[]
     rvGPdict = {} if rv_obj is None else rv_obj._rvGP_dict
     sameRVgp = False if rv_obj is None else rv_obj._sameRVgp                                           # use spline to interpolate the light curve
 
@@ -1037,7 +1062,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         Pin      = sinPs[i]
 
         #rv baseline 
-        dcol0RV, dcol3RV, dcol4RV, dcol5RV,dsinRV,nbcRV = basecoeffRV(RVbases[i],Pin,RVbases_init[i],rvbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
+        dcol0RV, dcol3RV, dcol4RV, dcol5RV,dsinRV,nbcRV,pr_str = basecoeffRV(RVbases[i],Pin,RVbases_init[i],rvbases_lims[i])  # the baseline coefficients for this lightcurve; each is a 2D array
         nbc_tot = nbc_tot+nbcRV # add up the number of jumping baseline coeff
         abvar=np.concatenate(([dcol0RV[1,:],dcol3RV[1,:],dcol4RV[1,:],dcol5RV[1,:],dsinRV[1,:]]))
         abind=np.where(abvar!=0.)
@@ -1054,6 +1079,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         prior     = np.concatenate((prior,    np.zeros(12)))
         priorlow  = np.concatenate((priorlow, np.zeros(12)))
         priorup   = np.concatenate((priorup,  np.zeros(12)))
+        prior_str = np.concatenate((prior_str, pr_str))
         pnames    = np.concatenate((pnames, [f"rv{i+1}_A0",f"rv{i+1}_B0",
                                             f"rv{i+1}_A3",f"rv{i+1}_B3",
                                             f"rv{i+1}_A4",f"rv{i+1}_B4",
@@ -1086,6 +1112,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 rvGPpriwid    = np.concatenate((rvGPpriwid,    [thisRVgp[f"amplitude{n}"].prior_width_lo, thisRVgp[f"lengthscale{n}"].prior_width_lo, thisRVgp[f"h3{n}"].prior_width_lo, thisRVgp[f"h4{n}"].prior_width_lo]), axis=0)
                 rvGPlimup     = np.concatenate((rvGPlimup,     [thisRVgp[f"amplitude{n}"].bounds_hi, thisRVgp[f"lengthscale{n}"].bounds_hi, thisRVgp[f"h3{n}"].bounds_hi, thisRVgp[f"h4{n}"].bounds_hi]), axis=0)
                 rvGPlimlo     = np.concatenate((rvGPlimlo,     [thisRVgp[f"amplitude{n}"].bounds_lo, thisRVgp[f"lengthscale{n}"].bounds_lo, thisRVgp[f"h3{n}"].bounds_lo, thisRVgp[f"h4{n}"].bounds_lo]), axis=0)
+                rvGPprior_str = np.concatenate((rvGPprior_str, [thisRVgp[f"amplitude{n}"].prior_str, thisRVgp[f"lengthscale{n}"].prior_str, thisRVgp[f"h3{n}"].prior_str, thisRVgp[f"h4{n}"].prior_str]), axis=0)
                 if sameRVgp.flag:
                     if i == sameRVgp.first_index:
                         rvGPnames = np.concatenate((rvGPnames,     [f"GPrvSame_Amp{n+1}_{gpcol}",f"GPrvSame_len{n+1}_{gpcol}",f"GPrvSame_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",f"GPrvSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), axis=0)
@@ -1349,6 +1376,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     pnames_all   = np.concatenate((pnames, GPnames,rvGPnames))
     initial      = np.concatenate((params, GPparams,rvGPparams))
+    prior_str_all= np.concatenate((prior_str, GPprior_str,rvGPprior_str))
     gpsteps      = np.concatenate((GPstepsizes,rvGPstepsizes))
     steps        = np.concatenate((stepsize, gpsteps))
 
@@ -1359,6 +1387,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             assert s_recip in pnames_all, f"Shared parameter '{s_recip}' not found in parameter names"
             initial[pnames_all == s_recip] = np.nan#f"->{sp}"#initial[pnames_all == sp] . #specify that it takes its value from a shared parameter
             steps[pnames_all == s_recip] = 0
+            prior_str_all[pnames_all == s_recip] = f"F(share)"  # update the prior string to indicate it is shared
 
     priors       = np.concatenate((prior, GPprior,rvGPprior))
     priwid       = (priorup + priorlow) / 2.
@@ -1373,7 +1402,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     jumping_rvGP = np.nonzero(np.concatenate(([0]*len(stepsize),[0]*len(GPstepsizes),rvGPstepsizes)))  # the indices of all the jumping parameters that are GPs for the RVs
 
     if get_parameter_names:
-        return pnames_all, jumping
+        return pnames_all, jumping[0], prior_str_all
     
     pindices = []       #holds the indices of the jumping parameters for each lc/rv in the list contained only of jumping parameters--> pnames_all[jumping]
     for i in range(nphot):
@@ -1398,6 +1427,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     ###### create prior distribution for the jumping parameters #####
     ijnames    = np.where(steps != 0.)    #indices of the jumping parameters
     jnames     = pnames_all[[ijnames][0]]  # jnames are the names of the jump parameters
+
     refl_ind   = []  # indices of the reflective parameters. for now - impact_para
     for idx, jn in enumerate(jnames):
         if jn.startswith("Impact_para"):
@@ -1408,6 +1438,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     norm_mu    = priors[jumping]
     uni_low    = lim_low[jumping]
     uni_up     = lim_up[jumping]
+    pr_str     = prior_str_all[jumping]
 
     uni    = lambda lowlim,uplim: uniform(lowlim, uplim-lowlim)               # uniform prior between lowlim and uplim
     t_norm = lambda a,b,mu,sig: truncnorm((a-mu)/sig, (b-mu)/sig, mu, sig) # normal prior(mu,sig) truncated  between a and b
@@ -1417,15 +1448,20 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if (norm_sigma[jj]>0.):  #normal prior
             lpri = t_norm(uni_low[jj],uni_up[jj],norm_mu[jj],norm_sigma[jj])
             prior_distr.append(lpri)
-        else:                    #uniform prior/loguni for rho_star,Duration,GPpars
-            if (jnames[jj] in ["rho_star","Duration"]) and lc_obj._rhodur_logUprior:
+        else:                    #uniform prior/loguni
+            if pr_str[jj].startswith("LU("):
                 llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 0.001, uni_up[jj])
-            elif (jnames[jj].startswith("GPlc") and jnames[jj].split("_")[1][0] not in ["C","η"]) and lc_obj._lcGP_logUprior:
-                llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 1e-10, uni_up[jj])
-            elif (jnames[jj].startswith("GPrv") and jnames[jj].split("_")[1][0] not in ["C","η"]) and rv_obj._rvGP_logUprior:
-                llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 1e-10, uni_up[jj])
             else:
                 llim = uni(uni_low[jj],uni_up[jj])
+        # else:                    #uniform prior/loguni for rho_star,Duration,GPpars
+        #     if (jnames[jj] in ["rho_star","Duration"]) and lc_obj._rhodur_logUprior:
+        #         llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 0.001, uni_up[jj])
+        #     elif (jnames[jj].startswith("GPlc") and jnames[jj].split("_")[1][0] not in ["C","η"]) and lc_obj._lcGP_logUprior:
+        #         llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 1e-10, uni_up[jj])
+        #     elif (jnames[jj].startswith("GPrv") and jnames[jj].split("_")[1][0] not in ["C","η"]) and rv_obj._rvGP_logUprior:
+        #         llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 1e-10, uni_up[jj])
+        #     else:
+        #         llim = uni(uni_low[jj],uni_up[jj])
             prior_distr.append(llim)
 
     ## plot the prior distributions
