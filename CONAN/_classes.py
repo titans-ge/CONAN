@@ -204,8 +204,10 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                 offset=None, A0=None, B0=None, A3=None, B3=None,A4=None, B4=None, 
                 A5=None, B5=None,A6=None, B6=None, A7=None, B7=None, A8=None, B8=None,
                 sin_Amp=0, sin2_Amp=0, sin3_Amp=0, cos_Amp=0, cos2_Amp=0, cos3_Amp=0, sin_P=0,  sin_x0=0,
-                log_GP_amp1=0, log_GP_amp2=0, log_GP_len1=0, log_GP_len2=0, log_GP_h31=0, log_GP_h41=0,
-                log_GP_h32=0, log_GP_h42=0, npl=1,jitter=0,Rstar=None,pc_model="cosine",custom_LCfunc=None,return_models=False):
+                gp_pars = {},
+                # log_GP_amp1=0, log_GP_amp2=0, log_GP_len1=0, log_GP_len2=0, log_GP_h31=0, log_GP_h41=0,
+                # log_GP_h32=0, log_GP_h42=0, 
+                npl=1,jitter=0,Rstar=None,pc_model="cosine",custom_LCfunc=None,return_models=False):
     """
     linear decorrelation with different columns of data file. It performs a linear model fit to the columns of the file.
     It uses columns 0,3,4,5,6,7,8 to construct the linear trend model. A spline can also be included to decorrelate against any column.
@@ -332,7 +334,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     #GP DECORRELATION PARAMETERS
     if gp is not None:
         gp_decorr_vars = list(gp.params.keys())
-        gp_pars        = {k:v  for k,v in DA.items() if k in gp_decorr_vars}   #input values/priors for GP parameters
+        gp_pars        = {k:v  for k,v in DA["gp_pars"].items() if k in gp_decorr_vars}   #input values/priors for GP parameters
         gp_params      = Parameters()
         for key in gp_pars.keys():
             if isinstance(gp_pars[key], (float,int,type(None))):
@@ -1259,39 +1261,34 @@ class load_lightcurves:
                 gp_kernels = celerite_kernels if self._useGPphot[j]=="ce" else spleaf_kernels if self._useGPphot[j]=="sp" else george_kernels
                 if GP[k]!=None:
                     geepee = GP[k] = SN(**GP[k])
-                    log_gp_amp1 = np.log(geepee.amplitude0.user_input)
-                    log_gp_len1 = np.log(geepee.lengthscale0.user_input)
-                    log_gp_h31  = np.log(geepee.h30.user_input) if geepee.h30.user_input!=None else None
-                    log_gp_h41  = np.log(geepee.h40.user_input) if geepee.h40.user_input!=None else None
-                    geepee.params  = {  "log_GP_amp1":tuple(log_gp_amp1) if np.iterable(log_gp_amp1) else log_gp_amp1,    #difficult to set loguniform priors for a least-square fit, so we fit the log of the amplitude and lengthscale 
-                                        "log_GP_len1":tuple(log_gp_len1) if np.iterable(log_gp_len1) else log_gp_len1,
-                                        "log_GP_h31": tuple(log_gp_h31) if np.iterable(log_gp_h31) else log_gp_h31,
-                                        "log_GP_h41": tuple(log_gp_h41) if np.iterable(log_gp_h41) else log_gp_h41,
-                                        }
-                    geepee.kern    = [geepee.amplitude0.user_data.kernel]
-                    geepee.column  = [geepee.amplitude0.user_data.col]
-                    geepee.pck     = f"{self._useGPphot[j]}"
+                    geepee.kern, geepee.column, geepee.params = [], [], {}
 
-                    del geepee.amplitude0, geepee.lengthscale0, geepee.h30, geepee.h40            #remove extracted attributes
-                    if geepee.ngp==2:   # if 2nd GP kernel is defined
-                        log_gp_amp2 = np.log(geepee.amplitude1.user_input)
-                        log_gp_len2 = np.log(geepee.lengthscale1.user_input)
-                        log_gp_h32  = np.log(geepee.h31.user_input) if geepee.h31.user_input!=None else None
-                        log_gp_h42  = np.log(geepee.h41.user_input) if geepee.h41.user_input!=None else None
-                        geepee.params["log_GP_amp2"] = tuple(log_gp_amp2) if np.iterable(log_gp_amp2) else log_gp_amp2
-                        geepee.params["log_GP_len2"] = tuple(log_gp_len2) if np.iterable(log_gp_len2) else log_gp_len2
-                        geepee.params["log_GP_h32"]  = tuple(log_gp_h32) if np.iterable(log_gp_h32) else log_gp_h32
-                        geepee.params["log_GP_h42"]  = tuple(log_gp_h42) if np.iterable(log_gp_h42) else log_gp_h42
-                        geepee.kern.append(geepee.amplitude1.user_data.kernel)
-                        geepee.column.append(geepee.amplitude1.user_data.col)
-                        del geepee.amplitude1, geepee.lengthscale1, geepee.h31, geepee.h41         # remove extracted attributes
-                
+                    for nn in range(1,geepee.ngp+1):
+                        log_gp_amp = np.log(vars(geepee)[f"amplitude{nn-1}"].user_input)
+                        log_gp_len = np.log(vars(geepee)[f"lengthscale{nn-1}"].user_input)
+                        log_gp_h3  = np.log(vars(geepee)[f"h3{nn-1}"].user_input) if vars(geepee)[f"h3{nn-1}"].user_input!=None else None
+                        log_gp_h4  = np.log(vars(geepee)[f"h4{nn-1}"].user_input) if vars(geepee)[f"h4{nn-1}"].user_input!=None else None
+                        geepee.params.update( {  f"log_GP_amp{nn}":tuple(log_gp_amp) if np.iterable(log_gp_amp) else log_gp_amp,    #difficult to set loguniform priors for a least-square fit, so we fit the log of the amplitude and lengthscale 
+                                                f"log_GP_len{nn}":tuple(log_gp_len) if np.iterable(log_gp_len) else log_gp_len,
+                                                f"log_GP_h3{nn}" :tuple(log_gp_h3)  if np.iterable(log_gp_h3)  else log_gp_h3,
+                                                f"log_GP_h4{nn}" :tuple(log_gp_h4)  if np.iterable(log_gp_h4)  else log_gp_h4,
+                                                } ) 
+                        
+                        geepee.kern.append(vars(geepee)[f"amplitude{nn-1}"].user_data.kernel)
+                        geepee.column.append(vars(geepee)[f"amplitude{nn-1}"].user_data.col) 
+                        geepee.pck     = f"{self._useGPphot[j]}"
+
+                        del vars(geepee)[f"amplitude{nn-1}"], vars(geepee)[f"lengthscale{nn-1}"], vars(geepee)[f"h3{nn-1}"], vars(geepee)[f"h4{nn-1}"]  #remove extracted attributes
+
                     #instantiate kernels with dummy parameters
                     kernels = []
                     gp_conv = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
                     for i in range(geepee.ngp):
                         gpkern = geepee.kern[i]
-                        kernels.append(gp_kernels[gpkern](*[-1]*npars_gp[gpkern])) #dummy initialization
+                        if geepee.pck == "ce":
+                            kernels.append(gp_kernels[gpkern](*[-1]*npars_gp[gpkern])) #dummy initialization
+                        elif geepee.pck == "ge":
+                            kernels.append(-1*gp_kernels[gpkern](*[-1]*(npars_gp[gpkern]-1))) #dummy initialization
 
                         gppars =  gp_conv.get_values(kernels=geepee.pck+'_'+gpkern, data="lc", pars=[-1]*npars_gp[gpkern])
                         if geepee.pck in ["ce","ge"]:
@@ -1300,12 +1297,24 @@ class load_lightcurves:
                     if geepee.ngp==1:
                         kernel = kernels[0]
                     else:
-                        if geepee.pck in ["ce","ge"]: 
-                            kernel = kernels[0]+kernels[1] if geepee.op=="+" else kernels[0]*kernels[1]
-                        else:
-                            if geepee.op=="+": kernel = spleaf.term.SimpleSumKernel(k1=kernels[0], k2=kernels[1])
-                            else: kernel = spleaf.term.SimpleProductKernel(k1=kernels[0], k2=kernels[1])
-                    
+                        for nn in range(geepee.ngp):
+                            if geepee.pck in ["ce","ge"]: 
+                                if nn==0: 
+                                    kernel = kernels[0]
+                                else:
+                                    if geepee.op[nn-1]=="+": 
+                                        kernel += kernels[nn]  
+                                    elif geepee.op[nn-1]=="*":  
+                                        kernel *= kernels[nn]
+                            else:
+                                if nn==0:
+                                    kernel = kernels[0]
+                                else:
+                                    if geepee.op[nn-1]=="+": 
+                                        kernel = spleaf.term.SimpleSumKernel(k1=kernel, k2=kernels[nn])
+                                    elif geepee.op[nn-1]=="*": 
+                                        kernel = spleaf.term.SimpleProductKernel(k1=kernel, k2=kernels[nn])
+                        
                     if self._useGPphot[j] in ["ce","ge"]:
                         geepee.GPobj = celerite.GP(kernel, mean=0, fit_mean = False) if geepee.pck=="ce" else george.GP(kernel, mean=0)
                     elif self._useGPphot[j] == "sp":
@@ -1355,7 +1364,7 @@ class load_lightcurves:
                             self._tra_occ_pars["T_0"][i] = (this_t0-bds[0],this_t0,this_t0+bds[1])
             
             #perform first fit of all jump parameters(astro,gp,sine,spline) with offset as only decorr par
-            out = _decorr(df, **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],
+            out = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],
                             q2=ld_q2[self._filters[j]], mask=mask, cont=cont[j], offset=0 if fit_offset[j]=="y" else None, 
                             decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                             jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
@@ -1377,7 +1386,7 @@ class load_lightcurves:
                     for p in all_par:
                         dtmp = best_pars.copy()   #always include offset if no spline
                         dtmp[p] = 0               #setting the par p to 0 means it will be varied in the fit
-                        out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
+                        out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
                                         decorr_bound=decorr_bound,  mask=mask, cont=cont[j],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                                         jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
                                         pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
@@ -1396,7 +1405,7 @@ class load_lightcurves:
                         best_bic = par_in_bic
                         all_par.remove(par_in)            
 
-            result = _decorr(df, **self._tra_occ_pars, **sin_pars, **gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
+            result = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
                                 **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=cont[j],spline=spline[j],sinus=sinusoid[file],
                                 gp=GP[file],ss_exp=ss_exp[j], jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
                                 pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
@@ -1416,13 +1425,17 @@ class load_lightcurves:
                 else:      
                     pps[p] = [pps[p+f"_{n}"] for n in range(1,self._nplanet+1)]
                     _ = [pps.pop(f"{p}_{n}") for n in range(1,self._nplanet+1)]
+            for p in gp_pars.keys():
+                gp_pars[p] = pps[p]
+                pps.pop(p)
+
             if custom_LCfunc is not None:
                 best_custom_LCfunc = deepcopy(custom_LCfunc)
                 best_custom_LCfunc.func_args = {p:pps[p] for p in best_custom_LCfunc.func_args.keys()} #update best_custom_LCfunc parameters to values from fit
                 _ = [pps.pop(p) for p in custom_LCfunc.func_args.keys()] # remove custom_LCfunc parameters from pps
             else: best_custom_LCfunc = None
                 
-            self._tmodel.append(_decorr(df,**pps, spline=spline[j],sinus=sinusoid[file],gp=GP[file], cont=cont[j], ss_exp=ss_exp[j], Rstar=Rstar, pc_model=pc_model[j], custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
+            self._tmodel.append(_decorr(df,**pps, gp_pars=gp_pars,spline=spline[j],sinus=sinusoid[file],gp=GP[file], cont=cont[j], ss_exp=ss_exp[j], Rstar=Rstar, pc_model=pc_model[j], custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -2263,9 +2276,9 @@ class load_lightcurves:
             self._sine_dict[lc].trig   = DA["trig"][i]
             self._sine_dict[lc].n      = DA["n"][i]
             self._sine_dict[lc].par    = DA["par"][i]
-            self._sine_dict[lc].Amp    = _param_obj.from_tuple(DA["Amp"][i],user_input=DA["Amp"][i],func_call="add_sinusoid():")
-            self._sine_dict[lc].P      = _param_obj.from_tuple(DA["P"][i],lo=1e-5,user_input=DA["P"][i],func_call="add_sinusoid():")
-            self._sine_dict[lc].x0     = _param_obj.from_tuple(DA["x0"][i],user_input=DA["x0"][i],func_call="add_sinusoid():")
+            self._sine_dict[lc].Amp    = _param_obj.from_tuple(DA["Amp"][i],func_call="add_sinusoid():")
+            self._sine_dict[lc].P      = _param_obj.from_tuple(DA["P"][i],lo=1e-5,func_call="add_sinusoid():")
+            self._sine_dict[lc].x0     = _param_obj.from_tuple(DA["x0"][i],func_call="add_sinusoid():")
             self._sine_dict[lc].npars  = 0     #number of total parameters for this sinusoid
             self._sine_dict[lc].nfree  = 0     #number of free parameters for this sinusoid
             for p in ["Amp","P","x0"]:
@@ -2299,8 +2312,8 @@ class load_lightcurves:
         Note: using GP on a lc sets fit_offset="n" for that lc. users can turn it back on for each lc
         from the ._fit_offset list attribute. e.g. lc_obj._fit_offset = ["y","y","y"]
 
-        if multiplying two GP kernels together, the amplitudes are degenerate and only one amplitude is 
-        required. set the second amplitude to –1 to disable it.
+        If multiplying GP kernels together, the amplitudes are degenerate and only one amplitude is 
+        required, that of the first kernel. set the other amplitudes to –1 to disable them.
 
         Parameters
         -----------
@@ -2360,11 +2373,8 @@ class load_lightcurves:
             list of flags to indicate if offset is to be fit for each lc file. Default is "y" for all.
             This is set to "n" for the lcs where GP is used.
         """
-        # supported 2-hyperparameter kernels
-        george_allowed   = dict(kernels=list(george_kernels.keys()),   columns=["col0","col3","col4","col5","col6","col7","col8"])
-        celerite_allowed = dict(kernels=list(celerite_kernels.keys()), columns=["col0","col3","col4","col5","col6","col7","col8"])
-        spleaf_allowed   = dict(kernels=list(spleaf_kernels.keys()),   columns=["col0","col3","col4","col5","col6","col7","col8"])
-
+        gp_allowed_columns = ["col0","col3","col4","col5","col6","col7","col8"]
+        
         if isinstance(gp_pck, str): assert gp_pck in ["ge","ce","sp"], f"add_GP(): gp_pck must be one of ['ge','ce','sp'] but {gp_pck} given."
         elif isinstance(gp_pck, list): 
             for gg in gp_pck: assert gg in ["n","ge","ce","sp"], f"add_GP(): gp_pck must be a list of ['n','ge','ce','sp'] but {gp_pck} given."
@@ -2482,62 +2492,82 @@ class load_lightcurves:
             for i,list_item in enumerate(DA[p]):
                 if p=="par":
                     if isinstance(list_item, str): 
-                        if gp_pck[i]=="ge":  assert list_item in george_allowed["columns"],  f'add_GP(): inputs of {p} must be in {george_allowed["columns"]}   but {list_item} given.'
-                        if gp_pck[i]=="ce": assert list_item in celerite_allowed["columns"],f'add_GP(): inputs of {p} must be in {celerite_allowed["columns"]} but {list_item} given.'
-                        if gp_pck[i]=="sp": assert list_item in spleaf_allowed["columns"],  f'add_GP(): inputs of {p} must be in {spleaf_allowed["columns"]}   but {list_item} given.'
-                        DA["operation"][i] = ""
-                    elif isinstance(list_item, tuple): # if 2 kernels are to be used
-                        assert len(list_item)==2,f'add_GP(): max of 2 gp kernels can be combined, but {list_item} given in {p}.'
-                        assert DA["operation"][i] in ["+","*"],f'add_GP(): operation must be one of ["+","*"] to combine 2 kernels but {DA["operation"][i]} given.'
+                        ngp = 1
+                        assert list_item in gp_allowed_columns,  f'add_GP(): inputs of {p} must be in {gp_allowed_columns}   but {list_item} given.'
+                        DA["operation"][i] = ""  # no operation for single kernel
+                        
+                    elif isinstance(list_item, tuple): # more than 1 kernel
+                        ngp = len(list_item)
+                        if gp_pck[i]=="ce": 
+                            assert len(set(DA[p][i]))==1, f"add_GP(): celerite GP cannot act across more than one dimension but {DA[p][i]} given."
+                        # assert len(list_item)==ngp,f'add_GP(): max of 3 gp kernels can be combined, but {list_item} given in {p}.'
+                        # assert DA["operation"][i] in ["+","*"],f'add_GP(): operation must be one of ["+","*"] to combine kernels but {DA["operation"][i]} given.'
+                        if isinstance(DA["operation"][i], str):
+                            DA["operation"][i] = (DA["operation"][i],)*(ngp-1)
                         for tup_item in list_item: 
-                            if gp_pck[i]=="ge":  assert tup_item in george_allowed["columns"],  f'add_GP(): {p} must be in {george_allowed["columns"]}   but {tup_item} given.'
-                            if gp_pck[i]=="ce": assert tup_item in celerite_allowed["columns"],f'add_GP(): {p} must be in {celerite_allowed["columns"]} but {tup_item} given.'
-                            if gp_pck[i]=="sp": assert tup_item in spleaf_allowed["columns"],  f'add_GP(): {p} must be in {spleaf_allowed["columns"]}   but {tup_item} given.'
+                            assert tup_item in gp_allowed_columns,  f'add_GP(): {p} must be in {gp_allowed_columns}   but {tup_item} given.'
+                        
                         # assert that a tuple of length 2 is also given for kernels, amplitude and lengthscale.
-                        if DA["h3"][i]==None: DA["h3"][i]=(None, None)
-                        if DA["h4"][i]==None: DA["h4"][i]=(None, None)
-                        for chk_p in ["kernel","amplitude","lengthscale","h3","h4"]:
-                            assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==2,f'add_GP(): expected tuple of len 2 for {chk_p} element {i} but {DA[chk_p][i]} given.'
+                        if DA["h3"][i]==None: DA["h3"][i]=(None,)*ngp
+                        if DA["h4"][i]==None: DA["h4"][i]=(None,)*ngp
+                        for chk_p in ["kernel","operation","amplitude","lengthscale","h3","h4"]:
+                            if chk_p=="operation": 
+                                assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==ngp-1,f'add_GP(): combining {ngp} GPs requires tuple of {ngp-1} {chk_p}s for element {i} but {DA[chk_p][i]} given.'
+                            else:
+                                assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==ngp,f'add_GP(): expected tuple of {ngp} priors for element {i} of {chk_p},  but {DA[chk_p][i]} given.'
                             
-                    else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2 or str but {list_item} given.")
+                    else:
+                        _raise(TypeError, f"add_GP(): elements of {p} must be a str or tuple of length {ngp} but {list_item} given.")
                 
                 if p=="kernel":
                     if isinstance(list_item, str): 
-                        if gp_pck[i]=="ge": assert list_item in george_allowed["kernels"],  f'add_GP(): {p} must be one of the george kernels: {george_allowed["kernels"]}   but {list_item} given.'
-                        if gp_pck[i]=="ce": assert list_item in celerite_allowed["kernels"],f'add_GP(): {p} must be one of the celerite kernels: {celerite_allowed["kernels"]} but {list_item} given.'
-                        if gp_pck[i]=="sp": assert list_item in spleaf_allowed["kernels"],  f'add_GP(): {p} must be one of the spleaf kernels: {spleaf_allowed["kernels"]}   but {list_item} given.'
+                        if gp_pck[i]=="ge": assert list_item in list(george_kernels.keys()),  f'add_GP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {list_item} given.'
+                        if gp_pck[i]=="ce": assert list_item in list(celerite_kernels.keys()),f'add_GP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {list_item} given.'
+                        if gp_pck[i]=="sp": assert list_item in list(spleaf_kernels.keys()),  f'add_GP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {list_item} given.'
                         if list_item in ["sho","exps2","rquad"]:
                             if list_item=="sho":
-                                if  DA["h3"][i] == None: DA["h3"][i] = 0.7071 #1/np.sqrt(2)  
+                                if  DA["h3"][i] == None: 
+                                    DA["h3"][i] = 0.7071 #1/np.sqrt(2)  
                             else: 
                                 assert DA["h3"][i] != None, f"add_GP(): 3rd hyperparameter (h3) of {list_item} kernel cannot be None. hyperparameter {gp_h3h4names.h3[list_item]} required."                        
                             assert DA["h4"][i] == None, f"add_GP(): kernel {list_item} does not take a fourth hyperparameter. set h4 to None "
-                        if list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
+                        
+                        elif list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
                             assert DA["h3"][i] != None and DA["h4"][i] != None, f"add_GP(): 3rd and 4th hyperparameters (h3,h4) of {list_item} kernel cannot be None. hyperparameters {gp_h3h4names.h3[list_item]} and {gp_h3h4names.h4[list_item]} required"
-                    elif isinstance(list_item, tuple): # 2 kernels
+                    
+                    elif isinstance(list_item, tuple): # >=2 kernels
                         for ti,tup_item in enumerate(list_item): 
-                            if gp_pck[i]=="ge":  assert tup_item in george_allowed["kernels"],  f'add_GP(): {p} must be one of the george kernels: {george_allowed["kernels"]}   but {tup_item} given.'
-                            if gp_pck[i]=="ce": assert tup_item in celerite_allowed["kernels"],f'add_GP(): {p} must be one of the celerite kernels: {celerite_allowed["kernels"]} but {tup_item} given.'
-                            if gp_pck[i]=="sp": assert tup_item in spleaf_allowed["kernels"],  f'add_GP(): {p} must be one of the spleaf kernels: {spleaf_allowed["kernels"]}   but {tup_item} given.'
+                            if gp_pck[i]=="ge":  assert tup_item in list(george_kernels.keys()),  f'add_GP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {tup_item} given.'
+                            if gp_pck[i]=="ce": assert tup_item in list(celerite_kernels.keys()), f'add_GP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {tup_item} given.'
+                            if gp_pck[i]=="sp": assert tup_item in list(spleaf_kernels.keys()),   f'add_GP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {tup_item} given.'
                             if tup_item in ["sho","exps2","rquad"]:
                                 if tup_item=="sho":
-                                    if  DA["h3"][i][ti] == None: DA["h3"][i][ti] = 1/np.sqrt(2)  
+                                    if  DA["h3"][i][ti] == None: 
+                                        DA["h3"][i][ti] = 1/np.sqrt(2)  
                                 else: 
                                     assert DA["h3"][i][ti] != None, f"add_GP(): 3rd hyperparameter (h3) of {tup_item} kernel cannot be None. hyperparameter {gp_h3h4names.h3[tup_item]} required."                        
                                 assert DA["h4"][i][ti] == None, f"add_GP(): kernel {tup_item} does not take a fourth hyperparameter. set h4 to None "
-                            if list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
+                            
+                            elif list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
                                 assert DA["h3"][i][ti] != None and DA["h4"][i][ti] != None, f"add_GP(): 3rd and 4th hyperparameters (h3,h4) of {tup_item} kernel cannot be None, requires {gp_h3h4names.h3[tup_item]} and {gp_h3h4names.h4[tup_item]}."
                         
-                    else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2 or str but {list_item} given.")
+                    else:
+                        _raise(TypeError, f"add_GP(): elements of {p} must be a str or tuple of length {ngp} but {list_item} given.")
 
                 if p=="operation":
-                    assert list_item in ["+","*",""],f'add_GP(): {p} must be one of ["+","*",""] but {list_item} given.'
+                    if isinstance(list_item, str): 
+                        assert list_item in ["+","*",""],f'add_GP(): {p} must be one of ["+","*",""] but {list_item} given.'
+                        DA["operation"][i] = (DA["operation"][i],) # convert to tuple
+                    elif isinstance(list_item, tuple): # >=2 kernels
+                        assert len(list_item)== ngp-1,f'add_GP(): {p} must be of length {ngp-1}' 
+                        for tup_item in list_item:
+                            assert tup_item in ["+","*"],f'add_GP(): {p} must be one of ["+","*"] but {tup_item} given.'
 
                 if p in ["amplitude", "lengthscale","h3","h4"]:
                     if isinstance(list_item, (int,float,type(None))): 
                         pass
                     elif isinstance(list_item, tuple):
-                        if isinstance(DA["par"][i],tuple): #if 2 kernels defined
+                        if isinstance(DA["par"][i],tuple): #if >=2 kernels defined
                             for tup in list_item:
                                 if isinstance(tup, (int,float,type(None))): 
                                     pass
@@ -2545,12 +2575,13 @@ class load_lightcurves:
                                     assert len(tup) in [2,3,4],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
                                     # if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
                                     # if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
-                                else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {tup} given.")
+                                else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {tup} given.")
                         else:
                             assert len(list_item) in [2,3,4],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
                             # if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
                             # if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
-                    else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3 or float/int but {list_item} given.")
+                    else: 
+                        _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {list_item} given.")
 
         #setup parameter objects
         for i,lc in enumerate(lc_list):
@@ -2560,12 +2591,14 @@ class load_lightcurves:
             filt = self._filters[self._names.index(lc)]
                 
             self._GP_dict[lc] = {}
-            ngp = 2 if isinstance(DA["kernel"][i],tuple) else 1
             self._GP_dict[lc]["ngp"] = ngp
             self._GP_dict[lc]["op"]  = DA["operation"][i]
 
-            if self._GP_dict[lc]["op"] == "*" and self._GP_dict[lc]["ngp"] == 2:
-                assert DA["amplitude"][i][1] == -1, f"add_GP(): for multiplication of 2 kernels, the second amplitude must be fixed to -1 to deactivate it but {DA['amplitude'][i][1]} given."
+            if ngp>1:
+                for nop,op in enumerate(self._GP_dict[lc]["op"]):
+                    if op=="*":
+                        assert DA["amplitude"][i][nop+1] == -1, f"add_GP(): for multiplication of kernels, [{nop},{nop+1}], the amplitude of kernel {nop+1} must be fixed to -1 to deactivate it but {DA['amplitude'][i][nop+1]} given."
+
 
             for p in ["amplitude", "lengthscale","h3","h4"]:
                 for j in range(ngp):
@@ -2614,7 +2647,7 @@ class load_lightcurves:
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],   #bounds_lo has a lower limit of 1minute (0.0007d) or 0.0007ppm
-                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        user_input=v[:-1], user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'LU({v[0]},{v[1]},{v[2]})')
                         elif len(v)==4:
                             if (self._sameLCgp.flag and lc!=self._sameLCgp.LCs[0]): steps=0 
@@ -2743,7 +2776,7 @@ class load_lightcurves:
                             assert DA[par][n][0]>=0, f'planet_parameters(): lower bound of {par} must be >=0 but {DA[par][n][0]} given.'
                 
                 #fitting parameter object
-                DA[par][n] = _param_obj.from_tuple(DA[par][n],lo=lo_lim ,hi=up_lim,user_input=DA[par][n],prior_str=pr_str,func_call="planet_parameters():")
+                DA[par][n] = _param_obj.from_tuple(DA[par][n],lo=lo_lim ,hi=up_lim,prior_str=pr_str,func_call="planet_parameters():")
 
                 self._planet_pars[f"pl{n+1}"][par] = DA[par][n]      #add to object
         
@@ -2831,7 +2864,7 @@ class load_lightcurves:
                             assert DA[par][n][0]>=0, f'update_planet_parameters(): lower bound of {par} must be >=0 but {DA[par][n][0]} given.' 
                 
                 #fitting parameter object
-                DA[par][n] = _param_obj.from_tuple(DA[par][n],lo=lo_lim ,hi=up_lim,user_input=DA[par][n],func_call="planet_parameters():")
+                DA[par][n] = _param_obj.from_tuple(DA[par][n],lo=lo_lim ,hi=up_lim,func_call="planet_parameters():")
 
                 self._planet_pars[f"pl{n+1}"][par] = DA[par][n]      #add to object
         
@@ -2882,7 +2915,7 @@ class load_lightcurves:
         step = 0.001
 
         self._ddfs= SN()
-        self._ddfs.drprs = _param_obj.from_tuple(dRpRs, user_input=dRpRs,func_call="transit_depth_variation():")
+        self._ddfs.drprs = _param_obj.from_tuple(dRpRs,func_call="transit_depth_variation():")
 
         self._ddfs.depth_per_group     = depth_per_group
         self._ddfs.depth_err_per_group = depth_err_per_group
@@ -2992,7 +3025,7 @@ class load_lightcurves:
                 assert dt[1]==0 and dt[0]<dt[2], "transit_timing_variation(): for U(min,start,max) prior, start must be 0 and min<max."
                 v = (self._ttvs.fit_t0s[j]+dt[0],self._ttvs.fit_t0s[j],self._ttvs.fit_t0s[j]+dt[2])
 
-            self._ttvs.prior.append(_param_obj.from_tuple(v, user_input=v,func_call="transit_timing_variation():"))
+            self._ttvs.prior.append(_param_obj.from_tuple(v,func_call="transit_timing_variation():"))
             self._ttvs.lin_eph[self._ttvs.fit_labels[j]] = self._ttvs.fit_t0s[j]
             
         if verbose: _print_output(self,"timing_variation")
@@ -3242,7 +3275,7 @@ class load_lightcurves:
         for par in DA.keys():      #D_occ, Fn, ph_off,A_ev,f1_ev, A_db
             for i,f in enumerate(self._filnames):    
                 v = DA[par][i]
-                self._PC_dict[par][f] = _param_obj.from_tuple(v,step=1,user_input=v,func_call="phasecurve():")
+                self._PC_dict[par][f] = _param_obj.from_tuple(v,step=1,func_call="phasecurve():")
 
         if verbose: _print_output(self,"phasecurve")
 
@@ -3466,7 +3499,7 @@ class load_lightcurves:
         
         self._contfact_dict = {}
         for i,f in enumerate(self._filnames):
-                self._contfact_dict[f] = _param_obj.from_tuple(cont_ratio[i],user_input=cont_ratio[i],func_call="contamination_factors():")
+                self._contfact_dict[f] = _param_obj.from_tuple(cont_ratio[i],func_call="contamination_factors():")
 
         if verbose: _print_output(self,"contamination")
 
@@ -3911,6 +3944,7 @@ class load_rvs:
         decorr_result: list of result object
             list containing result object for each lc.
         """
+        #TODO add GP fit to RV get decorr
         assert isinstance(exclude_cols, list), f"get_decorr(): exclude_cols must be a list of column numbers to exclude from decorrelation but {exclude_cols} given."
         for c in exclude_cols: assert isinstance(c, int), f"get_decorr(): column number to exclude from decorrelation must be an integer but {c} given in exclude_cols."
         assert delta_BIC<0,f'get_decorr(): delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
@@ -4052,13 +4086,13 @@ class load_rvs:
                 _res.params.add(f"ecc{lbl}",expr=f'sesinw{lbl}**2+secosw{lbl}**2',min=0, max=1)
                 _res.params.add(f"w{lbl}",expr=f'(180/pi*atan2(sesinw{lbl},secosw{lbl}))%360', min=0, max=360)
 
-            #GP
-            for gpn in [1,2]:
-                if f"log_GP_amp{gpn}" in _res.params:
-                    _res.params.add(f"GP_amp{gpn}", expr=f'exp(log_GP_amp{gpn})',
-                        min=np.exp(_res.params[f'log_GP_amp{gpn}'].min),max=np.exp(_res.params[f'log_GP_amp{gpn}'].max))
-                    _res.params.add(f"GP_len{gpn}", expr=f'exp(log_GP_len{gpn})',
-                        min=np.exp(_res.params[f'log_GP_len{gpn}'].min),max=np.exp(_res.params[f'log_GP_len{gpn}'].max))
+            # #GP
+            # for gpn in [1,2]:
+            #     if f"log_GP_amp{gpn}" in _res.params:
+            #         _res.params.add(f"GP_amp{gpn}", expr=f'exp(log_GP_amp{gpn})',
+            #             min=np.exp(_res.params[f'log_GP_amp{gpn}'].min),max=np.exp(_res.params[f'log_GP_amp{gpn}'].max))
+            #         _res.params.add(f"GP_len{gpn}", expr=f'exp(log_GP_len{gpn})',
+            #             min=np.exp(_res.params[f'log_GP_len{gpn}'].min),max=np.exp(_res.params[f'log_GP_len{gpn}'].max))
             self._rvdecorr_result[i] = _res
 
         if plot_model:
@@ -4123,7 +4157,7 @@ class load_rvs:
         
         DA["gamma"] = []
         for g in gamma:
-            DA["gamma"].append(_param_obj.from_tuple(g, user_input=g, func_call="rv_baseline():"))
+            DA["gamma"].append(_param_obj.from_tuple(g, func_call="rv_baseline():"))
                     
         _ = [DA.pop(item) for item in ["dcol0","dcol3","dcol4","dcol5"]]
         self._rvdict   = DA
@@ -4250,7 +4284,7 @@ class load_rvs:
         nfree    = 0
         for k in func_args.keys():
             if isinstance(func_args[k], tuple): nfree += 1
-            par_dict[k] = _param_obj.from_tuple(func_args[k], user_input=func_args[k], func_call="add_custom_RV_function():")
+            par_dict[k] = _param_obj.from_tuple(func_args[k], func_call="add_custom_RV_function():")
 
         self._custom_RVfunc = SN(func=func, get_func=fxn, x=x,op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_RVmodel=replace_RVmodel)
 
@@ -4259,7 +4293,7 @@ class load_rvs:
 
 
     def add_rvGP(self, rv_list=None, par=["col0"], kernel=["mat32"], operation=[""],amplitude=[], 
-                lengthscale=[], h3=None, h4=None, A=None, B=None, gp_pck="ce",  verbose=True):
+                lengthscale=[], h3=None, h4=None, B_amplitude=None, gp_pck="ce",  verbose=True):
         """  
         Define GP hyperparameters for each RV. The first hyperparameter h1 is amplitude (standard deviation) 
         in RV unit while the second h2 is lengthscale in unit of the desired column. h3 and h4 are 
@@ -4273,8 +4307,8 @@ class load_rvs:
         - loguniform: add "LU" to a  for loguniform e.g (1,2,5,"LU")
         - truncnorm as tuple of length 4, (min, max, mu, std) e.g. q1 = (0,1,0.3,0.1)
 
-        if multiplying two GP kernels together, the amplitudes are degenerate and only one amplitude is 
-        required. set the second amplitude to –1 to disable it.
+        If multiplying GP kernels together, the amplitudes are degenerate and only one amplitude is 
+        required, that of the first kernel. set the other amplitudes to –1 to disable them.
 
         Parameters
         -----------
@@ -4312,8 +4346,7 @@ class load_rvs:
         h3 : float, tuple, list;
             3rd hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4
         h4 : float, tuple, list;
-            4th hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4  
-        A  : float, tuple, list;      
+            4th hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4    
         gp_pck : str, list;
             package to use for the GP. Must be one of ["ge","ce","sp"]. Default is "ce" for celerite.
         verbose : bool;
@@ -4333,10 +4366,8 @@ class load_rvs:
             list of rvs with GP fitting
 
         """
-        # supported 2-hyperparameter kernels
-        george_allowed   = dict(kernels=list(george_kernels.keys()),   columns=["col0","col3","col4","col5"])
-        celerite_allowed = dict(kernels=list(celerite_kernels.keys()), columns=["col0"])
-        spleaf_allowed   = dict(kernels=list(spleaf_kernels.keys()),   columns=["col0","col3","col4","col5"])
+        gp_allowed_columns = ["col0","col3","col4","col5"]
+
 
         if isinstance(gp_pck, str): assert gp_pck in ["ge","ce","sp"], f"add_GP(): gp_pck must be one of ['ge','ce','sp'] but {gp_pck} given."
         elif isinstance(gp_pck, list): 
@@ -4404,86 +4435,105 @@ class load_rvs:
             #check if inputs for p are valid
             for i,list_item in enumerate(DA[p]):
                 if p=="par":
-                    if isinstance(list_item, str): 
-                        if gp_pck[i]=="ge":  assert list_item in george_allowed["columns"],  f'add_rvGP(): inputs of {p} must be in {george_allowed["columns"]}   but {list_item} given.'
-                        if gp_pck[i]=="ce": assert list_item in celerite_allowed["columns"],f'add_rvGP(): inputs of {p} must be in {celerite_allowed["columns"]} but {list_item} given.'
-                        if gp_pck[i]=="sp": assert list_item in spleaf_allowed["columns"],  f'add_rvGP(): inputs of {p} must be in {spleaf_allowed["columns"]}   but {list_item} given.'
+                    if isinstance(list_item, str):
+                        ngp = 1 
+                        assert list_item in gp_allowed_columns,  f'add_rvGP(): inputs of {p} must be in {gp_allowed_columns}   but {list_item} given.'
                         DA["operation"][i] = ""
-                    elif isinstance(list_item, tuple): #if 2 kernels
-                        assert len(list_item)==2,f'add_rvGP(): max of 2 gp kernels can be combined, but {list_item} given in {p}.'
-                        assert DA["operation"][i] in ["+","*"],f'add_rvGP(): operation must be one of ["+","*"] to combine 2 kernels but {DA["operation"][i]} given.'
+
+                    elif isinstance(list_item, tuple): # more than 1 kernel
+                        ngp = len(list_item)
+                        if gp_pck[i]=="ce": 
+                            assert len(set(DA[p][i]))==1, f"add_rvGP(): celerite GP cannot act across more than one dimension but {DA[p][i]} given."
+                        # assert len(list_item)==ngp,f'add_rvGP(): max of 3 gp kernels can be combined, but {list_item} given in {p}.'
+                        # assert DA["operation"][i] in ["+","*"],f'add_rvGP(): operation must be one of ["+","*"] to combine 2 kernels but {DA["operation"][i]} given.'
+                        if isinstance(DA["operation"][i], str):
+                            DA["operation"][i] = (DA["operation"][i],)*(ngp-1)
                         for tup_item in list_item: 
-                            if gp_pck[i]=="ge":  assert tup_item in george_allowed["columns"],  f'add_rvGP(): {p} must be in {george_allowed["columns"]}   but {tup_item} given.'
-                            if gp_pck[i]=="ce": assert tup_item in celerite_allowed["columns"],f'add_rvGP(): {p} must be in {celerite_allowed["columns"]} but {tup_item} given.'
-                            if gp_pck[i]=="sp": assert tup_item in spleaf_allowed["columns"],  f'add_rvGP(): {p} must be in {spleaf_allowed["columns"]}   but {tup_item} given.'
+                            assert tup_item in gp_allowed_columns,  f'add_rvGP(): {p} must be in {gp_allowed_columns} but {tup_item} given.'
+
                         # assert that a tuple of length 2 is also given for kernels, amplitude and lengthscale, h3, h4.
-                        if DA["h3"][i]==None: DA["h3"][i]=(None, None)
-                        if DA["h4"][i]==None: DA["h4"][i]=(None, None)
+                        if DA["h3"][i]==None: DA["h3"][i]=(None,)*ngp
+                        if DA["h4"][i]==None: DA["h4"][i]=(None,)*ngp
                         for chk_p in ["kernel","amplitude","lengthscale","h3","h4"]:
-                            assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==2,f'add_rvGP(): expected tuple of len 2 for {chk_p} element {i} but {DA[chk_p][i]} given.'
+                            if chk_p=="operation": 
+                                assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==ngp-1,f'add_rvGP(): combining {ngp} GPs requires tuple of {ngp-1} {chk_p}s for element {i} but {DA[chk_p][i]} given.'
+                            else:
+                                assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==ngp,f'add_rvGP(): expected tuple of {ngp} priors for element {i} of {chk_p},  but {DA[chk_p][i]} given.'
                             
-                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2 or str but {list_item} given.")
+                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a str or tuple of length {ngp} but {list_item} given.")
                 
                 if p=="kernel":
                     if isinstance(list_item, str): 
-                        if gp_pck[i]=="ge":  assert list_item in george_allowed["kernels"],  f'add_rvGP(): {p} must be one of the george kernels: {george_allowed["kernels"]}   but {list_item} given.'
-                        if gp_pck[i]=="ce": assert list_item in celerite_allowed["kernels"],f'add_rvGP(): {p} must be one of the celerite kernels: {celerite_allowed["kernels"]} but {list_item} given.'
-                        if gp_pck[i]=="sp": assert list_item in spleaf_allowed["kernels"],  f'add_rvGP(): {p} must be one of the spleaf kernels: {spleaf_allowed["kernels"]}   but {list_item} given.'
+                        if gp_pck[i]=="ge": assert list_item in list(george_kernels.keys()),  f'add_rvGP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {list_item} given.'
+                        if gp_pck[i]=="ce": assert list_item in list(celerite_kernels.keys()),f'add_rvGP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {list_item} given.'
+                        if gp_pck[i]=="sp": assert list_item in list(spleaf_kernels.keys()),  f'add_rvGP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {list_item} given.'
                         if list_item in ["sho","exps2","rquad"]:
                             if list_item=="sho":
-                                    if  DA["h3"][i] == None: DA["h3"][i] = 0.7071 #1/np.sqrt(2)  
+                                    if  DA["h3"][i] == None: 
+                                        DA["h3"][i] = 0.7071 #1/np.sqrt(2)  
                             else: 
                                 assert DA["h3"][i] != None, f"add_rvGP(): 3rd hyperparameter (h3) of {list_item} kernel cannot be None. hyperparameter {gp_h3h4names.h3[list_item]} required."                        
                             assert DA["h4"][i] == None, f"add_rvGP(): kernel {list_item} does not take a fourth hyperparameter. set h4 to None "
-                        if list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
+                        
+                        elif list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
                             assert DA["h3"][i] != None and DA["h4"][i] != None, f"add_rvGP(): 3rd and 4th hyperparameters (h3,h4) of {list_item} kernel cannot be None. hyperparameters {gp_h3h4names.h3[list_item]} and {gp_h3h4names.h4[list_item]} required"                        
-                    elif isinstance(list_item, tuple):
+                    
+                    elif isinstance(list_item, tuple):  # >=2 kernels
                         for ti,tup_item in enumerate(list_item): 
-                            if gp_pck[i]=="ge":  assert tup_item in george_allowed["kernels"],  f'add_rvGP(): {p} must be one of the george kernels: {george_allowed["kernels"]}   but {tup_item} given.'
-                            if gp_pck[i]=="ce": assert tup_item in celerite_allowed["kernels"],f'add_rvGP(): {p} must be one of the celerite kernels: {celerite_allowed["kernels"]} but {tup_item} given.'
-                            if gp_pck[i]=="sp": assert tup_item in spleaf_allowed["kernels"],  f'add_rvGP(): {p} must be one of the spleaf kernels: {spleaf_allowed["kernels"]}   but {tup_item} given.'
+                            if gp_pck[i]=="ge":  assert tup_item in list(george_kernels.keys()),  f'add_rvGP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {tup_item} given.'
+                            if gp_pck[i]=="ce": assert tup_item in list(celerite_kernels.keys()), f'add_rvGP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {tup_item} given.'
+                            if gp_pck[i]=="sp": assert tup_item in list(spleaf_kernels.keys()),   f'add_rvGP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {tup_item} given.'
                             if tup_item in ["sho","exps2","rquad"]:
                                 if tup_item=="sho":
-                                    if  DA["h3"][i][ti] == None: DA["h3"][i][ti] = 1/np.sqrt(2)  
+                                    if  DA["h3"][i][ti] == None: 
+                                        DA["h3"][i][ti] = 1/np.sqrt(2)  
                                 else: 
                                     assert DA["h3"][i][ti] != None, f"add_GP(): 3rd hyperparameter (h3) of {tup_item} kernel cannot be None. hyperparameter {gp_h3h4names.h3[tup_item]} required."                        
                                 assert DA["h4"][i][ti] == None, f"add_GP(): kernel {tup_item} does not take a fourth hyperparameter. set h4 to None "
-                            if list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
+                            
+                            elif list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
                                 assert DA["h3"][i][ti] != None and DA["h4"][i][ti] != None, f"add_GP(): 3rd and 4th hyperparameters (h3,h4) of {tup_item} kernel cannot be None. hyperparatemeters {gp_h3h4names.h3[tup_item]} and {gp_h3h4names.h4[tup_item]} required"
                     
                     else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2 or str but {list_item} given.")
 
                 if p=="operation":
-                    assert list_item in ["+","*",""],f'add_rvGP(): {p} must be one of ["+","*",""] but {list_item} given.'
-
+                    if isinstance(list_item, str): 
+                        assert list_item in ["+","*",""],f'add_rvGP(): {p} must be one of ["+","*",""] but {list_item} given.'
+                        DA["operation"][i] = (DA["operation"][i],) # convert to tuple
+                    elif isinstance(list_item, tuple): # >=2 kernels
+                        assert len(list_item)== ngp-1,f'add_rvGP(): {p} must be of length {ngp-1}' 
+                        for tup_item in list_item:
+                            assert tup_item in ["+","*"],f'add_rvGP(): {p} must be one of ["+","*"] but {tup_item} given.'
+                        
                 if p in ["amplitude", "lengthscale","h3","h4"]:
                     if isinstance(list_item, (int,float,type(None))): 
                         pass
                     elif isinstance(list_item, tuple):
-                        if isinstance(DA["par"][i],tuple):
+                        if isinstance(DA["par"][i],tuple): #if >=2 kernels defined
                             for tup in list_item:
                                 if isinstance(tup, (int,float,type(None))): 
                                     pass
                                 elif isinstance(tup, tuple): 
-                                    assert len(tup) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3 but {tup} given.'
+                                    assert len(tup) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
                                     # if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
                                     # if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
-                                else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3 or float/int but {tup} given.")
+                                else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {tup} given.")
                         else:
-                            assert len(list_item) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3 but {tup} given.'
+                            assert len(list_item) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
                             # if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
                             # if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
-                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3 or float/int but {list_item} given.")
+                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {list_item} given.")
 
         #setup parameter objects
         for i,rv in enumerate(rv_list):
             self._rvGP_dict[rv] = {}
-            ngp = 2 if isinstance(DA["kernel"][i],tuple) else 1
             self._rvGP_dict[rv]["ngp"] = ngp
             self._rvGP_dict[rv]["op"]  = DA["operation"][i]
 
-            if self._rvGP_dict[rv]["op"] == "*" and self._rvGP_dict[rv]["ngp"] == 2:
-                assert DA["amplitude"][i][1] == -1, f"add_rvGP(): for multiplication of 2 kernels, the second amplitude must be fixed to -1 to avoid degeneracy, but {DA['amplitude'][i][1]} given."
+            if ngp>1:
+                for nop,op in enumerate(self._rvGP_dict[rv]["op"]):
+                    if op=="*":
+                        assert DA["amplitude"][i][nop+1] == -1, f"add_rvGP(): for multiplication of kernels, [{nop},{nop+1}], the amplitude of kernel {nop+1} must be fixed to -1 to deactivate it but {DA['amplitude'][i][nop+1]} given."
 
             for p in ["amplitude", "lengthscale","h3","h4"]:
                 for j in range(ngp):
@@ -4526,7 +4576,7 @@ class load_rvs:
                             self._rvGP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],
-                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        user_input=v[:-1], user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'LU({v[0]},{v[1]},{v[2]})')                            
                         elif len(v)==4:
                             steps = 0 if (self._sameRVgp.flag and i!=0) else 0.1*v[3]   #if sameRVgp is set, only first pars will jump and be used for all rvs

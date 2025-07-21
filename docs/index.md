@@ -21,6 +21,7 @@ tutorial/CONAN_WASP-127_RV_tutorial.ipynb
 tutorial/TOI469_multiplanet_LC_RV.ipynb
 tutorial/kelt-20_cheops_roll_compare.ipynb
 tutorial/TOI-216_TTV_fit.ipynb
+tutorial/WASP-103_2D-GP-george.ipynb
 ```
 
 ```{toctree}

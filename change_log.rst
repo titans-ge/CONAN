@@ -4,6 +4,7 @@
 * renamed Transit_Model and RadialVelocity_Model to Planet_LC_Model and Planet_RV_Model respectively
 * added exclude+pars argument in get_decorr() to exclude specific parameters from the decorrelation model
 * allow loading lightcurves/rvs from a dictionary instead of from files 
+* included kwargs for getting cheops data taking into account the SAA, Earth, Moon, Sun and CR limits
 
 27-May-2025: version 3.3.11
 ~~~~~~~~~~~~~

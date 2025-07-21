@@ -171,18 +171,6 @@ class gp_params_convert:
             
         return np.concatenate(conv_pars)
             
-        
-    def any_george(self, data, amplitude,lengthscale):
-        """
-        simple conversion where amplitude corresponds to the standard deviation of the process
-        """        
-        if amplitude==-1: amplitude = 1
-        else: amplitude  = amplitude*1e-6 if data == "lc" else amplitude
-        
-
-        log_var    = np.log(amplitude**2)
-        log_metric = np.log(lengthscale)
-        return log_var, log_metric
     
     #======spleaf kernels=======
     # the kernels here are a direct function of the distance between points

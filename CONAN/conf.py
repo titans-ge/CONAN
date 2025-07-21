@@ -446,6 +446,9 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
     # ========== GP input ====================
     gp_lclist,op = [],[]
     gp_pars, kernels, amplitude, lengthscale, h3, h4 = [],[],[],[],[],[]
+    # Helper function to add element to tuple
+    def _add_to_tuple(ngp, current, new_value):
+        return (current,new_value) if ngp==2 else current+(new_value,)
 
     dump =_file.readline()
     if version < (3,3,11):
@@ -473,7 +476,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     else:
         while dump[0] != "#":
-            # lcGPpdist = []
+            ngp    = 1
             _adump = dump.split()
             gp_lclist.append(_adump[0])
             kernels.append(_adump[1])
@@ -486,18 +489,24 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             #move to next line
             dump   = _file.readline()
             _adump = dump.split()
-            if _adump[0][0] in ["|","*","+"]: #if so, file has a second gpkernel
-                op.append(_adump[0].strip("|"))
-                kernels[-1]     = (kernels[-1],_adump[1])
-                gp_pars[-1]     = (gp_pars[-1],_adump[2])
-                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3]))
-                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4]))
-                h3[-1]          = (h3[-1],_prior_value(_adump[5]))
-                h4[-1]          = (h4[-1],_prior_value(_adump[6]))
-                #move to next rv file    
-                dump =_file.readline()
-            else:
-                op.append("--")
+            while _adump[0][0] in ["|","*","+"]: #if so, file has a additional kernels
+                ngp += 1
+                if ngp == 2:  #if this is the second kernel
+                    op.append(_adump[0].strip("|"))
+                elif ngp >2 :
+                    op[-1]      =  (op[-1], _adump[0].strip("|"))
+                kernels[-1]     = _add_to_tuple(ngp, kernels[-1], _adump[1])
+                gp_pars[-1]     = _add_to_tuple(ngp, gp_pars[-1], _adump[2])
+                amplitude[-1]   = _add_to_tuple(ngp, amplitude[-1], _prior_value(_adump[3]))
+                lengthscale[-1] = _add_to_tuple(ngp, lengthscale[-1], _prior_value(_adump[4]))
+                h3[-1]          = _add_to_tuple(ngp, h3[-1], _prior_value(_adump[5]))
+                h4[-1]          = _add_to_tuple(ngp, h4[-1], _prior_value(_adump[6]))
+                #move to next gp line    
+                dump   = _file.readline()
+                _adump = dump.split()
+            # move to next lc
+        if op == []:
+            op.append("")
 
     #check that the elements of _clip_cols are the same
     if len(_clip_cols) > 1:
@@ -608,6 +617,7 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
 
     else:
         while dump[0] != "#":
+            ngp    = 1
             _adump = dump.split()
             gp_rvlist.append(_adump[0])
             kernels.append(_adump[1])
@@ -620,18 +630,23 @@ def load_configfile(configfile="input_config.dat", return_fit=False, init_decorr
             #move to next line
             dump   = _file.readline()
             _adump = dump.split()
-            if _adump[0][0] in ["|","*","+"]: #if so, file has a second gpkernel
-                op.append(_adump[0].strip("|"))
-                kernels[-1]     = (kernels[-1],_adump[1])
-                gp_pars[-1]     = (gp_pars[-1],_adump[2])
-                amplitude[-1]   = (amplitude[-1],_prior_value(_adump[3]))
-                lengthscale[-1] = (lengthscale[-1],_prior_value(_adump[4]))
-                h3[-1]          = (h3[-1],_prior_value(_adump[5]))
-                h4[-1]          = (h4[-1],_prior_value(_adump[6]))
+            while _adump[0][0] in ["|","*","+"]: #if so, file has additional kernels
+                ngp += 1
+                if ngp == 2:  #if this is the second kernel
+                    op.append(_adump[0].strip("|"))
+                elif ngp >2 :
+                    op[-1]      = (op[-1], _adump[0].strip("|"))
+                kernels[-1]     = _add_to_tuple(ngp, kernels[-1], _adump[1])
+                gp_pars[-1]     = _add_to_tuple(ngp, gp_pars[-1], _adump[2])
+                amplitude[-1]   = _add_to_tuple(ngp, amplitude[-1], _prior_value(_adump[3]))
+                lengthscale[-1] = _add_to_tuple(ngp, lengthscale[-1], _prior_value(_adump[4]))
+                h3[-1]          = _add_to_tuple(ngp, h3[-1], _prior_value(_adump[5]))
+                h4[-1]          = _add_to_tuple(ngp, h4[-1], _prior_value(_adump[6]))
                 #move to next rv file    
-                dump =_file.readline()
-            else:
-                op.append("--")
+                dump   = _file.readline()
+                _adump = dump.split()
+        if op == []:
+            op.append("")
     
     rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,rv_unit=RVunit,lc_obj=lc_obj)
     rv_obj.rv_baseline(*np.array(RVbases).T, gamma=gammas,gp=usegpRV,verbose=False) 

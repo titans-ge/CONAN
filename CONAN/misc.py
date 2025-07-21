@@ -105,31 +105,27 @@ def _print_output(self, section: str, file=None):
         DA = self._GP_dict
         max_namefilt_len = max([len(n) for n in self._names+self._filters]+[9])      #max length of lcname/filtname
         _print_gp = f"""# ============ Photometry GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) ========="""
-        _print_gp += f"""\n{spacing}{"name/filt":{max_namefilt_len}s} {"kern":5s} {'par':6s} {'h1:[Amp]':18s} {'h2:[len_scale1]':18s} {'h3:[Q,η,α,b]':18s} {'h4:[P]':12s} """
+        _print_gp += f"""\n{spacing}{"name/filt":{max_namefilt_len}s} {"kern":5s} {'par':6s} {'h1:[Amp]':18s} {'h2:[len_scale1]':18s} {'h3:[Q,η,C,α,b]':18s} {'h4:[P]':12s} """
         if DA != {}: 
             if self._sameLCgp.filtflag:
                 for f in self._sameLCgp.filters:
                     lc = self._sameLCgp.LCs[f][0]
 
                     ngp = DA[lc]["ngp"]
-                    if ngp == 2:
-                        txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}" + f"\n{spacing}{{7:{max_namefilt_len}s}}"+" {8:5s} {9:6s} {10:18s} {11:18s} {12:18s} {13:12s}"        
-                        t = txtfmt.format(f,
-                                            DA[lc]["amplitude0"].user_data.kernel, DA[lc]["amplitude0"].user_data.col,
-                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str,  
-                                            DA[lc]["h30"].prior_str, DA[lc]["h40"].prior_str, 
-                                            " "*(max_namefilt_len-3)+f'|{DA[lc]["op"]}|', 
-                                            DA[lc]["amplitude1"].user_data.kernel, DA[lc]["amplitude1"].user_data.col,
-                                            DA[lc]["amplitude1"].prior_str, DA[lc]["lengthscale1"].prior_str,
-                                            DA[lc]["h31"].prior_str, DA[lc]["h41"].prior_str)
-                    else:
-                        txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}"
-                        t = txtfmt.format(f,
-                                            DA[lc]["amplitude0"].user_data.kernel, DA[lc]["amplitude0"].user_data.col,  
-                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str,
-                                            DA[lc]["h30"].prior_str, DA[lc]["h40"].prior_str)
+                    txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}"
+                    val    = [f,
+                            DA[lc]["amplitude0"].user_data.kernel, DA[lc]["amplitude0"].user_data.col,  
+                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str,
+                            DA[lc]["h30"].prior_str, DA[lc]["h40"].prior_str]
+                    for n in range(1,ngp):
+                        txtfmt += f"\n{spacing}{{{n*7+0}:{max_namefilt_len}s}}"+f" {{{n*7+1}:5s}} {{{n*7+2}:6s}} {{{n*7+3}:18s}} {{{n*7+4}:18s}} {{{n*7+5}:18s}} {{{n*7+6}:12s}}"
+                        val.extend([" "*(max_namefilt_len-3)+f'|{DA[lc]["op"][n-1]}|', 
+                                        DA[lc][f"amplitude{n}"].user_data.kernel, DA[lc][f"amplitude{n}"].user_data.col,
+                                        DA[lc][f"amplitude{n}"].prior_str, DA[lc][f"lengthscale{n}"].prior_str,
+                                        DA[lc][f"h3{n}"].prior_str, DA[lc][f"h4{n}"].prior_str] )
+                    
+                    t = txtfmt.format(*val)
                     _print_gp += t
-
             else:
                 if self._allLCgp:  #shortcut print just one line gp config if all LCs have the same GP
                     equal_allgp = all([_compare_nested_structures(DA[list(DA.keys())[0]],DA[lc]) for lc in list(DA.keys())[1:]])
@@ -137,23 +133,20 @@ def _print_output(self, section: str, file=None):
                     equal_allgp = False
                 for lc in DA.keys():
                     ngp = DA[lc]["ngp"]
-                    if ngp == 2:
-                        txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}" + f"\n{spacing}{{7:{max_namefilt_len}s}}"+" {8:5s} {9:6s} {10:18s} {11:18s} {12:18s} {13:12s}"        
-                        t = txtfmt.format('same' if self._sameLCgp.flag else "all" if equal_allgp else lc,
-                                            DA[lc]["amplitude0"].user_data.kernel, DA[lc]["amplitude0"].user_data.col,  
-                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str, 
-                                            DA[lc]["h30"].prior_str, DA[lc]["h40"].prior_str, 
-                                            " "*(max_namefilt_len-3)+f'|{DA[lc]["op"]}|',   
-                                            DA[lc]["amplitude1"].user_data.kernel, DA[lc]["amplitude1"].user_data.col,
-                                            DA[lc]["amplitude1"].prior_str, DA[lc]["lengthscale1"].prior_str,
-                                            DA[lc]["h31"].prior_str, DA[lc]["h41"].prior_str)
-                    else:
-                        txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}"
-                        t = txtfmt.format('same' if self._sameLCgp.flag else "all" if equal_allgp else lc,
-                                            DA[lc]["amplitude0"].user_data.kernel, DA[lc]["amplitude0"].user_data.col,  
-                                            DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str,
-                                            DA[lc]["h30"].prior_str, DA[lc]["h40"].prior_str, 
-                                            )
+
+                    txtfmt = f"\n{spacing}{{0:{max_namefilt_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}"
+                    val    = ['same' if self._sameLCgp.flag else "all" if equal_allgp else lc,
+                                DA[lc]["amplitude0"].user_data.kernel, DA[lc]["amplitude0"].user_data.col,  
+                                DA[lc]["amplitude0"].prior_str, DA[lc]["lengthscale0"].prior_str,
+                                DA[lc]["h30"].prior_str, DA[lc]["h40"].prior_str
+                            ]
+                    for n in range(1,ngp):
+                        txtfmt += f"\n{spacing}{{{n*7+0}:{max_namefilt_len}s}}"+f" {{{n*7+1}:5s}} {{{n*7+2}:6s}} {{{n*7+3}:18s}} {{{n*7+4}:18s}} {{{n*7+5}:18s}} {{{n*7+6}:12s}}"
+                        val.extend([" "*(max_namefilt_len-3)+f'|{DA[lc]["op"][n-1]}|', 
+                                        DA[lc][f"amplitude{n}"].user_data.kernel, DA[lc][f"amplitude{n}"].user_data.col,
+                                        DA[lc][f"amplitude{n}"].prior_str, DA[lc][f"lengthscale{n}"].prior_str,
+                                        DA[lc][f"h3{n}"].prior_str, DA[lc][f"h4{n}"].prior_str] )
+                    t = txtfmt.format(*val)
                     _print_gp += t
                     if self._sameLCgp.flag or equal_allgp:      #dont print the other lc GPs if same_GP is True
                         break
@@ -377,23 +370,21 @@ def _print_output(self, section: str, file=None):
 
             for rv in DA.keys():
                 ngp = DA[rv]["ngp"]
-                if ngp == 2:
-                    txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}" + f"\n{spacing}{{7:{max_name_len}s}}"+" {8:5s} {9:6s} {10:18s} {11:18s} {12:18s} {13:12s}"        
-                    t = txtfmt.format('same' if self._sameRVgp.flag else "all" if equal_allrvgp else rv,
-                                        DA[rv]["amplitude0"].user_data.kernel, DA[rv]["amplitude0"].user_data.col, 
-                                        DA[rv]["amplitude0"].prior_str,  DA[rv]["lengthscale0"].prior_str,
-                                        DA[rv]["h30"].prior_str, DA[rv]["h40"].prior_str, 
-                                        " "*(max_name_len-3)+f'|{DA[rv]["op"]}|', 
-                                        DA[rv]["amplitude1"].user_data.kernel, DA[rv]["amplitude1"].user_data.col,
-                                        DA[rv]["amplitude1"].prior_str, DA[rv]["lengthscale1"].prior_str,
-                                        DA[rv]["h31"].prior_str, DA[rv]["h41"].prior_str)
-                else:
-                    txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}"
-                    t = txtfmt.format('same' if self._sameRVgp.flag else "all" if equal_allrvgp else rv,
-                                        DA[rv]["amplitude0"].user_data.kernel, DA[rv]["amplitude0"].user_data.col,  
-                                        DA[rv]["amplitude0"].prior_str,DA[rv]["lengthscale0"].prior_str, 
-                                        DA[rv]["h30"].prior_str, DA[rv]["h40"].prior_str)
+
+                txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}"
+                val    = ['same' if self._sameRVgp.flag else "all" if equal_allrvgp else rv,
+                                    DA[rv]["amplitude0"].user_data.kernel, DA[rv]["amplitude0"].user_data.col,  
+                                    DA[rv]["amplitude0"].prior_str,DA[rv]["lengthscale0"].prior_str, 
+                                    DA[rv]["h30"].prior_str, DA[rv]["h40"].prior_str]
+                for n in range(1,ngp):
+                    txtfmt += f"\n{spacing}{{{n*7+0}:{max_name_len}s}}"+f" {{{n*7+1}:5s}} {{{n*7+2}:6s}} {{{n*7+3}:18s}} {{{n*7+4}:18s}} {{{n*7+5}:18s}} {{{n*7+6}:12s}}"
+                    val.extend([" "*(max_name_len-3)+f'|{DA[rv]["op"][n-1]}|', 
+                                    DA[rv][f"amplitude{n}"].user_data.kernel, DA[rv][f"amplitude{n}"].user_data.col,
+                                    DA[rv][f"amplitude{n}"].prior_str, DA[rv][f"lengthscale{n}"].prior_str,
+                                    DA[rv][f"h3{n}"].prior_str, DA[rv][f"h4{n}"].prior_str] )
+                t = txtfmt.format(*val)
                 _print_gp += t
+
                 if self._sameRVgp.flag or equal_allrvgp:      #dont print the other GPs if same_GP is True or all
                     break
         print(_print_gp, file=file)
@@ -491,34 +482,34 @@ class _param_obj():
         
         v = param_in
         if isinstance(v, (int, float)): #fixed parameter
-            params = ["n",v,0.,"n",v,0.,0.,0.,0.,user_input,user_data,f'F({v})']
+            params = ["n",v,0.,"n",v,0.,0.,0.,0.,v,user_data,f'F({v})']
         elif isinstance(v, tuple):
             if len(v)==2:  #normal prior
                 assert v[1]>0,f"{func_call} wrongly defined normal prior. must be of form (mean,std) with std>0 but {v} given."
                 step   = 0.1*v[1] if step==None else step
                 lo_lim = v[0]-10*v[1] if lo==None else lo
                 hi_lim = v[0]+10*v[1] if hi==None else hi
-                params = ["y",v[0],step,"p",v[0],v[1],v[1],lo_lim,hi_lim,user_input,user_data,f'N({v[0]},{v[1]})']
+                params = ["y",v[0],step,"p",v[0],v[1],v[1],lo_lim,hi_lim,v,user_data,f'N({v[0]},{v[1]})']
             elif len(v)==3: #uniform prior
                 assert v[0]<=v[1]<=v[2],f"{func_call} wrongly defined uniform prior. must be of form (min,start,max) with min<=start<=max but {v} given."
                 step = min(0.001,0.001*np.ptp(v)) if step==None else step
                 lo_lim = v[0] if lo==None else lo
                 hi_lim = v[2] if hi==None else hi
-                params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,user_input,user_data,f'U({v[0]},{v[1]},{v[2]})' if prior_str==None else prior_str]
+                params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,v,user_data,f'U({v[0]},{v[1]},{v[2]})' if prior_str==None else prior_str]
             elif len(v)==4 and v[-1]=="LU": #loguniform prior
                 assert v[0]<=v[1]<=v[2],f"{func_call} wrongly defined uniform prior. must be of form (min,start,max) with min<=start<=max but {v} given."
                 step = min(0.001,0.001*np.ptp(v[:-1])) if step==None else step
                 lo_lim = v[0] if lo==None else lo
                 hi_lim = v[2] if hi==None else hi
-                params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,user_input,user_data,f'LU({v[0]},{v[1]},{v[2]})']
+                params = ["y",v[1],step,"n",v[1],0,0,lo_lim,hi_lim,v[:-1],user_data,f'LU({v[0]},{v[1]},{v[2]})']
             elif len(v)==4: #truncated normal prior
                 assert v[0]<=v[2]<=v[1] and v[3]>0,f"{func_call} wrongly defined trucated normal prior. must be of form (min,max,mean,std) with min<=mean<=max  and std>0, but {v} given."
                 step = 0.1*v[3] if step==None else step
-                params = ["y",v[2],step,"p",v[2],v[3],v[3],v[0],v[1],user_input,user_data,f'TN({v[0]},{v[1]},{v[2]},{v[3]})']
+                params = ["y",v[2],step,"p",v[2],v[3],v[3],v[0],v[1],v,user_data,f'TN({v[0]},{v[1]},{v[2]},{v[3]})']
             else:
                 raise TypeError(f"{func_call} tuple must have 2,3 or 4 elements but {v} given")
         elif v==None:
-            params = ["n",None,0,"n",None,0,0,0,0,user_input,user_data,'None']
+            params = ["n",None,0,"n",None,0,0,0,0,None,user_data,'None']
         else:
             raise TypeError(f"{func_call} input must be an int, float, tuple or None")
         return cls(*params)

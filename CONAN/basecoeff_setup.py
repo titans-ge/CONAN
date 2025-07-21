@@ -5,7 +5,7 @@ def basecoeff(ibase,spline,init=None,lims=None, fit_offset="y"):
     # this function returns the input arrays for the baseline coefficients
     #   only those coefficients that are used are set to be jump parameters, 
     #   all others are set == 0 value, 0 stepsize, [0,0] Boundaries.
-      
+    
     # each of the arrays have 4 parameter: [initial guess, step, min, max]  -- perhaps 5 in the future if I use priors
     # nbc is the number of non-fixed baseline coefficients
     
@@ -37,7 +37,7 @@ def basecoeff(ibase,spline,init=None,lims=None, fit_offset="y"):
             pr_str[0] = f'U({lims["off"][0]},{init["off"]},{lims["off"][1]})'
             nbc = nbc+1
     
-     # dcol0 coeff:   A0*dcol0 + B0*dcol0^2 + C0*dcol0^3 + D0*dcol0^4
+    # dcol0 coeff:   A0*dcol0 + B0*dcol0^2 + C0*dcol0^3 + D0*dcol0^4
     dcol0 = np.zeros((4,4), dtype=float)
     if ibase[0] > 0:  #A0
         dcol0[:,0]=[init["A0"],0.001,*lims["A0"]] 
@@ -48,7 +48,7 @@ def basecoeff(ibase,spline,init=None,lims=None, fit_offset="y"):
         dcol0[:,1]=[init["B0"],0.001,*lims["B0"]]  
         pr_str[2] = f'U({lims["B0"][0]},{init["B0"]},{lims["B0"][1]})'
         nbc = nbc+1
-         
+    
     if ibase[0] > 2:  #C0
         dcol0[:,2]=[init["C0"],0.001,*lims["C0"]]  
         pr_str[3] = f'U({lims["C0"][0]},{init["C0"]},{lims["C0"][1]})'

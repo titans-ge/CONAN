@@ -692,18 +692,18 @@ def ecc_om_par(ecc, omega, conv_2_obj=False, return_tuple=False):
 
     to_fit = "y" if ecc.to_fit=="y" or omega.to_fit=="y" else "n"
     pri = "p" if (ecc.prior_width_lo!=0. or omega.prior_width_lo!=0.) else "n"
-    sesinw_in=[to_fit,sesinw,sesinw_step,pri,sesinw_prior_mean,sesinw_prior_width,sesinw_prior_width,sesinw_bounds_lo,sesinw_bounds_hi]
-    secosw_in=[to_fit,secosw,secosw_step,pri,secosw_prior_mean,secosw_prior_width,secosw_prior_width,secosw_bounds_lo,secosw_bounds_hi]
+    # sesinw_in=[to_fit,sesinw,sesinw_step,pri,sesinw_prior_mean,sesinw_prior_width,sesinw_prior_width,sesinw_bounds_lo,sesinw_bounds_hi]
+    # secosw_in=[to_fit,secosw,secosw_step,pri,secosw_prior_mean,secosw_prior_width,secosw_prior_width,secosw_bounds_lo,secosw_bounds_hi]
 
     from ._classes import _param_obj
-    sesinw_in = _param_obj(*sesinw_in)
-    secosw_in = _param_obj(*secosw_in)
+    sesinw_tup = sesinw if to_fit=="n" else (sesinw, sesinw_prior_width) if sesinw_prior_width>0 else (sesinw_bounds_lo, sesinw,sesinw_bounds_hi)
+    secosw_tup = secosw if to_fit=="n" else (secosw, secosw_prior_width) if secosw_prior_width>0 else (secosw_bounds_lo, secosw,secosw_bounds_hi)
 
     if return_tuple:
-        sesinw = sesinw_in.start_value if sesinw_in.to_fit=="n" else (sesinw_in.start_value, sesinw_prior_width) if sesinw_prior_width>0 else (sesinw_in.bounds_lo, sesinw_in.start_value,sesinw_in.bounds_hi)
-        secosw = secosw_in.start_value if secosw_in.to_fit=="n" else (secosw_in.start_value, secosw_prior_width) if secosw_prior_width>0 else (secosw_in.bounds_lo, secosw_in.start_value,secosw_in.bounds_hi)
-        return sesinw, secosw
-
+        return sesinw_tup, secosw_tup
+    
+    sesinw_in = _param_obj.from_tuple(sesinw_tup)
+    secosw_in = _param_obj.from_tuple(secosw_tup)
     return sesinw_in, secosw_in
 
 

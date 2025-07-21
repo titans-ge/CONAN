@@ -450,7 +450,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
 
                 gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
                 gpcol    = gp_colnames[j]
-                pargp    = thisLCdata[gpcol] if isinstance(gpcol, str) else np.vstack((thisLCdata[gpcol][0],thisLCdata[gpcol][1])).T
+                pargp    = thisLCdata[gpcol] if isinstance(gpcol, str) else np.column_stack( [thisLCdata[c] for c in gpcol]) 
                 srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
                 unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
                 
@@ -525,8 +525,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             if isinstance(gpcol, str):
                 pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs])   #join column data for all datasets with useGPphot !="n"
             else:
-                pargp = np.vstack(np.concatenate([input_lcs[nm][gpcol[0]] for nm in sameLCgp.LCs]), np.concatenate([input_lcs[nm][gpcol[1]] for nm in sameLCgp.LCs])).T
-            
+                pargp = np.column_stack( [np.concatenate([input_lcs[nm][c] for nm in sameLCgp.LCs]) for c in gpcol ])
+                                        
             srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
             unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
 
@@ -561,7 +561,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             if inmcmc == 'n':
                 resid_cctn = np.concatenate([residual_all[i] for i in sameLCgp.indices])
                 for j in sameLCgp.indices:
-                    thispargp    = input_lcs[LCnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_lcs[LCnames[j]][gpcol][0],input_lcs[LCnames[j]][gpcol][1])).T
+                    if isinstance(gpcol, str):
+                        thispargp = input_lcs[LCnames[j]][gpcol]  
+                    else:
+                        thispargp = np.column_stack( [input_lcs[LCnames[j]][c] for c in gpcol] )
+                    
                     thissrt_gp   = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
                     thisunsrt_gp = np.argsort(thissrt_gp)  #indices to unsort the gp axis
                     which_GP     = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
@@ -607,7 +611,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 if isinstance(gpcol, str):
                     pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs[filt]])   #join column data for all datasets of this filter with useGPphot !="n"
                 else:
-                    pargp = np.vstack(np.concatenate([input_lcs[nm][gpcol[0]] for nm in sameLCgp.LCs[filt]]), np.concatenate([input_lcs[nm][gpcol[1]] for nm in sameLCgp.LCs[filt]])).T
+                    pargp = np.column_stack( [np.concatenate([input_lcs[nm][c] for nm in sameLCgp.LCs[filt]]) for c in gpcol ])
                 
                 srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
                 unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
@@ -642,7 +646,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 # if not in MCMC, get a prediction and append it to the output array
                 if inmcmc == 'n':      
                     for j in sameLCgp.indices[filt]: #loop over the LCs in this filter
-                        thispargp       = input_lcs[LCnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_lcs[LCnames[j]][gpcol][0],input_lcs[LCnames[j]][gpcol][1])).T
+                        if isinstance(gpcol, str) :
+                            thispargp   = input_lcs[LCnames[j]][gpcol] 
+                        else: 
+                            thispargp   = np.column_stack( [input_lcs[LCnames[j]][c] for c in gpcol] ) #get the gp column data for this lc
+
                         thissrt_gp      = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
                         thisunsrt_gp    = np.argsort(thissrt_gp)  #indices to unsort the gp axis
                         which_GP        = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
@@ -858,7 +866,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 rv_gppars  = params_all[len(params)+len(GPparams):]   #all rv gp parameters
                 gpcol      = rv_gp_colnames[j] 
                 rvpargp    = rv_pargps[j]            #independent axis columns
-                rvpargp    = thisRVdata[gpcol] if isinstance(gpcol, str) else np.vstack((thisRVdata[gpcol][0],thisRVdata[gpcol][1])).T
+                # rvpargp    = thisRVdata[gpcol] if isinstance(gpcol, str) else np.column_stack( [thisRVdata[c] for c in gpcol]) 
                 srt_rvgp   = np.argsort(rvpargp) if rvpargp.ndim==1 else np.argsort(rvpargp[:,0])  #indices to sort the gp axis
                 unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
 
@@ -928,7 +936,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             if isinstance(gpcol,str):
                 rvpargp = np.concatenate([input_rvs[nm][gpcol] for nm in sameRVgp.RVs])   #join column data for all datasets
             else:
-                rvpargp = np.vstack(np.concatenate([input_rvs[nm][gpcol[0]] for nm in sameRVgp.RVs]), np.concatenate([input_rvs[nm][gpcol[1]] for nm in sameRVgp.RVs])).T
+                rvpargp = np.column_stack( [np.concatenate([input_rvs[nm][c] for nm in sameRVgp.RVs]) for c in gpcol ])
         
             srt_rvgp   = np.argsort(rvpargp) if rvpargp.ndim==1 else np.argsort(rvpargp[:,0])  #indices to sort the gp axis
             unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
@@ -963,7 +971,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             if inmcmc == 'n':
                 resid_cctn = np.concatenate([residual_all[i] for i in sameRVgp.indices])
                 for j in sameRVgp.indices:
-                    thisrvpargp    = input_rvs[RVnames[j]][gpcol] if isinstance(gpcol, str) else np.vstack((input_rvs[RVnames[j]][gpcol][0],input_rvs[RVnames[j]][gpcol][1])).T
+                    if isinstance(gpcol, str):
+                        thisrvpargp = input_rvs[RVnames[j]][gpcol] 
+                    else:
+                        thisrvpargp = np.column_stack( [input_rvs[RVnames[j]][c] for c in gpcol] ) 
+
                     thissrt_rvgp   = np.argsort(thisrvpargp) if thisrvpargp.ndim==1 else np.argsort(thisrvpargp[:,0])  #indices to sort the gp axis
                     thisunsrt_rvgp = np.argsort(thissrt_rvgp)  #indices to unsort the gp axis
                     which_GP       = "George" if useGPrv[j]=='ge' else "Celerite" if useGPrv[j]=='ce' else "Spleaf"

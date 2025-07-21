@@ -923,6 +923,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             thisLCgp = GPdict[LCnames[i]]        #the GP dictionary for this LC
             gpcols   = [thisLCgp[f"amplitude{n}"].user_data.col for n in range(thisLCgp["ngp"])]     #data column names to use for the GP
             gpkerns.append([thisLCgp[f"amplitude{n}"].user_data.kernel for n in range(thisLCgp["ngp"])]) #GP kernels of this lc
+            kern = [0]*thisLCgp["ngp"]  #list to hold the kernel objects for this LC
 
             for n in range(thisLCgp["ngp"]):                      #loop through the number of GPs for this LC
                 gpkern = thisLCgp[f"amplitude{n}"].user_data.kernel   #kernel to use for this GP
@@ -932,102 +933,151 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 #use if sameLCgp.flag and i != sameLCgp.first_index: continue
                 #    else append the parameters
 
-                GPparams    = np.concatenate((GPparams,    [thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value, thisLCgp[f"h3{n}"].start_value, thisLCgp[f"h4{n}"].start_value]), axis=0)
-                GPstepsizes = np.concatenate((GPstepsizes, [thisLCgp[f"amplitude{n}"].step_size, thisLCgp[f"lengthscale{n}"].step_size, thisLCgp[f"h3{n}"].step_size, thisLCgp[f"h4{n}"].step_size]), axis=0)
-                GPindex     = np.concatenate((GPindex,     (np.zeros(4)+i)), axis=0)
-                GPprior     = np.concatenate((GPprior,     [thisLCgp[f"amplitude{n}"].prior_mean, thisLCgp[f"lengthscale{n}"].prior_mean, thisLCgp[f"h3{n}"].prior_mean, thisLCgp[f"h4{n}"].prior_mean]), axis=0)
-                GPpriwid    = np.concatenate((GPpriwid,    [thisLCgp[f"amplitude{n}"].prior_width_lo, thisLCgp[f"lengthscale{n}"].prior_width_lo, thisLCgp[f"h3{n}"].prior_width_lo, thisLCgp[f"h4{n}"].prior_width_lo]), axis=0)
-                GPlimup     = np.concatenate((GPlimup,     [thisLCgp[f"amplitude{n}"].bounds_hi, thisLCgp[f"lengthscale{n}"].bounds_hi, thisLCgp[f"h3{n}"].bounds_hi, thisLCgp[f"h4{n}"].bounds_hi]), axis=0)
-                GPlimlo     = np.concatenate((GPlimlo,     [thisLCgp[f"amplitude{n}"].bounds_lo, thisLCgp[f"lengthscale{n}"].bounds_lo, thisLCgp[f"h3{n}"].bounds_lo, thisLCgp[f"h4{n}"].bounds_lo]), axis=0)
-                GPprior_str = np.concatenate((GPprior_str, [thisLCgp[f"amplitude{n}"].prior_str, thisLCgp[f"lengthscale{n}"].prior_str, thisLCgp[f"h3{n}"].prior_str, thisLCgp[f"h4{n}"].prior_str]), axis=0)
+                GPparams    = np.concatenate((GPparams, [thisLCgp[f"amplitude{n}"].start_value, 
+                                                        thisLCgp[f"lengthscale{n}"].start_value, 
+                                                        thisLCgp[f"h3{n}"].start_value, 
+                                                        thisLCgp[f"h4{n}"].start_value]), 
+                                                axis=0)
+                GPstepsizes = np.concatenate((GPstepsizes, [thisLCgp[f"amplitude{n}"].step_size, 
+                                                            thisLCgp[f"lengthscale{n}"].step_size, 
+                                                            thisLCgp[f"h3{n}"].step_size, 
+                                                            thisLCgp[f"h4{n}"].step_size]), 
+                                                axis=0)
+                GPindex     = np.concatenate((GPindex,  (np.zeros(4)+i)), axis=0)
+                GPprior     = np.concatenate((GPprior,  [thisLCgp[f"amplitude{n}"].prior_mean, 
+                                                        thisLCgp[f"lengthscale{n}"].prior_mean, 
+                                                        thisLCgp[f"h3{n}"].prior_mean, 
+                                                        thisLCgp[f"h4{n}"].prior_mean]), 
+                                                axis=0)
+                GPpriwid    = np.concatenate((GPpriwid, [thisLCgp[f"amplitude{n}"].prior_width_lo, 
+                                                        thisLCgp[f"lengthscale{n}"].prior_width_lo, 
+                                                        thisLCgp[f"h3{n}"].prior_width_lo, 
+                                                        thisLCgp[f"h4{n}"].prior_width_lo]), 
+                                                axis=0)
+                GPlimup     = np.concatenate((GPlimup,  [thisLCgp[f"amplitude{n}"].bounds_hi, 
+                                                        thisLCgp[f"lengthscale{n}"].bounds_hi, 
+                                                        thisLCgp[f"h3{n}"].bounds_hi, 
+                                                        thisLCgp[f"h4{n}"].bounds_hi]), 
+                                                axis=0)
+                GPlimlo     = np.concatenate((GPlimlo,  [thisLCgp[f"amplitude{n}"].bounds_lo, 
+                                                        thisLCgp[f"lengthscale{n}"].bounds_lo, 
+                                                        thisLCgp[f"h3{n}"].bounds_lo, 
+                                                        thisLCgp[f"h4{n}"].bounds_lo]), 
+                                                axis=0)
+                GPprior_str = np.concatenate((GPprior_str, [thisLCgp[f"amplitude{n}"].prior_str, 
+                                                            thisLCgp[f"lengthscale{n}"].prior_str, 
+                                                            thisLCgp[f"h3{n}"].prior_str, 
+                                                            thisLCgp[f"h4{n}"].prior_str]), 
+                                                axis=0)
                 if sameLCgp.flag:
                     if i == sameLCgp.first_index:
-                        GPnames = np.concatenate((GPnames,     [f"GPlcSame_Amp{n+1}_{gpcol}",f"GPlcSame_len{n+1}_{gpcol}",f"GPlcSame_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",f"GPlcSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), axis=0)
+                        GPnames = np.concatenate((GPnames, [f"GPlcSame_Amp{n+1}_{gpcol}",
+                                                            f"GPlcSame_len{n+1}_{gpcol}",
+                                                            f"GPlcSame_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",
+                                                            f"GPlcSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), 
+                                                    axis=0)
                     else:
-                        GPnames = np.concatenate((GPnames,     ['GPlcSame_Amp_None', 'GPlcSame_len_None','GPlcSame_h3_None','GPlcSame_h4_None']),axis=0)
+                        GPnames = np.concatenate((GPnames, ['GPlcSame_Amp_None', 
+                                                            'GPlcSame_len_None',
+                                                            'GPlcSame_h3_None',
+                                                            'GPlcSame_h4_None']),
+                                                    axis=0)
                 elif sameLCgp.filtflag:
                     if i == sameLCgp.first_index[lc_obj._filters[i]]:
-                        GPnames = np.concatenate((GPnames,     [f"GPlcFilt_{lc_obj._filters[i]}_Amp{n+1}_{gpcol}",f"GPlcFilt_{lc_obj._filters[i]}_len{n+1}_{gpcol}"]),
-                                                                f"GPlcFilt_{lc_obj._filters[i]}_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}", f"GPlcFilt_{lc_obj._filters[i]}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}", axis=0)
+                        GPnames = np.concatenate((GPnames, [f"GPlcFilt_{lc_obj._filters[i]}_Amp{n+1}_{gpcol}",
+                                                            f"GPlcFilt_{lc_obj._filters[i]}_len{n+1}_{gpcol}",
+                                                            f"GPlcFilt_{lc_obj._filters[i]}_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}", 
+                                                            f"GPlcFilt_{lc_obj._filters[i]}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), 
+                                                    axis=0)
                     else:
-                        GPnames = np.concatenate((GPnames,     ['GPlcFilt_Amp_None', 'GPlcFilt_len_None', 'GPlcFilt_h3_None', 'GPlcFilt_h4_None']),axis=0)
+                        GPnames = np.concatenate((GPnames, ['GPlcFilt_Amp_None', 
+                                                            'GPlcFilt_len_None', 
+                                                            'GPlcFilt_h3_None', 
+                                                            'GPlcFilt_h4_None']),
+                                                    axis=0)
                 else:
-                    GPnames = np.concatenate((GPnames,     [f"GPlc{i+1}_Amp{n+1}_{gpcol}", f"GPlc{i+1}_len{n+1}_{gpcol}",
-                                                            f"GPlc{i+1}_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",f"GPlc{i+1}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), axis=0)
+                    GPnames = np.concatenate((GPnames, [f"GPlc{i+1}_Amp{n+1}_{gpcol}", 
+                                                        f"GPlc{i+1}_len{n+1}_{gpcol}",
+                                                        f"GPlc{i+1}_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",
+                                                        f"GPlc{i+1}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), 
+                                                axis=0)
 
                 if useGPphot[i]=="ge":  #George GP
                     assert gpkern in george_kernels.keys(), f"Invalid kernel '{gpkern}' for George GP, must be one of {list(george_kernels.keys())}"
-                    ndim_gp  = len(set(gpcols))       #number of different columns used for the GP
-                    axes_gp  = [gpcols.index(gpcol)]  #axes of the GP (0 or 1)
+                    ndim_gp  = len(set(gpcols))       #number of different columns (dimensions) used for the GP
+                    axes_gp  = [list(np.unique(gpcols)).index(gpcol)]  #axes of the GP (0 or 1)
 
-                    if n==0:
-                        if gpkern=="qp":    #expsq * expsine2 kernel
-                            kern = (100e-6*george_kernels[gpkern][0](1,ndim=ndim_gp, axes=axes_gp)) * (-1*george_kernels[gpkern][1](1,1,ndim=ndim_gp, axes=axes_gp))
-                        else:
-                            kern = 100e-6 * george_kernels[gpkern](*[1]*(npars_gp[gpkern]-1), ndim=ndim_gp,axes=axes_gp)  #dummy initialization
-                        # set the kernel parameters to the starting values after performing the conversion
-                        gppars =  gp_conv.get_values(kernels="ge_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,thisLCgp[f"lengthscale{n}"].start_value,
-                                                                                            thisLCgp[f"h3{n}"].start_value, thisLCgp[f"h4{n}"].start_value])
-                        kern.set_parameter_vector(gppars)  
+                    if gpkern=="qp":    #expsq * expsine2 kernel
+                        kern[n] = (100e-6*george_kernels[gpkern][0](1,ndim=ndim_gp, axes=axes_gp)) * (-1*george_kernels[gpkern][1](1,1,ndim=ndim_gp, axes=axes_gp))
+                    else:
+                        kern[n] = 100e-6 * george_kernels[gpkern](*[1]*(npars_gp[gpkern]-1), ndim=ndim_gp,axes=axes_gp)  #dummy initialization
+                    # set the kernel parameters to the starting values after performing the conversion
+                    gppars =  gp_conv.get_values(kernels="ge_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,
+                                                                                        thisLCgp[f"lengthscale{n}"].start_value,
+                                                                                        thisLCgp[f"h3{n}"].start_value, 
+                                                                                        thisLCgp[f"h4{n}"].start_value])
+                    kern[n].set_parameter_vector(gppars)  
+                    
+                    if n==0: 
+                        all_kern = kern[n]
                         gp_x = thisLCdata[gpcol]  # the x values for the GP
                         col_name = gpcol
-
-                    if n==1:                       # if this is the second GP, then add/mult the new kernel to the previous one
-                        if gpkern=="qp":
-                            kern2 = (100e-6*george_kernels[gpkern][0](1,ndim=ndim_gp, axes=axes_gp)) * (-1*george_kernels[gpkern][1](1,1,ndim=ndim_gp, axes=axes_gp))
-                        else:
-                            kern2 = 100e-6 * george_kernels[gpkern](*[1]*(npars_gp[gpkern]-1), ndim=ndim_gp,axes=axes_gp)  #dummy initialization
-                        gppars =  gp_conv.get_values(kernels="ge_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value,thisLCgp[f"lengthscale{n}"].start_value,
-                                                                                            thisLCgp[f"h3{n}"].start_value, thisLCgp[f"h4{n}"].start_value])
-                        kern2.set_parameter_vector(gppars)
-                        if thisLCgp["op"]=="+": kern += kern2
-                        if thisLCgp["op"]=="*": kern *= kern2
+                    if n >= 1:  #if there are multiple GPs for this LC, then add/mult the kernels
+                        if thisLCgp["op"][n-1]=="+": 
+                            all_kern += kern[n]
+                        if thisLCgp["op"][n-1]=="*": 
+                            all_kern *= kern[n]
                         
-                        if ndim_gp >1: 
-                            gp_x = np.vstack((gp_x, thisLCdata[gpcol])).T  #2D array with the x values for the GP
-                            col_name = (col_name, gpcol)
 
-                    gp = GP(kern, mean=0)
+                        if axes_gp!=0: #ndim_gp >1: 
+                            gp_x = np.column_stack((gp_x, thisLCdata[gpcol]))  #multiD array with the x values for the GP
+                            col_name = (col_name, gpcol)   if isinstance(col_name, str)  else (*col_name, gpcol)
+
+                    gp = GP(all_kern, mean=0)
                     col_nm = col_name
             
                 if useGPphot[i]=="ce":   #Celerite GP
                     assert gpkern in celerite_kernels.keys(), f"Invalid kernel '{gpkern}' for Celerite GP, must be one of {list(celerite_kernels.keys())}"
-                    if n==0: 
-                        kern  = celerite_kernels[gpkern](*[-1]*npars_gp[gpkern])   #dummy initialization
-                        # set the kernel parameters to the starting values after performing the conversion
-                        gppars =  gp_conv.get_values(kernels="ce_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value,
-                                                                                            thisLCgp[f"h3{n}"].start_value, thisLCgp[f"h4{n}"].start_value])
-                        kern.set_parameter_vector(gppars)
-                    if n==1:
-                        kern2 = celerite_kernels[gpkern](*[-1]*npars_gp[gpkern])
-                        #starting values of next kernel
-                        gppars =  gp_conv.get_values(kernels="ce_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value,
-                                                                                                    thisLCgp[f"h3{n}"].start_value, thisLCgp[f"h4{n}"].start_value])
-                        kern2.set_parameter_vector(gppars)
-                        
-                        if thisLCgp["op"]=="+": kern += kern2
-                        if thisLCgp["op"]=="*": kern *= kern2
+
+                    kern[n]  = celerite_kernels[gpkern](*[-1]*npars_gp[gpkern])   #dummy initialization
+                    # set the kernel parameters to the starting values after performing the conversion
+                    gppars =  gp_conv.get_values(kernels="ce_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, 
+                                                                                        thisLCgp[f"lengthscale{n}"].start_value,
+                                                                                        thisLCgp[f"h3{n}"].start_value, 
+                                                                                        thisLCgp[f"h4{n}"].start_value])
+                    kern[n].set_parameter_vector(gppars)  
+                    
+                    if n==0:
+                        all_kern = kern[n]
+                    if n >= 1:
+                        if thisLCgp["op"][n-1]=="+": 
+                            all_kern += kern[n]
+                        if thisLCgp["op"][n-1]=="*": 
+                            all_kern *= kern[n]
                     
                     gp_x = thisLCdata[gpcol] # the x values for the GP,
-                    gp   = cGP(kern, mean=0, fit_mean = False)
+                    gp   = cGP(all_kern, mean=0, fit_mean = False)
                     col_nm = gpcol
 
                 if useGPphot[i]=="sp":   #spleaf GP
                     assert gpkern in spleaf_kernels.keys(), f"Invalid kernel '{gpkern}' for Spleaf GP, must be one of {list(spleaf_kernels.keys())}"
-                    if n==0: 
-                        # set the kernel parameters to the starting values after performing the conversion
-                        gppars =  gp_conv.get_values(kernels="sp_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value,
-                                                                                            thisLCgp[f"h3{n}"].start_value, thisLCgp[f"h4{n}"].start_value])
-                        kern = spleaf_kernels[gpkern](*gppars)
-                    if n==1:
-                        #starting values of next kernel
-                        gppars =  gp_conv.get_values(kernels="sp_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, thisLCgp[f"lengthscale{n}"].start_value,
-                                                                                            thisLCgp[f"h3{n}"].start_value, thisLCgp[f"h4{n}"].start_value])
-                        kern2 = spleaf_kernels[gpkern](*gppars)
 
-                        if thisLCgp["op"]=="+": kern = spleaf.term.SimpleSumKernel(k1=kern, k2=kern2)
-                        if thisLCgp["op"]=="*": kern = spleaf.term.SimpleProductKernel(k1=kern, k2=kern2)
-                    gp     = kern
+                    # set the kernel parameters to the starting values after performing the conversion
+                    gppars =  gp_conv.get_values(kernels="sp_"+gpkern, data="lc", pars=[thisLCgp[f"amplitude{n}"].start_value, 
+                                                                                        thisLCgp[f"lengthscale{n}"].start_value,
+                                                                                        thisLCgp[f"h3{n}"].start_value, 
+                                                                                        thisLCgp[f"h4{n}"].start_value])
+                    kern[n] = spleaf_kernels[gpkern](*gppars)                    
+                
+                    if n==0:
+                        all_kern = kern[n]
+                    if n >= 1:
+                        if thisLCgp["op"][n-1]=="+": 
+                            all_kern = spleaf.term.SimpleSumKernel(k1=all_kern, k2=kern[n])
+                        if thisLCgp["op"][n-1]=="*": 
+                            all_kern = spleaf.term.SimpleProductKernel(k1=all_kern, k2=kern[n])
+                    
+                    gp     = all_kern
                     gp_x   = thisLCdata[gpcol] # the x values for the GP,
                     col_nm = gpcol
 
@@ -1049,7 +1099,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 
     for i in range(nRV):
-        # t, rv, err, bis, fwhm, contrast = np.loadtxt(rv_fpath+RVnames[i], usecols=(0,1,2,3,4,5), unpack = True)  # reading in the data
         thisRVdata = input_rvs[RVnames[i]]
         t, rv, err, bis, fwhm, contrast = thisRVdata.values()
 
@@ -1100,104 +1149,143 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             thisRVgp = rvGPdict[RVnames[i]]
             gpcols   = [thisRVgp[f"amplitude{n}"].user_data.col for n in range(thisRVgp["ngp"])]
             rv_gpkerns.append([thisRVgp[f"amplitude{n}"].user_data.kernel for n in range(thisRVgp["ngp"])])
+            kern = [0]*thisRVgp["ngp"]  #list to hold the kernel objects for this RV
 
             for n in range(thisRVgp["ngp"]):                      #loop through the number of GPs for this RV
                 gpkern = thisRVgp[f"amplitude{n}"].user_data.kernel   #kernel to use for this GP
                 gpcol  = thisRVgp[f"amplitude{n}"].user_data.col   #column of the data to use for this GP
 
-                rvGPparams    = np.concatenate((rvGPparams,    [thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value, thisRVgp[f"h3{n}"].start_value, thisRVgp[f"h4{n}"].start_value]), axis=0)
-                rvGPstepsizes = np.concatenate((rvGPstepsizes, [thisRVgp[f"amplitude{n}"].step_size, thisRVgp[f"lengthscale{n}"].step_size, thisRVgp[f"h3{n}"].step_size, thisRVgp[f"h4{n}"].step_size]), axis=0)
-                rvGPindex     = np.concatenate((rvGPindex,     (np.zeros(4)+i)), axis=0)
-                rvGPprior     = np.concatenate((rvGPprior,     [thisRVgp[f"amplitude{n}"].prior_mean, thisRVgp[f"lengthscale{n}"].prior_mean, thisRVgp[f"h3{n}"].prior_mean, thisRVgp[f"h4{n}"].prior_mean]), axis=0)
-                rvGPpriwid    = np.concatenate((rvGPpriwid,    [thisRVgp[f"amplitude{n}"].prior_width_lo, thisRVgp[f"lengthscale{n}"].prior_width_lo, thisRVgp[f"h3{n}"].prior_width_lo, thisRVgp[f"h4{n}"].prior_width_lo]), axis=0)
-                rvGPlimup     = np.concatenate((rvGPlimup,     [thisRVgp[f"amplitude{n}"].bounds_hi, thisRVgp[f"lengthscale{n}"].bounds_hi, thisRVgp[f"h3{n}"].bounds_hi, thisRVgp[f"h4{n}"].bounds_hi]), axis=0)
-                rvGPlimlo     = np.concatenate((rvGPlimlo,     [thisRVgp[f"amplitude{n}"].bounds_lo, thisRVgp[f"lengthscale{n}"].bounds_lo, thisRVgp[f"h3{n}"].bounds_lo, thisRVgp[f"h4{n}"].bounds_lo]), axis=0)
-                rvGPprior_str = np.concatenate((rvGPprior_str, [thisRVgp[f"amplitude{n}"].prior_str, thisRVgp[f"lengthscale{n}"].prior_str, thisRVgp[f"h3{n}"].prior_str, thisRVgp[f"h4{n}"].prior_str]), axis=0)
+                rvGPparams    = np.concatenate((rvGPparams, [thisRVgp[f"amplitude{n}"].start_value, 
+                                                            thisRVgp[f"lengthscale{n}"].start_value, 
+                                                            thisRVgp[f"h3{n}"].start_value, 
+                                                            thisRVgp[f"h4{n}"].start_value]), 
+                                                    axis=0)
+                rvGPstepsizes = np.concatenate((rvGPstepsizes, [thisRVgp[f"amplitude{n}"].step_size, 
+                                                                thisRVgp[f"lengthscale{n}"].step_size, 
+                                                                thisRVgp[f"h3{n}"].step_size, 
+                                                                thisRVgp[f"h4{n}"].step_size]), 
+                                                    axis=0)
+                rvGPindex     = np.concatenate((rvGPindex, (np.zeros(4)+i)), axis=0)
+                rvGPprior     = np.concatenate((rvGPprior, [thisRVgp[f"amplitude{n}"].prior_mean, 
+                                                            thisRVgp[f"lengthscale{n}"].prior_mean, 
+                                                            thisRVgp[f"h3{n}"].prior_mean, 
+                                                            thisRVgp[f"h4{n}"].prior_mean]), 
+                                                    axis=0)
+                rvGPpriwid    = np.concatenate((rvGPpriwid, [thisRVgp[f"amplitude{n}"].prior_width_lo, 
+                                                            thisRVgp[f"lengthscale{n}"].prior_width_lo, 
+                                                            thisRVgp[f"h3{n}"].prior_width_lo, 
+                                                            thisRVgp[f"h4{n}"].prior_width_lo]), 
+                                                    axis=0)
+                rvGPlimup     = np.concatenate((rvGPlimup,  [thisRVgp[f"amplitude{n}"].bounds_hi, 
+                                                            thisRVgp[f"lengthscale{n}"].bounds_hi, 
+                                                            thisRVgp[f"h3{n}"].bounds_hi, 
+                                                            thisRVgp[f"h4{n}"].bounds_hi]), 
+                                                    axis=0)
+                rvGPlimlo     = np.concatenate((rvGPlimlo, [thisRVgp[f"amplitude{n}"].bounds_lo, 
+                                                            thisRVgp[f"lengthscale{n}"].bounds_lo, 
+                                                            thisRVgp[f"h3{n}"].bounds_lo, 
+                                                            thisRVgp[f"h4{n}"].bounds_lo]), 
+                                                    axis=0)
+                rvGPprior_str = np.concatenate((rvGPprior_str, [thisRVgp[f"amplitude{n}"].prior_str, 
+                                                                thisRVgp[f"lengthscale{n}"].prior_str, 
+                                                                thisRVgp[f"h3{n}"].prior_str, 
+                                                                thisRVgp[f"h4{n}"].prior_str]), 
+                                                    axis=0)
                 if sameRVgp.flag:
                     if i == sameRVgp.first_index:
-                        rvGPnames = np.concatenate((rvGPnames,     [f"GPrvSame_Amp{n+1}_{gpcol}",f"GPrvSame_len{n+1}_{gpcol}",f"GPrvSame_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",f"GPrvSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), axis=0)
+                        rvGPnames = np.concatenate((rvGPnames, [f"GPrvSame_Amp{n+1}_{gpcol}",
+                                                                f"GPrvSame_len{n+1}_{gpcol}",
+                                                                f"GPrvSame_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",
+                                                                f"GPrvSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), 
+                                                    axis=0)
                     else:
-                        rvGPnames = np.concatenate((rvGPnames,     ['GPrvSame_Amp_None', 'GPrvSame_len_None','GPlcSame_h3_None','GPlcSame_h4_None']),axis=0)
+                        rvGPnames = np.concatenate((rvGPnames, ['GPrvSame_Amp_None', 
+                                                                'GPrvSame_len_None',
+                                                                'GPlcSame_h3_None',
+                                                                'GPlcSame_h4_None']),
+                                                    axis=0)
                 else:
-                    rvGPnames = np.concatenate((rvGPnames,     [f"GPrv{i+1}_Amp{n+1}_{gpcol}",f"GPrv{i+1}_len{n+1}_{gpcol}",
-                                                                f"GPrv{i+1}_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",f"GPrv{i+1}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), axis=0)
+                    rvGPnames = np.concatenate((rvGPnames, [f"GPrv{i+1}_Amp{n+1}_{gpcol}",
+                                                            f"GPrv{i+1}_len{n+1}_{gpcol}",
+                                                            f"GPrv{i+1}_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",
+                                                            f"GPrv{i+1}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), 
+                                                    axis=0)
 
 
                 if useGPrv[i]=="ge":  #George GP
                     assert gpkern in george_kernels.keys(), f"Invalid kernel '{gpkern}' for George GP, must be one of {list(george_kernels.keys())}"
                     ndim_gp  = len(set(gpcols))       #number of different columns used for the GP
-                    axes_gp  = [gpcols.index(gpcol)]  #axes of the GP (0 or 1)
+                    axes_gp  = list(np.unique(gpcols)).index(gpcol)  #axes of the GP (0 or 1)
 
-                    if n==0: 
-                        if gpkern=="qp":    #expsq * expsine2 kernel
-                            kern = (100e-6*george_kernels[gpkern][0](1,ndim=ndim_gp, axes=axes_gp)) * (-1*george_kernels[gpkern][1](1,1,ndim=ndim_gp, axes=axes_gp))
-                        else:
-                            kern = 100e-6 * george_kernels[gpkern](*[1]*(npars_gp[gpkern]-1), ndim=ndim_gp,axes=axes_gp)  #dummy initialization
-                        # set the kernel parameters to the starting values after performing the conversion
-                        gppars =  gp_conv.get_values(kernels="ge_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value,
-                                                                                            thisRVgp[f"h3{n}"].start_value, thisRVgp[f"h4{n}"].start_value])
-                        kern.set_parameter_vector(gppars)  
+                    if gpkern=="qp":    #expsq * expsine2 kernel
+                        kern[n] = (100e-6*george_kernels[gpkern][0](1,ndim=ndim_gp, axes=axes_gp)) * (-1*george_kernels[gpkern][1](1,1,ndim=ndim_gp, axes=axes_gp))
+                    else:
+                        kern[n] = 100e-6 * george_kernels[gpkern](*[1]*(npars_gp[gpkern]-1), ndim=ndim_gp,axes=axes_gp)  #dummy initialization
+                    # set the kernel parameters to the starting values after performing the conversion
+                    gppars =  gp_conv.get_values(kernels="ge_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, 
+                                                                                        thisRVgp[f"lengthscale{n}"].start_value,
+                                                                                        thisRVgp[f"h3{n}"].start_value, 
+                                                                                        thisRVgp[f"h4{n}"].start_value])       
+                    kern[n].set_parameter_vector(gppars) 
+
+                    if n==0:
+                        all_kern = kern[n]
                         gp_x = thisRVdata[gpcol]  # the x values for the GP
                         col_name = gpcol
+                    if n >= 1:  #if there are multiple GPs for this RV, then add/mult the kernels
+                        if thisRVgp["op"][n-1]=="+": 
+                            all_kern += kern[n]
+                        if thisRVgp["op"][n-1]=="*": 
+                            all_kern *= kern[n]
 
-                    if n==1:                       # if this is the second GP, then add/mult the new kernel to the previous one
-                        if gpkern=="qp":
-                            kern2 = (100e-6*george_kernels[gpkern][0](1,ndim=ndim_gp, axes=axes_gp)) * (-1*george_kernels[gpkern][1](1,1,ndim=ndim_gp, axes=axes_gp))
-                        else:
-                            kern2 = 100e-6 * george_kernels[gpkern](*[1]*(npars_gp[gpkern]-1), ndim=ndim_gp,axes=axes_gp)  #dummy initialization
-                        gppars=  gp_conv.get_values(kernels="ge_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value,
-                                                                                            thisRVgp[f"h3{n}"].start_value, thisRVgp[f"h4{n}"].start_value])
-                        kern2.set_parameter_vector(gppars)
-                        if thisRVgp["op"]=="+": kern += kern2
-                        if thisRVgp["op"]=="*": kern *= kern2
-                        
-                        if ndim_gp >1: # if the george GP uses more than one column, then append the new x values to the previous ones
-                            gp_x = np.vstack((gp_x, thisRVdata[gpcol])).T  #2D array with the x values for the GP
-                            col_name = (col_name, gpcol)
-                    
-                    gp = GP(kern, mean=0)
+                        if axes_gp!=0: #ndim_gp >1: 
+                            gp_x = np.column_stack((gp_x, thisRVdata[gpcol]))  #multiD array with the x values for the GP
+                            col_name = (col_name, gpcol)   if isinstance(col_name, str)  else (*col_name, gpcol)
+
+                    gp = GP(all_kern, mean=0)
                     col_nm = col_name
             
                 if useGPrv[i]=="ce":   #Celerite GP
                     assert gpkern in celerite_kernels.keys(), f"Invalid kernel '{gpkern}' for Celerite GP, must be one of {list(celerite_kernels.keys())}"
-                    if n==0: 
-                        kern  = celerite_kernels[gpkern](*[-1]*npars_gp[gpkern])   #dummy initialization
-                        # set the kernel parameters to the starting values after performing the conversion
-                        gppars =  gp_conv.get_values(kernels="ce_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value,
-                                                                                            thisRVgp[f"h3{n}"].start_value, thisRVgp[f"h4{n}"].start_value])
-                        kern.set_parameter_vector(gppars)
-                    if n==1:
-                        kern2 = celerite_kernels[gpkern](*[-1]*npars_gp[gpkern])
-                        #starting values of next kernel
-                        gppars =  gp_conv.get_values(kernels="ce_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value,
-                                                                                            thisRVgp[f"h3{n}"].start_value, thisRVgp[f"h4{n}"].start_value])
-                        kern2.set_parameter_vector(gppars)
-                        
-                        if thisRVgp["op"]=="+": kern += kern2
-                        if thisRVgp["op"]=="*": kern *= kern2
-                    
+
+                    kern[n]  = celerite_kernels[gpkern](*[-1]*npars_gp[gpkern])   #dummy initialization
+                    # set the kernel parameters to the starting values after performing the conversion
+                    gppars =  gp_conv.get_values(kernels="ce_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, 
+                                                                                        thisRVgp[f"lengthscale{n}"].start_value,
+                                                                                        thisRVgp[f"h3{n}"].start_value, 
+                                                                                        thisRVgp[f"h4{n}"].start_value])
+                    kern[n].set_parameter_vector(gppars)
+
+                    if n==0:
+                        all_kern = kern[n]
+                    if n >= 1:
+                        if thisRVgp["op"][n-1]=="+": 
+                            all_kern += kern[n]
+                        if thisRVgp["op"][n-1]=="*": 
+                            all_kern *= kern[n]
+
                     gp_x = thisRVdata[gpcol] # the x values for the GP,
-                    gp   = cGP(kern, mean=0, fit_mean=False)
+                    gp   = cGP(all_kern, mean=0, fit_mean=False)
                     col_nm = gpcol
 
                 if useGPrv[i]=="sp":   #spleaf GP
                     assert gpkern in spleaf_kernels.keys(), f"Invalid kernel '{gpkern}' for Spleaf GP, must be one of {list(spleaf_kernels.keys())}"
-                    if n==0: 
-                        # set the kernel parameters to the starting values after performing the conversion
-                        gppars=  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value,thisRVgp[f"lengthscale{n}"].start_value,
-                                                                                            thisRVgp[f"h3{n}"].start_value, thisRVgp[f"h4{n}"].start_value])
-                        kern = spleaf_kernels[gpkern](*gppars) 
-                        # gp   = {"k1":kern}
-                    if n==1:
-                        #starting values of next kernel
-                        gppars=  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, thisRVgp[f"lengthscale{n}"].start_value,
-                                                                                            thisRVgp[f"h3{n}"].start_value, thisRVgp[f"h4{n}"].start_value])
-                        kern2 = spleaf_kernels[gpkern](*gppars)
+                    # set the kernel parameters to the starting values after performing the conversion
+                    gppars =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, 
+                                                                                        thisRVgp[f"lengthscale{n}"].start_value,
+                                                                                        thisRVgp[f"h3{n}"].start_value, 
+                                                                                        thisRVgp[f"h4{n}"].start_value])
+                    kern[n] = spleaf_kernels[gpkern](*gppars)
 
-                        if thisRVgp["op"]=="+": kern = spleaf.term.SimpleSumKernel(k1=kern, k2=kern2)
-                        if thisRVgp["op"]=="*": kern = spleaf.term.SimpleProductKernel(k1=kern, k2=kern2)
+                    if n==0:
+                        all_kern = kern[n]
+                    if n >= 1:
+                        if thisRVgp["op"][n-1]=="+": 
+                            all_kern = spleaf.term.SimpleSumKernel(k1=all_kern, k2=kern[n])
+                        if thisRVgp["op"][n-1]=="*": 
+                            all_kern = spleaf.term.SimpleProductKernel(k1=all_kern, k2=kern[n])
 
-                    gp     = kern
+                    gp     = all_kern
                     gp_x   = thisRVdata[gpcol]
                     col_nm = gpcol
 
@@ -1453,15 +1541,6 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                 llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 0.001, uni_up[jj])
             else:
                 llim = uni(uni_low[jj],uni_up[jj])
-        # else:                    #uniform prior/loguni for rho_star,Duration,GPpars
-        #     if (jnames[jj] in ["rho_star","Duration"]) and lc_obj._rhodur_logUprior:
-        #         llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 0.001, uni_up[jj])
-        #     elif (jnames[jj].startswith("GPlc") and jnames[jj].split("_")[1][0] not in ["C","η"]) and lc_obj._lcGP_logUprior:
-        #         llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 1e-10, uni_up[jj])
-        #     elif (jnames[jj].startswith("GPrv") and jnames[jj].split("_")[1][0] not in ["C","η"]) and rv_obj._rvGP_logUprior:
-        #         llim = loguniform(uni_low[jj] if uni_low[jj]>0 else 1e-10, uni_up[jj])
-        #     else:
-        #         llim = uni(uni_low[jj],uni_up[jj])
             prior_distr.append(llim)
 
     ## plot the prior distributions
@@ -1523,7 +1602,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     if init_only:
         print("\nGeneration of initial models completed !!!")
-        return
+        return True
     
     ########################### MCMC run ###########################################
     print(f'\n============ Samping started ... (using {fit_sampler} [{NS_type if fit_sampler=="dynesty" else emcee_move}])======================')

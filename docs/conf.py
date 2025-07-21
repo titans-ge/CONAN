@@ -18,6 +18,7 @@ os.system("cp ../Notebooks/KELT-20/kelt-20_cheops_roll_compare.ipynb tutorial/")
 os.system("cp ../Notebooks/WASP-127/WASP127_RV/CONAN_WASP-127_RV_tutorial.ipynb tutorial/")
 os.system("cp ../Notebooks/WASP-127/WASP-127_EULER_LC/CONAN_WASP127_EULER.ipynb tutorial/")
 os.system("cp ../Notebooks/WASP-127/WASP127_LC_RV/CONAN_WASP-127_LC_RV_tutorial.ipynb tutorial/")
+os.system("cp ../Notebooks/george_2D_GP/WASP-103_2D-GP-george.ipynb tutorial/")
 #----------------
 
 

@@ -643,7 +643,7 @@ class get_CHEOPS_data(object):
 
     def download(self, file_keys="all", aperture="DEFAULT", force_download=False, get_metadata=True,
                     decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,
-                    outlier_clip=4, outlier_window_width=11,outlier_clip_niter=1, verbose=True):
+                    outlier_clip=4, outlier_window_width=11,outlier_clip_niter=1, kwargs=None,verbose=True):
         """   
         Download CHEOPS light curves from the cheops database using the dace_query package
 
@@ -669,6 +669,11 @@ class get_CHEOPS_data(object):
             Window width to use for clipping outliers. Default is 11.
         outlier_clip_niter : int
             Number of iterations to clip outliers. Default is 1.
+        kwargs : dict
+            Additional keyword arguments to the `get_lightcurve()` function of pycheops.Dataset. e.g
+            kwargs = dict(saa_max=0, temp_max=0, earth_max=1, moon_max=0, sun_max=0, cr_max=2)
+        verbose : bool
+            Verbose output. Default is True.
         """
         
         if isinstance(file_keys,str):
@@ -687,9 +692,13 @@ class get_CHEOPS_data(object):
         elif isinstance(aperture, list): 
             assert len(aperture)==len(file_keys), "aperture must be a single string or list of the same length as file_keys"
 
+        assert isinstance(kwargs, dict) or kwargs is None, "kwargs must be a dictionary of additional keyword arguments to the `get_lightcurve()` function of pycheops.Dataset"
+        kwargs = kwargs if kwargs is not None else {}
+
         for i,file_key in enumerate(file_keys):
             d     = Dataset(file_key,force_download=force_download, metadata=get_metadata, verbose=verbose)
-            _,_,_ = d.get_lightcurve(aperture=aperture[i],decontaminate=decontaminate, reject_highpoints=reject_highpoints,verbose=False)
+            _,_,_ = d.get_lightcurve(aperture=aperture[i],decontaminate=decontaminate, 
+                                    reject_highpoints=reject_highpoints,verbose=False,**kwargs)
             if verbose: print(f"downloaded lightcurve with file key: {file_key}, aperture: {aperture[i]}")
             
             #remove points with high background
