@@ -125,7 +125,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if not os.path.exists(out_folder):
             if verbose: print(f"Creating output folder...{out_folder}")
             os.makedirs(out_folder)
-            create_configfile(lc_obj, rv_obj, fit_obj, f"{out_folder}/config_save.dat")  #create config file
+            create_configfile(lc_obj, rv_obj, fit_obj, f"{out_folder}/config_save.dat")  #create config files (.dat and .yaml)
 
 
         if os.path.exists(f'{out_folder}/chains_dict.pkl'):
@@ -149,7 +149,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 #============lc_obj=========================
     #from load_lightcurves()
-    if lc_obj is None and rv_obj is not None: lc_obj=rv_obj._lcobj
+    if lc_obj is None and rv_obj is not None: 
+        lc_obj=rv_obj._lcobj
+
     fpath      = lc_obj._fpath
     LCnames    = lc_obj._names
     filters    = lc_obj._filters
@@ -178,7 +180,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
 #============rv_obj========================== 
     # from load_rvs() 
-    if rv_obj is None: rv_obj = load_rvs(verbose=False) 
+    if rv_obj is None: 
+        rv_obj = load_rvs(verbose=False) 
+        
     RVnames  = rv_obj._names
     RVbases  = rv_obj._RVbases
     rv_fpath = rv_obj._fpath
@@ -340,6 +344,11 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     jit_LCapply      = DA_mc['apply_LCjitter']     # apply lcjitter
     LCjitter_loglims = DA_mc['LCjitter_loglims']   # log of the LC jitter limits
     RVjitter_lims    = DA_mc['RVjitter_lims']      # RV jitter limits
+    # ndim_LCjit_apply = DA_mc["apply_LC_GPndim_jitter"]
+    ndim_RVjit_apply = DA_mc["apply_RV_GPndim_jitter"]
+    # ndim_LCoff_apply = DA_mc["apply_LC_GPndim_offset"]
+    ndim_RVoff_apply = DA_mc["apply_RV_GPndim_offset"]
+
     LCbase_lims      = DA_mc['LCbasecoeff_lims']   # bounds of the LC baseline coefficients
     RVbase_lims      = DA_mc['RVbasecoeff_lims']   # bounds of the RV baseline coefficients
     paraCNM          = DA_mc['remove_param_for_CNM']   # remove parametric model for CNM computation
@@ -1092,7 +1101,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     if np.any([spl.use for spl in useSpline_rv.values()]): 
         if verbose: print('Setting up Spline fitting for RVs ...')  
     
-    rvGPobjects,rvGPnames,rv_pargps,rv_gpkerns,rv_gp_colnames  = [],[],[],[],[]
+    rvGPobjects,rvGPnames,rv_pargps,rv_gpkerns,rv_gp_colnames,rv_gp_colerr_names  = [],[],[],[],[],[]
     rvGPparams,rvGPstepsizes,rvGPindex,rvGPprior,rvGPprior_str,rvGPpriwid,rvGPlimup,rvGPlimlo = [],[],[],[],[],[],[],[]
     rvGPdict = {} if rv_obj is None else rv_obj._rvGP_dict
     sameRVgp = False if rv_obj is None else rv_obj._sameRVgp                                           # use spline to interpolate the light curve
@@ -1141,80 +1150,95 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if useGPrv[i]=='n':
             rvGPobjects.append([])
             rv_pargps.append([]) 
+            rv_gp_colerr_names.append([])
             rv_gpkerns.append([])
             rv_gp_colnames.append([])
 
         if useGPrv[i] in ["ge","ce","sp"]:         #George or Celerite GP
-            gp_conv  = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
-            thisRVgp = rvGPdict[RVnames[i]]
-            gpcols   = [thisRVgp[f"amplitude{n}"].user_data.col for n in range(thisRVgp["ngp"])]
+            gp_conv    = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
+            thisRVgp   = rvGPdict[RVnames[i]]
+            gpcols     = [thisRVgp[f"amplitude{n}"].user_data.col for n in range(thisRVgp["ngp"])]
+            gpcols_err = [thisRVgp[f"amplitude{n}"].user_data.errcol for n in range(thisRVgp["ngp"])]
+            ndim_gp    = len(set(gpcols))       #number of different columns used for the GP
+
+
             rv_gpkerns.append([thisRVgp[f"amplitude{n}"].user_data.kernel for n in range(thisRVgp["ngp"])])
             kern = [0]*thisRVgp["ngp"]  #list to hold the kernel objects for this RV
 
             for n in range(thisRVgp["ngp"]):                      #loop through the number of GPs for this RV
-                gpkern = thisRVgp[f"amplitude{n}"].user_data.kernel   #kernel to use for this GP
-                gpcol  = thisRVgp[f"amplitude{n}"].user_data.col   #column of the data to use for this GP
+                gpkern    = thisRVgp[f"amplitude{n}"].user_data.kernel   #kernel to use for this GP
+                gpcol     = thisRVgp[f"amplitude{n}"].user_data.col   #column of the data to use for this GP
+                gpcol_err = thisRVgp[f"amplitude{n}"].user_data.errcol 
 
                 rvGPparams    = np.concatenate((rvGPparams, [thisRVgp[f"amplitude{n}"].start_value, 
                                                             thisRVgp[f"lengthscale{n}"].start_value, 
                                                             thisRVgp[f"h3{n}"].start_value, 
-                                                            thisRVgp[f"h4{n}"].start_value]), 
+                                                            thisRVgp[f"h4{n}"].start_value,
+                                                            thisRVgp[f"h5{n}"].start_value]), 
                                                     axis=0)
                 rvGPstepsizes = np.concatenate((rvGPstepsizes, [thisRVgp[f"amplitude{n}"].step_size, 
                                                                 thisRVgp[f"lengthscale{n}"].step_size, 
                                                                 thisRVgp[f"h3{n}"].step_size, 
-                                                                thisRVgp[f"h4{n}"].step_size]), 
+                                                                thisRVgp[f"h4{n}"].step_size,
+                                                                thisRVgp[f"h5{n}"].step_size]), 
                                                     axis=0)
-                rvGPindex     = np.concatenate((rvGPindex, (np.zeros(4)+i)), axis=0)
+                rvGPindex     = np.concatenate((rvGPindex, (np.zeros(5)+i)), axis=0)
                 rvGPprior     = np.concatenate((rvGPprior, [thisRVgp[f"amplitude{n}"].prior_mean, 
                                                             thisRVgp[f"lengthscale{n}"].prior_mean, 
                                                             thisRVgp[f"h3{n}"].prior_mean, 
-                                                            thisRVgp[f"h4{n}"].prior_mean]), 
+                                                            thisRVgp[f"h4{n}"].prior_mean,
+                                                            thisRVgp[f"h5{n}"].prior_mean]), 
                                                     axis=0)
                 rvGPpriwid    = np.concatenate((rvGPpriwid, [thisRVgp[f"amplitude{n}"].prior_width_lo, 
                                                             thisRVgp[f"lengthscale{n}"].prior_width_lo, 
                                                             thisRVgp[f"h3{n}"].prior_width_lo, 
-                                                            thisRVgp[f"h4{n}"].prior_width_lo]), 
+                                                            thisRVgp[f"h4{n}"].prior_width_lo,
+                                                            thisRVgp[f"h5{n}"].prior_width_lo]), 
                                                     axis=0)
                 rvGPlimup     = np.concatenate((rvGPlimup,  [thisRVgp[f"amplitude{n}"].bounds_hi, 
                                                             thisRVgp[f"lengthscale{n}"].bounds_hi, 
                                                             thisRVgp[f"h3{n}"].bounds_hi, 
-                                                            thisRVgp[f"h4{n}"].bounds_hi]), 
+                                                            thisRVgp[f"h4{n}"].bounds_hi,
+                                                            thisRVgp[f"h5{n}"].bounds_hi]), 
                                                     axis=0)
                 rvGPlimlo     = np.concatenate((rvGPlimlo, [thisRVgp[f"amplitude{n}"].bounds_lo, 
                                                             thisRVgp[f"lengthscale{n}"].bounds_lo, 
                                                             thisRVgp[f"h3{n}"].bounds_lo, 
-                                                            thisRVgp[f"h4{n}"].bounds_lo]), 
+                                                            thisRVgp[f"h4{n}"].bounds_lo,
+                                                            thisRVgp[f"h5{n}"].bounds_lo]), 
                                                     axis=0)
                 rvGPprior_str = np.concatenate((rvGPprior_str, [thisRVgp[f"amplitude{n}"].prior_str, 
                                                                 thisRVgp[f"lengthscale{n}"].prior_str, 
                                                                 thisRVgp[f"h3{n}"].prior_str, 
-                                                                thisRVgp[f"h4{n}"].prior_str]), 
+                                                                thisRVgp[f"h4{n}"].prior_str,
+                                                                thisRVgp[f"h5{n}"].prior_str]), 
                                                     axis=0)
                 if sameRVgp.flag:
                     if i == sameRVgp.first_index:
                         rvGPnames = np.concatenate((rvGPnames, [f"GPrvSame_Amp{n+1}_{gpcol}",
                                                                 f"GPrvSame_len{n+1}_{gpcol}",
                                                                 f"GPrvSame_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",
-                                                                f"GPrvSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), 
+                                                                f"GPrvSame_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}",
+                                                                f"GPrvSame_DerAmp{n+1}_{gpcol}"]), 
                                                     axis=0)
                     else:
                         rvGPnames = np.concatenate((rvGPnames, ['GPrvSame_Amp_None', 
                                                                 'GPrvSame_len_None',
                                                                 'GPlcSame_h3_None',
-                                                                'GPlcSame_h4_None']),
+                                                                'GPlcSame_h4_None',
+                                                                'GPrvSame_DerAmp_None']),
                                                     axis=0)
                 else:
                     rvGPnames = np.concatenate((rvGPnames, [f"GPrv{i+1}_Amp{n+1}_{gpcol}",
                                                             f"GPrv{i+1}_len{n+1}_{gpcol}",
                                                             f"GPrv{i+1}_{gp_h3h4names.h3.get(gpkern,'h3')}{n+1}_{gpcol}",
-                                                            f"GPrv{i+1}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}"]), 
+                                                            f"GPrv{i+1}_{gp_h3h4names.h4.get(gpkern,'h4')}{n+1}_{gpcol}",
+                                                            f"GPrv{i+1}_DerAmp{n+1}_{gpcol}"]), 
                                                     axis=0)
 
 
                 if useGPrv[i]=="ge":  #George GP
                     assert gpkern in george_kernels.keys(), f"Invalid kernel '{gpkern}' for George GP, must be one of {list(george_kernels.keys())}"
-                    ndim_gp  = len(set(gpcols))       #number of different columns used for the GP
                     axes_gp  = list(np.unique(gpcols)).index(gpcol)  #axes of the GP (0 or 1)
 
                     if gpkern=="qp":    #expsq * expsine2 kernel
@@ -1232,6 +1256,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         all_kern = kern[n]
                         gp_x = thisRVdata[gpcol]  # the x values for the GP
                         col_name = gpcol
+                        colerr_name = gpcol_err
                     if n >= 1:  #if there are multiple GPs for this RV, then add/mult the kernels
                         if thisRVgp["op"][n-1]=="+": 
                             all_kern += kern[n]
@@ -1239,11 +1264,13 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             all_kern *= kern[n]
 
                         if axes_gp!=0: #ndim_gp >1: 
-                            gp_x = np.column_stack((gp_x, thisRVdata[gpcol]))  #multiD array with the x values for the GP
-                            col_name = (col_name, gpcol)   if isinstance(col_name, str)  else (*col_name, gpcol)
+                            gp_x        = np.column_stack((gp_x, thisRVdata[gpcol]))  #multiD array with the x values for the GP
+                            col_name    = (col_name, gpcol)        if isinstance(col_name, str) else (*col_name, gpcol)
+                            colerr_name = (colerr_name, gpcol_err) if isinstance(col_name, str) else (*colerr_name, gpcol_err)
 
-                    gp = GP(all_kern, mean=0)
-                    col_nm = col_name
+                    gp        = GP(all_kern, mean=0)
+                    col_nm    = col_name
+                    colerr_nm = colerr_name
             
                 if useGPrv[i]=="ce":   #Celerite GP
                     assert gpkern in celerite_kernels.keys(), f"Invalid kernel '{gpkern}' for Celerite GP, must be one of {list(celerite_kernels.keys())}"
@@ -1264,34 +1291,83 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                         if thisRVgp["op"][n-1]=="*": 
                             all_kern *= kern[n]
 
-                    gp_x = thisRVdata[gpcol] # the x values for the GP,
-                    gp   = cGP(all_kern, mean=0, fit_mean=False)
-                    col_nm = gpcol
+                    gp_x      = thisRVdata[gpcol] # the x values for the GP,
+                    gp        = cGP(all_kern, mean=0, fit_mean=False)
+                    col_nm    = gpcol
+                    colerr_nm = gpcol_err
 
                 if useGPrv[i]=="sp":   #spleaf GP
                     assert gpkern in spleaf_kernels.keys(), f"Invalid kernel '{gpkern}' for Spleaf GP, must be one of {list(spleaf_kernels.keys())}"
                     # set the kernel parameters to the starting values after performing the conversion
-                    gppars =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, 
-                                                                                        thisRVgp[f"lengthscale{n}"].start_value,
-                                                                                        thisRVgp[f"h3{n}"].start_value, 
-                                                                                        thisRVgp[f"h4{n}"].start_value])
-                    kern[n] = spleaf_kernels[gpkern](*gppars)
 
-                    if n==0:
-                        all_kern = kern[n]
-                    if n >= 1:
-                        if thisRVgp["op"][n-1]=="+": 
-                            all_kern = spleaf.term.SimpleSumKernel(k1=all_kern, k2=kern[n])
-                        if thisRVgp["op"][n-1]=="*": 
-                            all_kern = spleaf.term.SimpleProductKernel(k1=all_kern, k2=kern[n])
+                    if ndim_gp == 1:  #if only one column is used for the GP, then use the single column
+                        gppars =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, 
+                                                                                            thisRVgp[f"lengthscale{n}"].start_value,
+                                                                                            thisRVgp[f"h3{n}"].start_value, 
+                                                                                            thisRVgp[f"h4{n}"].start_value])
+                        kern[n] = spleaf_kernels[gpkern](*gppars)
 
-                    gp     = all_kern
-                    gp_x   = thisRVdata[gpcol]
-                    col_nm = gpcol
+                        if n==0:
+                            all_kern = kern[n]
+                        if n >= 1:
+                            if thisRVgp["op"][n-1]=="+": 
+                                all_kern = spleaf.term.SimpleSumKernel(k1=all_kern, k2=kern[n])
+                            if thisRVgp["op"][n-1]=="*": 
+                                all_kern = spleaf.term.SimpleProductKernel(k1=all_kern, k2=kern[n])
+
+                        gp        = all_kern
+                        gp_x      = thisRVdata[gpcol]
+                        col_nm    = gpcol
+                        colerr_nm =  gpcol_err
+                    
+                    else: #if multi-series with spleaf
+                        if n==0:
+                            gppars =  gp_conv.get_values(kernels="sp_"+gpkern, data="rv", pars=[thisRVgp[f"amplitude{n}"].start_value, 
+                                                                                                            thisRVgp[f"lengthscale{n}"].start_value,
+                                                                                                            thisRVgp[f"h3{n}"].start_value, 
+                                                                                                            thisRVgp[f"h4{n}"].start_value],
+                                                                        )
+                            gp = spleaf_kernels[gpkern](*gppars)  #initiate kernel with ;parameters
+                            gp_x     = [thisRVdata[colm] for colm in gpcols]
+                            col_nm   = gpcols
+                            colerr_nm = gpcols_err
+
+            
+            if useGPrv[i]=="sp" and ndim_gp > 1:
+                #add offset and jitter for dimensions other than the rv measurements
+                if ndim_RVoff_apply == "y":
+                    gp_offsets  = [np.median(thisRVdata[c]) for c in gpcols[1:]] 
+                    gp_off_lo   = [np.min(thisRVdata[colm]) for colm in gpcols[1:]]
+                    gp_off_hi   = [np.max(thisRVdata[colm]) for colm in gpcols[1:]]
+                    gp_off_nm   = [f"rv{i+1}_off_{c}" for c in gpcols[1:]]
+                    gp_off_str  = [f"U({off_min},{off_start},{off_max})" for off_min, off_start, off_max in zip(gp_off_lo, gp_offsets, gp_off_hi)]
+                else:
+                    gp_offsets, gp_off_lo, gp_off_hi, gp_off_nm, gp_off_str = [], [], [], [], [] 
+
+                if ndim_RVjit_apply == "y":   
+                    gp_jitts    = [1e-3]*(ndim_gp-1)
+                    gp_jitts_lo = [0]*(ndim_gp-1)
+                    gp_jitts_hi = [10*np.median(thisRVdata[c]) for c in gpcols_err[1:]] 
+                    gp_jitt_nm  = [f"rv{i+1}_jitt_{c}" for c in gpcols[1:]]
+                    gp_jitt_str = [f"U({jitt_lo},{jitt_start},{jitt_hi})" for jitt_lo, jitt_start, jitt_hi in zip(gp_jitts_lo, gp_jitts, gp_jitts_hi)]
+                else:
+                    gp_jitts, gp_jitts_lo, gp_jitts_hi, gp_jitt_nm, gp_jitt_str = [], [], [], [], []
+
+                rvGPparams    = np.concatenate((rvGPparams,    gp_offsets+gp_jitts), axis=0)
+                rvGPstepsizes = np.concatenate((rvGPstepsizes, [0.0001]*len(gp_offsets+gp_jitts)), axis=0)
+                rvGPindex     = np.concatenate((rvGPindex,     (np.zeros(len(gp_offsets+gp_jitts))+i)), axis=0)
+                rvGPprior     = np.concatenate((rvGPprior,     gp_offsets+gp_jitts), axis=0)
+                rvGPpriwid    = np.concatenate((rvGPpriwid,    [0]*len(gp_offsets+gp_jitts)), axis=0)
+                rvGPlimup     = np.concatenate((rvGPlimup,     gp_off_hi+gp_jitts_hi), axis=0)
+                rvGPlimlo     = np.concatenate((rvGPlimlo,     gp_off_lo+gp_jitts_lo), axis=0)
+                rvGPprior_str = np.concatenate((rvGPprior_str, gp_off_str+gp_jitt_str), axis=0)
+                rvGPnames     = np.concatenate((rvGPnames,     gp_off_nm+gp_jitt_nm), axis=0)
+            
 
             rvGPobjects.append(gp)
             rv_pargps.append(gp_x) 
             rv_gp_colnames.append(col_nm)
+            rv_gp_colerr_names.append(colerr_nm)
             rvGPparams = np.array(rvGPparams, dtype=float)  #force float since a None can change dtype to object leading to compute issues later
 
 
@@ -1574,7 +1650,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     "params": params,"useGPphot": useGPphot,"useGPrv": useGPrv,"GPobjects": GPobjects,"GPparams": GPparams,"GPindex": GPindex,"pindices": pindices,"jumping": jumping,"jnames": jnames,"prior_distr": prior_distr,"pnames_all": pnames_all,
                     "norm_sigma": norm_sigma,"uni_low": uni_low,"uni_up": uni_up,"rv_gp_colnames": rv_gp_colnames,"gp_colnames": gp_colnames,"gpkerns": gpkerns,"LTT": LTT,"conditionals": conditionals,"GPstepsizes": GPstepsizes,"sameLCgp": sameLCgp,
                     "npl": npl,"useSpline_lc": useSpline_lc,"useSpline_rv": useSpline_rv,"s_samp": s_samp,"rvGPobjects": rvGPobjects,"rvGPparams": rvGPparams,"rvGPindex": rvGPindex,"input_lcs": input_lcs,"input_rvs": input_rvs,
-                    "RVunit": RVunit,"rv_pargps": rv_pargps,"rv_gpkerns": rv_gpkerns,"sameRVgp": sameRVgp,"fit_sampler": fit_sampler, "shared_params":shared_params }
+                    "rv_gp_colerr_names": rv_gp_colerr_names,"rv_pargps": rv_pargps,"rv_gpkerns": rv_gpkerns,"sameRVgp": sameRVgp,"fit_sampler": fit_sampler, "shared_params":shared_params }
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
 
     if verbose: print('\nGenerating initial model(s) ...\n---------------------------',end=" ")
@@ -1859,10 +1935,11 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     #median
     if verbose:
         if statistic=='median': print("\nCreating *out.dat files using the median posterior ...")
-    mval, merr,T0_post,p_post,Dur_post = logprob_multi(medp[jumping],indparams,make_outfile=(statistic=="median"), verbose=(statistic=="median"),out_folder=out_folder)
+    mval, merr,T0_post,p_post,Dur_post,GPobj = logprob_multi(medp[jumping],indparams,make_outfile=(statistic=="median"), 
+                                                            verbose=(statistic=="median"),out_folder=out_folder,get_GPobj=True)
     #save summary_stats and as a hidden files. can be used to run logprob_multi() to generate out_full.dat files for median posterior, max posterior and best fit values
     stat_vals = dict(med = medp[jumping], max = maxp[jumping], bf  = bpfull[jumping], stdev=stdev[jumping],
-                        T0 = T0_post,  P = p_post, dur = Dur_post, evidence=evidence)
+                        GP = GPobj, T0 = T0_post,  P = p_post, dur = Dur_post, evidence=evidence)
     pickle.dump(stat_vals, open(out_folder+"/.stat_vals.pkl","wb"))
     if verbose: print("\n ----> Plotting figures using median posterior values ...", end="")
     med_start_time = time.time()
@@ -1944,6 +2021,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         plt.close()
         matplotlib.use(__default_backend__)
 
+    #clear figures
+    plt.close('all')
+    
     #make print out statement in the fashion of conan the barbarian
     print(_text_format.RED + "\nCONAN: I have now crushed your data," +\
           "\n\tthe planetary information it hides is laid bare in the results."+\

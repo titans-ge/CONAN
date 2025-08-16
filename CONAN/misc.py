@@ -93,10 +93,7 @@ def _print_output(self, section: str, file=None):
 
         for k,v in DA.items():
             if v.trig is not None:
-                amp_pri = f"F({v.Amp.user_input})" if isinstance(v.Amp.user_input, (float,int)) else f"N({v.Amp.user_input[0]},{v.Amp.user_input[1]})" if len(v.Amp.user_input)==2 else f"U({v.Amp.user_input[0]},{v.Amp.user_input[1]},{v.Amp.user_input[2]})"
-                P_pri   = "None" if v.P.user_input==None else f"F({v.P.user_input})" if isinstance(v.P.user_input, (float,int)) else f"N({v.P.user_input[0]},{v.P.user_input[1]})" if len(v.P.user_input)==2 else f"U({v.P.user_input[0]},{v.P.user_input[1]},{v.P.user_input[2]})"
-                x0_pri  = "None" if v.x0.user_input==None else f"F({v.x0.user_input})" if isinstance(v.x0.user_input, (float,int)) else f"N({v.x0.user_input[0]},{v.x0.user_input[1]})" if len(v.x0.user_input)==2 else f"U({v.x0.user_input[0]},{v.x0.user_input[1]},{v.x0.user_input[2]})"
-                t = txtfmt.format(v.name, v.trig, v.n, v.par, amp_pri, P_pri, x0_pri)
+                t = txtfmt.format(v.name, v.trig, v.n, v.par, v.Amp.prior_str,v.P.prior_str, v.x0.prior_str)
                 _print_sinusoid += t
         print(_print_sinusoid, file=file)
 
@@ -338,7 +335,8 @@ def _print_output(self, section: str, file=None):
                         f"""\n{spacing}{'apply_LCjitter(y/n,list)':40s}  {app_jitt} \n{spacing}{'apply_RVjitter(y/n,list)':40s}  {app_RVjitt} """+\
                             f"""\n{spacing}{'LCjitter_loglims(auto/[lo,hi])':40s}  {str(DA['LCjitter_loglims']).replace(" ","")} \n{spacing}{'RVjitter_lims(auto/[lo,hi])':40s}  {str(DA['RVjitter_lims']).replace(" ","")} """+\
                                 f"""\n{spacing}{'LCbasecoeff_lims(auto/[lo,hi])':40s}  {str(DA['LCbasecoeff_lims']).replace(" ","")} \n{spacing}{'RVbasecoeff_lims(auto/[lo,hi])':40s}  {str(DA['RVbasecoeff_lims']).replace(" ","")} """+\
-                                    f"""\n{spacing}{'Light_Travel_Time_correction(y/n)':40s}  {DA['LTT_corr']}""" # \n{spacing}{'fit_LCoffset(y/n or list)':40s}  {fit_off}
+                                    f"""\n{spacing}{'Light_Travel_Time_correction(y/n)':40s}  {DA['LTT_corr']} \n{spacing}{'apply_LC_GPndim_jitter(y/n)':40s}  {DA['apply_LC_GPndim_jitter']} \n{spacing}{'apply_RV_GPndim_jitter(y/n)':40s}  {DA['apply_RV_GPndim_jitter']} """ +\
+                                        f"""\n{spacing}{'apply_LC_GPndim_offset(y/n)':40s}  {DA['apply_LC_GPndim_offset']} \n{spacing}{'apply_RV_GPndim_offset(y/n)':40s}  {DA['apply_RV_GPndim_offset']} """
 
         
         print(_print_fit_pars, file=file)
@@ -360,8 +358,7 @@ def _print_output(self, section: str, file=None):
     if section == "rv_gp":
         DA = self._rvGP_dict
         _print_gp = f"""# ============ RV GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) ======="""
-        # _print_gp += f"""\nsame_GP: {self._sameRVgp.flag}"""
-        _print_gp += f"""\n{spacing}{"name":{max_name_len}s} {"kern":5s} {'par':6s} {'h1:[Amp_ppm]':18s} {'h2:[len_scale]':18s} {'h3:[Q,η,C,α,b]':18s} {'h4:[P]':12s}"""
+        _print_gp += f"""\n{spacing}{"name":{max_name_len}s} {"kern":5s} {'par':6s} {'h1:[Amp_ppm]':18s} {'h2:[len_scale]':18s} {'h3:[Q,η,C,α,b]':18s} {'h4:[P]':12s} | {'h5:[Der_Amp_ppm]':16s} {'ErrCol':6s}"""
         if DA != {}: 
             if self._allRVgp:  #shortcut print just one line gp config if all RVs have the same GP
                 equal_allrvgp = all([_compare_nested_structures(DA[list(DA.keys())[0]],DA[rv]) for rv in list(DA.keys())[1:]])
@@ -371,17 +368,19 @@ def _print_output(self, section: str, file=None):
             for rv in DA.keys():
                 ngp = DA[rv]["ngp"]
 
-                txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s}"
+                txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:5s} {2:6s} {3:18s} {4:18s} {5:18s} {6:12s} | {7:16s} {8:6s}"
                 val    = ['same' if self._sameRVgp.flag else "all" if equal_allrvgp else rv,
                                     DA[rv]["amplitude0"].user_data.kernel, DA[rv]["amplitude0"].user_data.col,  
                                     DA[rv]["amplitude0"].prior_str,DA[rv]["lengthscale0"].prior_str, 
-                                    DA[rv]["h30"].prior_str, DA[rv]["h40"].prior_str]
+                                    DA[rv]["h30"].prior_str, DA[rv]["h40"].prior_str, 
+                                    DA[rv]["h50"].prior_str,DA[rv]["amplitude0"].user_data.errcol]
                 for n in range(1,ngp):
-                    txtfmt += f"\n{spacing}{{{n*7+0}:{max_name_len}s}}"+f" {{{n*7+1}:5s}} {{{n*7+2}:6s}} {{{n*7+3}:18s}} {{{n*7+4}:18s}} {{{n*7+5}:18s}} {{{n*7+6}:12s}}"
+                    txtfmt += f"\n{spacing}{{{n*9+0}:{max_name_len}s}}"+f" {{{n*9+1}:5s}} {{{n*9+2}:6s}} {{{n*9+3}:18s}} {{{n*9+4}:18s}} {{{n*9+5}:18s}} {{{n*9+6}:12s}} | {{{n*9+7}:16s}} {{{n*9+8}:6s}}"
                     val.extend([" "*(max_name_len-3)+f'|{DA[rv]["op"][n-1]}|', 
                                     DA[rv][f"amplitude{n}"].user_data.kernel, DA[rv][f"amplitude{n}"].user_data.col,
                                     DA[rv][f"amplitude{n}"].prior_str, DA[rv][f"lengthscale{n}"].prior_str,
-                                    DA[rv][f"h3{n}"].prior_str, DA[rv][f"h4{n}"].prior_str] )
+                                    DA[rv][f"h3{n}"].prior_str, DA[rv][f"h4{n}"].prior_str,
+                                    DA[rv][f"h5{n}"].prior_str, DA[rv][f"amplitude{n}"].user_data.errcol])
                 t = txtfmt.format(*val)
                 _print_gp += t
 
@@ -537,7 +536,7 @@ class _text_format:
 
 
 
-def _compare_nested_structures(obj1, obj2, verbose=False):
+def _compare_nested_structures(obj1, obj2, ignore=[], verbose=False):
     """  
     Compare two nested structures (e.g. dictionaries, lists, etc.) for equality.
     """
@@ -546,8 +545,15 @@ def _compare_nested_structures(obj1, obj2, verbose=False):
         if obj1.keys() != obj2.keys():
             if verbose: print(f"keys differ in {set(obj1) - set(obj2)}")
             return False
-        return all(_compare_nested_structures(obj1[key], obj2[key]) for key in obj1)
-    
+        comp_bool = all(_compare_nested_structures(obj1[key], obj2[key], ignore) for key in obj1 if key not in ignore)
+        if not comp_bool and verbose:
+            for key in obj1:
+                if key not in ignore:
+                    res = _compare_nested_structures(obj1[key], obj2[key], ignore)
+                    if not res:
+                        print(f"{key:25s}: {res}")
+        return comp_bool
+
     elif isinstance(obj1, list) and isinstance(obj2, list):
         if len(obj1) != len(obj2):
             return False
@@ -557,7 +563,7 @@ def _compare_nested_structures(obj1, obj2, verbose=False):
         return np.array_equal(obj1, obj2)
     
     elif isinstance(obj1, SimpleNamespace) and isinstance(obj2, SimpleNamespace):
-        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1)])
+        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1) if key not in ignore])
     
 
     elif isinstance(obj1, FunctionType) and isinstance(obj2, FunctionType):
@@ -566,22 +572,24 @@ def _compare_nested_structures(obj1, obj2, verbose=False):
                 obj1.__code__.co_names == obj2.__code__.co_names and
                 obj1.__code__.co_varnames == obj2.__code__.co_varnames)
 
-    elif ("CONAN" in str(type(obj1))) and ("CONAN" in str(type(obj1))):
-        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1)])
-    
+    elif ("CONAN" in str(type(obj1))) and ("CONAN" in str(type(obj2))):
+        return all([_compare_nested_structures(vars(obj1)[key], vars(obj2)[key]) for key in vars(obj1) if key not in ignore])
+
     else:
         return obj1 == obj2
 
 
-def compare_objs(obj1,obj2):
+def compare_objs(obj1,obj2, ignore=[]):
     """   
     compare two objects for equality
     """
-    res = _compare_nested_structures(obj1,obj2)
+    res = _compare_nested_structures(obj1,obj2,ignore)
     if res:
         return True
     else: 
         for k,v in obj1.__dict__.items():
-            res = _compare_nested_structures(obj1.__dict__[k], obj2.__dict__[k])
-            if not res: print(f"{k:25s}: {res}")
+            if k not in ignore:
+                res = _compare_nested_structures(obj1.__dict__[k], obj2.__dict__[k], ignore)
+                if not res: 
+                    print(f"{k:25s}: {res}")
         return False

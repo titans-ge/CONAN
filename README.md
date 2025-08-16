@@ -23,17 +23,17 @@ Observatory of Geneva, Switzerland under the MIT license.
 
 Key features:
 -------------
-- **Multi-dataset analysis**: Seamless analysis of combined lightcurve (LC) and radial velocity (RV) datasets from various instruments.
-- **Multiplanet support:** Simultaneous fit to multiple planets in a single system.
+- **Multi-dataset analysis**: Seamless analysis of combined lightcurve (LC) and radial velocity (RV) datasets from various instruments (see Notebooks: [1](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP127_LC_RV), [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469) ).
+- **Multiplanet support:** Simultaneous fit to multiple planets in a single system (see Notebooks: [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216)).
 - **Comprehensive photometric modeling**: Robust modeling of transits, occultations, and phase curves, including effects such as ellipsoidal variations and Doppler beaming ([see Model definition](https://github.com/titans-ge/CONAN/wiki/LC-and-RV-models)).
-- **Support for modeling light curve variations**: Analysis of transit timing variations (TTVs) and  transit depth variations (transmission spectroscopy).
-- **Flexible baseline and noise modeling**: Selection of one or combination of Polynomial, sinusoidal, Gaussian Processes (GP), and spline functions for data detrending.
+- **Support for modeling light curve variations**: Analysis of transit timing variations (TTVs) and  transit depth variations (transmission spectroscopy) (see Notebooks: [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216)).
+- **Flexible baseline and noise modeling**: Selection of one or combination of Polynomial, sinusoidal, multi-D Gaussian Processes (GP), and 2-D spline functions for data detrending (see Notebooks: [1](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP127_LC_RV), [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216), [4](https://github.com/titans-ge/CONAN/tree/main/Notebooks/KELT-20) ).
 - **Extensible and customizable modeling**: Users can easily incorporate new LC and RV models or modify default ones to suit specific needs, e.g., modeling the transit of non-spherical planets, Rossiter–McLaughlin signals, or even non-planetary signals.
 - **Robust Bayesian inference**: Parameter estimation via MCMC (`emcee`) or nested sampling (`dynesty`)
-- **Derivation of priors limb darkening coefficients**: Incorporation of `ldtk` to derive priors for the quadratic limb darkening coefficients from the stellar parameters.
-- **Automated selection of parametric model parameters**: Uses the Bayesian Information Criterion to suggest best combination of vectors to use in decorrelating the data.
-- **Science data download**: Built-in support for downloading data from various instruments (including TESS, CHEOPS, and Kepler) and also system parameters from [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/).
-- **Quick result visualization and manipulation**: Instant plot of the best-fit model and a result object that can be easily manipulated for customized analysis.
+- **Derivation of priors limb darkening coefficients**: Incorporation of `ldtk` to derive priors for the quadratic limb darkening coefficients from the stellar parameters (see Notebooks: [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
+- **Automated selection of parametric model parameters**: Uses the Bayesian Information Criterion to suggest best combination of vectors to use in decorrelating the data (see Notebooks: [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
+- **Science data download**: Built-in support for downloading data from various instruments (including TESS, CHEOPS, Kepler, and K2) and also system parameters from [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/) (see Notebooks: [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216)).
+- **Quick result visualization and manipulation**: Instant plot of the best-fit model and a result object that can be easily manipulated for customized analysis (see Notebooks: [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
 
 The full documentation can be accessed at [https://conan-exoplanet.readthedocs.io](https://conan-exoplanet.readthedocs.io/en/latest/). The [github wiki](https://github.com/titans-ge/CONAN/wiki) details specific CONAN functionalities
 

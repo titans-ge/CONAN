@@ -3,7 +3,7 @@ import time
 from .models import *
 from types import SimpleNamespace
 from .utils import rho_to_tdur, rho_to_aR, Tdur_to_aR, sesinw_secosw_to_ecc_omega,get_Tconjunctions
-from .geepee import gp_params_convert
+from .geepee import gp_params_convert, GPSaveObj
 from spleaf import cov, term
 import matplotlib, os
 from ._classes import __default_backend__
@@ -13,7 +13,7 @@ from copy import deepcopy
 
 
 def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
-                    get_planet_model=False, get_model=None,get_base_model=False,out_folder=""):
+                    get_planet_model=False, get_model=None,get_base_model=False,out_folder="",get_GPobj=False):
     """
     calculate log probability and create output file of full model calculated using posterior parameters
 
@@ -37,6 +37,8 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         flag to output dictionary of baseline model results (phot and RV) for specific input parameters.
     out_folder : str, optional
         folder to save output files, by default ""
+    get_GPobj : bool
+        whether to return GPobj for LCs and RVs. Default is False.
     
     Returns
     -------
@@ -67,7 +69,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         GPparams, GPindex, pindices, jumping, jnames, prior_distr, pnames_all, norm_sigma, \
         uni_low, uni_up,rv_gp_colnames, gp_colnames, gpkerns, LTT, conditionals, GPstepsizes, sameLCgp, \
         npl, useSpline_lc, useSpline_rv, s_samp, rvGPobjects, rvGPparams, rvGPindex, input_lcs, input_rvs, \
-        RVunit, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler, shared_params) = argvals if 'shared_params' in args.keys() else argvals+[{}]
+        rv_gp_colerr_names, rv_pargps, rv_gpkerns, sameRVgp, fit_sampler, shared_params) = argvals if 'shared_params' in args.keys() else argvals+[{}]
     #TODO pass wavelength into args
     
     Rstar = LTT.Rstar if type(LTT) == SimpleNamespace else None   #get Rstar value to use for LTT correction
@@ -124,6 +126,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
     # sin_st  = 1+7*npl +nttv+ nddf+nocc*7 + nfilt*2 + nphot + ncustom    #starting index of sinuoid parameters
 
     time_all, flux_all, err_all, full_mod_all, base_para_all, base_sine_all, base_spl_all, base_gp_all, base_total_all, transit_all, det_flux_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
+    lcGPsave = dict()
     # restrict the parameters to those of the light curve
     for j in range(nphot):
         
@@ -448,28 +451,32 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             elif useGPphot[j] in ['ge','ce','sp'] and sameLCgp.flag==False and sameLCgp.filtflag==False: 
                 thisLCdata = input_lcs[LCnames[j]]
 
-                gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
-                gpcol    = gp_colnames[j]
-                pargp    = thisLCdata[gpcol] if isinstance(gpcol, str) else np.column_stack( [thisLCdata[c] for c in gpcol]) 
-                srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
-                unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
+                gppars        = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+                gppars_names  = pnames_all[len(params):len(params)+len(GPparams)]   # the GP parameter names for all lcs
+                gpcol         = gp_colnames[j]
+                pargp_arr     = thisLCdata[gpcol] if isinstance(gpcol, str) else np.column_stack( [thisLCdata[c] for c in gpcol]) 
+                ndim_gp       = 1 if isinstance(gpcol, str) else len(set(gpcol)) #number of independent axis columns for the GP
+
+                srt_gp        = np.argsort(pargp_arr) if pargp_arr.ndim==1 else np.argsort(pargp_arr[:,0])  #indices to sort the gp axis
+                unsrt_gp      = np.argsort(srt_gp)  #indices to unsort the gp axis
                 
                 #indices of the gp params for this lc file
-                thislc_gpind  = GPindex == j         #individual gp params         
-                thislc_gppars = gppars[thislc_gpind] #the gp params for this lc
+                thislc_gpind        = GPindex == j         #individual gp params         
+                thislc_gppars       = gppars[thislc_gpind] #the gp params for this lc
+                thislc_gppars_names = gppars_names[thislc_gpind] #the gp params for this rv
 
                 #need conversion of gp pars before setting them
-                gp_conv       = gp_params_convert()
-                kernels       = [f"{useGPphot[j]}_{gpk}" for gpk in gpkerns[j]]  #prepend correct GP package symbol for the kernel
-                thislc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars)
+                gp_conv            = gp_params_convert()
+                kernels            = [f"{useGPphot[j]}_{gpk}" for gpk in gpkerns[j]]  #prepend correct GP package symbol for the kernel
+                thislc_gppars_orig = gp_conv.get_values(kernels=kernels, data="lc",pars=thislc_gppars)
                 
                 if useGPphot[j] in ['ge','ce']:
                     gp = GPobjects[j]      #gp for this lc
-                    gp.set_parameter_vector(thislc_gppars)
-                    gp.compute(pargp[srt_gp], yerr = err_all[j][srt_gp]) #compute gp with jitter included 
+                    gp.set_parameter_vector(thislc_gppars_orig)
+                    gp.compute(pargp_arr[srt_gp], yerr = err_all[j][srt_gp]) #compute gp with jitter included 
                 else:
-                    gp = cov.Cov(t=pargp[srt_gp],err=term.Error(err_all[j][srt_gp]),kterm=deepcopy(GPobjects[j])) #create the spleaf gp error term and kernel term. use a copy of kernel as spleaf doesnt allow to reuse the kernel this way
-                    gp.set_param(thislc_gppars)
+                    gp = cov.Cov(t=pargp_arr[srt_gp],err=term.Error(err_all[j][srt_gp]),kterm=deepcopy(GPobjects[j])) #create the spleaf gp error term and kernel term. use a copy of kernel as spleaf doesnt allow to reuse the kernel this way
+                    gp.set_param(thislc_gppars_orig)
 
 
                 if inmcmc == 'y':
@@ -485,10 +492,16 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     which_GP = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
 
                     if useGPphot[j] in ['ge','ce']: 
-                        base_gp_all[j] = gp.predict((residual_all[j])[srt_gp], t=pargp[srt_gp], return_cov=False, return_var=False)[unsrt_gp] #gp_fit to residual
+                        base_gp_all[j] = gp.predict((residual_all[j])[srt_gp], t=pargp_arr[srt_gp], return_cov=False, return_var=False)[unsrt_gp] #gp_fit to residual
                     else:                           
-                        base_gp_all[j] = gp.conditional((residual_all[j])[srt_gp], pargp[srt_gp], calc_cov=False)[unsrt_gp] #gp_fit to residual
-                    
+                        base_gp_all[j] = gp.conditional((residual_all[j])[srt_gp], pargp_arr[srt_gp], calc_cov=False)[unsrt_gp] #gp_fit to residual
+
+
+                    lcGPsave[LCnames[j]] = GPSaveObj(fname=LCnames[j], gp_pck=useGPphot[j], gp=gp, kernel=kernels,
+                                                        ndim_gp=ndim_gp, gp_cols=gpcol, gp_cols_err=None,
+                                                        gp_pars = {k:v for k,v in zip(thislc_gppars_names,thislc_gppars) },
+                                                        x=pargp_arr, residuals=(residual_all[j])[srt_gp])
+
                     full_mod_all[j]   = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [transit*baseline(para*spl) + gp]
                     mod               = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
                     emod              = np.concatenate((emod,err_all[j])) #error array including jitter
@@ -520,33 +533,37 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 pass
 
         if sameLCgp.flag==True: #if using the same GP for multiple LCs
-            gppars   = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
-            gpcol    = gp_colnames[sameLCgp.first_index]
+            gppars       = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+            gppars_names = pnames_all[len(params):len(params)+len(GPparams)]   # the GP parameter names for all lcs
+            gpcol        = gp_colnames[sameLCgp.first_index]
+            ndim_gp      = 1 if isinstance(gpcol, str) else len(set(gpcol)) #number of independent axis columns for the GP
+
             if isinstance(gpcol, str):
-                pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs])   #join column data for all datasets with useGPphot !="n"
+                pargp_arr = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs])   #join column data for all datasets with useGPphot !="n"
             else:
-                pargp = np.column_stack( [np.concatenate([input_lcs[nm][c] for nm in sameLCgp.LCs]) for c in gpcol ])
+                pargp_arr = np.column_stack( [np.concatenate([input_lcs[nm][c] for nm in sameLCgp.LCs]) for c in gpcol ])
                                         
-            srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
+            srt_gp   = np.argsort(pargp_arr) if pargp_arr.ndim==1 else np.argsort(pargp_arr[:,0])  #indices to sort the gp axis
             unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
 
             
-            all_lc_gpind  = GPindex == sameLCgp.first_index          
-            all_lc_gppars = gppars[all_lc_gpind] #the gp params for the lcs in sameLCgp 
+            same_lc_gpind        = GPindex == sameLCgp.first_index          
+            same_lc_gppars       = gppars[same_lc_gpind] #the gp params for the lcs in sameLCgp
+            same_lc_gppars_names = gppars_names[same_lc_gpind] #the gp params for the lcs in sameLCgp 
 
             #need conversion of gp pars before setting them
-            gp_conv       = gp_params_convert()
-            kernels       = [f"{useGPphot[sameLCgp.first_index]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-            all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
+            gp_conv             = gp_params_convert()
+            kernels             = [f"{useGPphot[sameLCgp.first_index]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
+            same_lc_gppars_orig = gp_conv.get_values(kernels=kernels, data="lc",pars=same_lc_gppars)
             
             if useGPphot[sameLCgp.first_index] in ['ge','ce']:
                 gp  = GPobjects[sameLCgp.first_index]
-                gp.set_parameter_vector(all_lc_gppars)
-                gp.compute(pargp[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp])
+                gp.set_parameter_vector(same_lc_gppars_orig)
+                gp.compute(pargp_arr[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp])
             else: #spleaf
-                gp = cov.Cov(t=pargp[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp]),
+                gp = cov.Cov(t=pargp_arr[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices])[srt_gp]),
                                 kterm=deepcopy(GPobjects[sameLCgp.first_index]))
-                gp.set_param(all_lc_gppars)
+                gp.set_param(same_lc_gppars_orig)
 
 
             if inmcmc == 'y':
@@ -562,20 +579,26 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 resid_cctn = np.concatenate([residual_all[i] for i in sameLCgp.indices])
                 for j in sameLCgp.indices:
                     if isinstance(gpcol, str):
-                        thispargp = input_lcs[LCnames[j]][gpcol]  
+                        thispargp_arr = input_lcs[LCnames[j]][gpcol]  
                     else:
-                        thispargp = np.column_stack( [input_lcs[LCnames[j]][c] for c in gpcol] )
+                        thispargp_arr = np.column_stack( [input_lcs[LCnames[j]][c] for c in gpcol] )
                     
-                    thissrt_gp   = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
+                    thissrt_gp   = np.argsort(thispargp_arr) if thispargp_arr.ndim==1 else np.argsort(thispargp_arr[:,0])  #indices to sort the gp axis
                     thisunsrt_gp = np.argsort(thissrt_gp)  #indices to unsort the gp axis
                     which_GP     = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
                     
                     if useGPphot[j] in ['ge','ce']:
-                        base_gp_all[j]  = gp.predict(resid_cctn[srt_gp], t=thispargp[thissrt_gp], 
+                        base_gp_all[j]  = gp.predict(resid_cctn[srt_gp], t=thispargp_arr[thissrt_gp], 
                                                         return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
                     else: #spleaf
-                        base_gp_all[j]  = gp.conditional(resid_cctn[srt_gp], thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+                        base_gp_all[j]  = gp.conditional(resid_cctn[srt_gp], thispargp_arr[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+
                     
+                    lcGPsave[LCnames[j]] = GPSaveObj(fname=LCnames[j], gp_pck=useGPphot[j], gp=gp, kernel=kernels,
+                                                        ndim_gp=ndim_gp, gp_cols=gpcol, gp_cols_err=None,
+                                                        gp_pars = {k:v for k,v in zip(same_lc_gppars_names,same_lc_gppars) },
+                                                        x=thispargp_arr, residuals=resid_cctn[srt_gp])
+
                     full_mod_all[j] = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [gp + transit*baseline(para*spl)]
                     mod             = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
                     emod            = np.concatenate((emod,err_all[j])) #error array including jitter
@@ -604,35 +627,40 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                         np.savetxt(outfile,out_data,header=header_fmt.format(*header),fmt='%-16.6f',delimiter=" ")
 
         if sameLCgp.filtflag == True: #if using the same GP for each filter
-            gppars = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+            gppars       = params_all[len(params):len(params)+len(GPparams)]   # the GP parameters for all lcs
+            gppars_names = pnames_all[len(params):len(params)+len(GPparams)]   # the GP parameter names for all lcs
+
             for filt in filnames:
                 resid_cctn_filt = np.concatenate([residual_all[i] for i in sameLCgp.indices[filt]])
-                gpcol    = gp_colnames[sameLCgp.first_index[filt]]
+                gpcol           = gp_colnames[sameLCgp.first_index[filt]]
+                ndim_gp         = 1 if isinstance(gpcol, str) else len(set(gpcol)) #number of independent axis columns for the GP
+
                 if isinstance(gpcol, str):
-                    pargp = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs[filt]])   #join column data for all datasets of this filter with useGPphot !="n"
+                    pargp_arr = np.concatenate([input_lcs[nm][gpcol] for nm in sameLCgp.LCs[filt]])   #join column data for all datasets of this filter with useGPphot !="n"
                 else:
-                    pargp = np.column_stack( [np.concatenate([input_lcs[nm][c] for nm in sameLCgp.LCs[filt]]) for c in gpcol ])
+                    pargp_arr = np.column_stack( [np.concatenate([input_lcs[nm][c] for nm in sameLCgp.LCs[filt]]) for c in gpcol ])
                 
-                srt_gp   = np.argsort(pargp) if pargp.ndim==1 else np.argsort(pargp[:,0])  #indices to sort the gp axis
+                srt_gp   = np.argsort(pargp_arr) if pargp_arr.ndim==1 else np.argsort(pargp_arr[:,0])  #indices to sort the gp axis
                 unsrt_gp = np.argsort(srt_gp)  #indices to unsort the gp axis
 
-                
-                all_lc_gpind  = GPindex == sameLCgp.first_index[filt]          
-                all_lc_gppars = gppars[all_lc_gpind] #the gp params 
+
+                same_lc_gpind        = GPindex == sameLCgp.first_index[filt]          
+                same_lc_gppars       = gppars[same_lc_gpind] #the gp params 
+                same_lc_gppars_names = gppars_names[same_lc_gpind] #the gp params for the lcs in sameLCgp
 
                 #need conversion of gp pars before setting them
-                gp_conv       = gp_params_convert()
-                kernels       = [f"{useGPphot[sameLCgp.first_index[filt]]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index[filt] ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-                all_lc_gppars = gp_conv.get_values(kernels=kernels, data="lc",pars=all_lc_gppars)
+                gp_conv             = gp_params_convert()
+                kernels             = [f"{useGPphot[sameLCgp.first_index[filt]]}_{gpk}" for gpk in gpkerns[sameLCgp.first_index[filt] ]]#prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
+                same_lc_gppars_orig = gp_conv.get_values(kernels=kernels, data="lc",pars=same_lc_gppars)
                 
                 if useGPphot[sameLCgp.first_index[filt]] in ['ge','ce']:
                     gp  = GPobjects[sameLCgp.first_index[filt]]
-                    gp.set_parameter_vector(all_lc_gppars)
-                    gp.compute(pargp[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp])
+                    gp.set_parameter_vector(same_lc_gppars_orig)
+                    gp.compute(pargp_arr[srt_gp], yerr = np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp])
                 else: #spleaf
-                    gp = cov.Cov(t=pargp[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp]),
+                    gp = cov.Cov(t=pargp_arr[srt_gp], err=term.Error(np.concatenate([err_all[i] for i in sameLCgp.indices[filt]])[srt_gp]),
                                     kterm=deepcopy(GPobjects[sameLCgp.first_index[filt]]))
-                    gp.set_param(all_lc_gppars)
+                    gp.set_param(same_lc_gppars_orig)
 
 
                 if inmcmc == 'y':
@@ -647,19 +675,25 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 if inmcmc == 'n':      
                     for j in sameLCgp.indices[filt]: #loop over the LCs in this filter
                         if isinstance(gpcol, str) :
-                            thispargp   = input_lcs[LCnames[j]][gpcol] 
+                            thispargp_arr   = input_lcs[LCnames[j]][gpcol] 
                         else: 
-                            thispargp   = np.column_stack( [input_lcs[LCnames[j]][c] for c in gpcol] ) #get the gp column data for this lc
+                            thispargp_arr   = np.column_stack( [input_lcs[LCnames[j]][c] for c in gpcol] ) #get the gp column data for this lc
 
-                        thissrt_gp      = np.argsort(thispargp) if thispargp.ndim==1 else np.argsort(thispargp[:,0])  #indices to sort the gp axis
+                        thissrt_gp      = np.argsort(thispargp_arr) if thispargp_arr.ndim==1 else np.argsort(thispargp_arr[:,0])  #indices to sort the gp axis
                         thisunsrt_gp    = np.argsort(thissrt_gp)  #indices to unsort the gp axis
                         which_GP        = "George" if useGPphot[j]=='ge' else "Celerite" if useGPphot[j]=='ce' else "Spleaf"
                         
                         if useGPphot[j] in ['ge','ce']:
-                            base_gp_all[j]  = gp.predict(resid_cctn_filt[srt_gp], t=thispargp[thissrt_gp], 
+                            base_gp_all[j]  = gp.predict(resid_cctn_filt[srt_gp], t=thispargp_arr[thissrt_gp], 
                                                             return_cov=False, return_var=False)[thisunsrt_gp] #gp_fit to residual
                         else:
-                            base_gp_all[j]  = gp.conditional(resid_cctn_filt[srt_gp], thispargp[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+                            base_gp_all[j]  = gp.conditional(resid_cctn_filt[srt_gp], thispargp_arr[thissrt_gp], calc_cov=False)[thisunsrt_gp]
+
+
+                        lcGPsave[LCnames[j]] = GPSaveObj(fname=LCnames[j], gp_pck=useGPphot[j], gp=gp, kernel=kernels,
+                                    ndim_gp=ndim_gp, gp_cols=gpcol, gp_cols_err=None,
+                                    gp_pars = {k:v for k,v in zip(same_lc_gppars_names,same_lc_gppars) },
+                                    x= thispargp_arr, residuals=resid_cctn_filt[srt_gp])
                         
                         full_mod_all[j] = full_mod_all[j] + base_gp_all[j]    #update trans_base with base_gp [gp + transit*baseline(para*spl)]
                         mod             = np.concatenate((mod,full_mod_all[j])) #append the model to the output array   
@@ -695,6 +729,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
 
     # now do the RVs and add their probabilities to the model
     time_all, RV_all, err_all, full_mod_all, base_para_all, base_spl_all, base_gp_all, base_total_all, rvmod_all, det_rv_all, gamma_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
+    rvGPsave = dict()
 
     for j in range(nRV):
         # if verbose: print(f'RV{j+1}', end= " ...")
@@ -863,36 +898,74 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             elif useGPrv[j] in ['ge','ce','sp'] and sameRVgp.flag==False:
                 thisRVdata = input_rvs[RVnames[j]]
 
-                rv_gppars  = params_all[len(params)+len(GPparams):]   #all rv gp parameters
-                gpcol      = rv_gp_colnames[j] 
-                rvpargp    = rv_pargps[j]            #independent axis columns
+                rv_gppars       = params_all[len(params)+len(GPparams):]   #all rv gp parameters
+                rv_gppars_names = pnames_all[len(params)+len(GPparams):] 
+                gpcol           = rv_gp_colnames[j] 
+                gpcol_err       = rv_gp_colerr_names[j]
+                ndim_gp         = 1 if isinstance(gpcol, str) else len(set(gpcol)) #number of independent axis columns for the GP
+                rvpargp_arr     = rv_pargps[j]            #independent axis columns
                 # rvpargp    = thisRVdata[gpcol] if isinstance(gpcol, str) else np.column_stack( [thisRVdata[c] for c in gpcol]) 
-                srt_rvgp   = np.argsort(rvpargp) if rvpargp.ndim==1 else np.argsort(rvpargp[:,0])  #indices to sort the gp axis
-                unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
 
                 #indices of the gp params for this rv file
-                thisrv_gpind  = rvGPindex == j          #individual gp params 
-                thisrv_gppars = rv_gppars[thisrv_gpind] #the gp params for this RV
+                thisrv_gpind        = rvGPindex == j          #individual gp params 
+                thisrv_gppars       = rv_gppars[thisrv_gpind] #the gp params for this RV
+                thisrv_gppars_names = rv_gppars_names[thisrv_gpind]
+
+                if useGPrv[j]=='sp' and ndim_gp>1:
+                    thisrv_gppars, gp_off, gp_jitt = thisrv_gppars[:-2*(ndim_gp-1)], thisrv_gppars[-2*(ndim_gp-1):-(ndim_gp-1)], thisrv_gppars[-(ndim_gp-1):] #get the gp parameters for this rv file, offset and jitter
+                    thisrv_gppars_names = thisrv_gppars_names[:-2*(ndim_gp-1)]
 
                 #need conversion of gp pars before setting them
-                gp_conv       = gp_params_convert()
-                kernels       = [f"{useGPrv[j]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel
-                thisrv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars)
+                gp_conv             = gp_params_convert()
+                kernels             = [f"{useGPrv[j]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel
+                thisrv_gppars_orig  = gp_conv.get_values(kernels=kernels, data="rv",pars=thisrv_gppars, gp_dim=ndim_gp)
                 
                 if useGPrv[j] in ['ge','ce']:
+                    srt_rvgp   = np.argsort(rvpargp_arr) if rvpargp_arr.ndim==1 else np.argsort(rvpargp_arr[:,0])  #indices to sort the gp axis
+                    unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
+
                     gp  = rvGPobjects[j]      #gp for this rv
-                    gp.set_parameter_vector(thisrv_gppars)
-                    gp.compute(rvpargp[srt_rvgp], yerr = err_in[srt_rvgp])
+                    gp.set_parameter_vector(thisrv_gppars_orig)
+                    gp.compute(rvpargp_arr[srt_rvgp], yerr = err_in[srt_rvgp])
                 else:
-                    gp = cov.Cov(t=rvpargp[srt_rvgp],err=term.Error(err_in[srt_rvgp]),kterm=deepcopy(rvGPobjects[j])) #create the spleaf gp from the dictionary of kernels
-                    gp.set_param(thisrv_gppars)
+                    if ndim_gp == 1:
+                        srt_rvgp   = np.argsort(rvpargp_arr) if rvpargp_arr.ndim==1 else np.argsort(rvpargp_arr[:,0])  #indices to sort the gp axis
+                        unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
+
+                        gp = cov.Cov(t=rvpargp_arr[srt_rvgp],err=term.Error(err_in[srt_rvgp]),kterm=deepcopy(rvGPobjects[j])) #create the spleaf gp from the dictionary of kernels
+                        gp.set_param(thisrv_gppars_orig)
+                    else:
+                        # Merge all time series
+                        Yerr     = [thisRVdata[c] for c in gpcol_err]
+                        Yerr[0]  = err_all[j]  #replace RV error with the jitter already added
+                        for ee in range(1,ndim_gp):       #add jitter for error of each timeseries
+                            Yerr[ee] = np.sqrt(Yerr[ee]**2 + gp_jitt[ee-1]**2) 
+                        
+                        Y    = [thisRVdata[c] for c in gpcol]
+                        Y[0] = residual_all[j]     #replace RV timeseries with residual after removing planet
+                        for ee in range(1, ndim_gp):
+                            Y[ee] = Y[ee] - gp_off[ee-1]
+
+                        T    = [thisRVdata["col0"]]*ndim_gp #time array is same for all timeseries
+
+                        t_full, y_full, yerr_full, series_index = cov.merge_series(T, Y, Yerr)
+                        gp = cov.Cov(   t   = t_full, 
+                                        err = term.Error(yerr_full),
+                                        GP  = term.MultiSeriesKernel(deepcopy(rvGPobjects[j]), series_index,
+                                                                        np.ones(ndim_gp), np.ones(ndim_gp)),
+                                    )
+                        gp.set_param(thisrv_gppars_orig)
 
 
                 if inmcmc == 'y':
                     if useGPrv[j] in ['ge','ce']:
                         lnprob_thisRV = gp.log_likelihood((residual_all[j])[srt_rvgp], quiet=True)
                     else:
-                        lnprob_thisRV = gp.loglike((residual_all[j])[srt_rvgp])
+                        if ndim_gp == 1:
+                            lnprob_thisRV = gp.loglike((residual_all[j])[srt_rvgp])
+                        else:
+                            lnprob_thisRV = gp.loglike(y_full)
+
                     lnprob = lnprob + lnprob_thisRV
 
                 # if not in MCMC, get a prediction and append it to the output array
@@ -900,16 +973,26 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     which_GP = "George" if useGPrv[j]=='ge' else "Celerite" if useGPrv[j]=='ce' else "Spleaf"
 
                     if useGPrv[j] in ['ge','ce']:
-                        base_gp_all[j]  = gp.predict((residual_all[j])[srt_rvgp], t=rvpargp[srt_rvgp], return_cov=False, return_var=False)[unsrt_rvgp]
+                        base_gp_all[j]  = gp.predict((residual_all[j])[srt_rvgp], t=rvpargp_arr[srt_rvgp], return_cov=False, return_var=False)[unsrt_rvgp]
                     else:
-                        base_gp_all[j]  = gp.conditional((residual_all[j])[srt_rvgp], rvpargp[srt_rvgp], calc_cov=False)[unsrt_rvgp]
+                        if ndim_gp == 1:
+                            base_gp_all[j]  = gp.conditional((residual_all[j])[srt_rvgp], rvpargp_arr[srt_rvgp], calc_cov=False)[unsrt_rvgp]
+                        else:
+                            gp.kernel["GP"].set_conditional_coef(series_id=0)
+                            base_gp_all[j]  = gp.conditional(y_full, T[0], calc_cov=False)
+
+                    rvGPsave[RVnames[j]] = GPSaveObj(fname=RVnames[j], gp_pck=useGPrv[j], gp=gp, kernel=kernels,
+                                                        ndim_gp=ndim_gp, gp_cols=gpcol, gp_cols_err=gpcol_err,
+                                                        gp_pars = {k:v for k,v in zip(thisrv_gppars_names,thisrv_gppars) },
+                                                        x= T[0] if (useGPrv[j] == 'sp' and ndim_gp > 1) else rvpargp_arr, 
+                                                        residuals=y_full if (useGPrv[j] == 'sp' and ndim_gp > 1) else (residual_all[j])[srt_rvgp])
                     
                     full_mod_all[j] = full_mod_all[j] + base_gp_all[j] #update mod_RV_base with base_gpRV [gp + planet rv + baseline(para+spl+gamma)]
                     mod             = np.concatenate((mod,full_mod_all[j]))
                     emod            = np.concatenate((emod,err_all[j]))
 
                     base_total_all[j] = base_total_all[j] + base_gp_all[j]  #update base_total with base_gp
-                    det_rv_all[j]        = RV_all[j] - base_total_all[j]
+                    det_rv_all[j]     = RV_all[j] - base_total_all[j]
                     residual_all[j]   = RV_all[j] - full_mod_all[j]
 
                     out_data   = np.stack((time_all[j],RV_all[j],err_all[j],full_mod_all[j],base_para_all[j],base_spl_all[j],base_gp_all[j],base_total_all[j],rvmod_all[j],det_rv_all[j],gamma_all[j],residual_all[j]),axis=1)
@@ -931,60 +1014,114 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 pass
         
         if sameRVgp.flag==True: 
-            rv_gppars  = params_all[len(params)+len(GPparams):]   #all rv gp parameters
-            gpcol      = rv_gp_colnames[sameRVgp.first_index] 
-            if isinstance(gpcol,str):
-                rvpargp = np.concatenate([input_rvs[nm][gpcol] for nm in sameRVgp.RVs])   #join column data for all datasets
-            else:
-                rvpargp = np.column_stack( [np.concatenate([input_rvs[nm][c] for nm in sameRVgp.RVs]) for c in gpcol ])
-        
-            srt_rvgp   = np.argsort(rvpargp) if rvpargp.ndim==1 else np.argsort(rvpargp[:,0])  #indices to sort the gp axis
-            unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
-        
-            #indices of the gp params for this rv file
-            all_rv_gpind  = rvGPindex == sameRVgp.first_index 
-            all_rv_gppars = rv_gppars[all_rv_gpind] #the gp params
+            rv_gppars        = params_all[len(params)+len(GPparams):]   #all rv gp parameters
+            rv_gppars_names  = pnames_all[len(params)+len(GPparams):]   #all rv gp parameters names
+            gpcol            = rv_gp_colnames[sameRVgp.first_index] 
+            gpcol_err        = rv_gp_colerr_names[sameRVgp.first_index]
+            ndim_gp          = 1 if isinstance(gpcol, str) else len(set(gpcol)) #number of independent axis columns for the GP
 
-            #need conversion of gp pars before setting them
-            gp_conv       = gp_params_convert()
-            kernels       = [f"{useGPrv[sameRVgp.first_index]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
-            all_rv_gppars = gp_conv.get_values(kernels=kernels, data="rv",pars=all_rv_gppars)
+            if ndim_gp == 1:
+                rvpargp_arr = np.concatenate([input_rvs[nm][gpcol] for nm in sameRVgp.RVs])   #join column data for all datasets
+            else:
+                if useGPrv[sameRVgp.first_index]=='sp': #spleaf with multi series gp
+                    rvpargp_arr = [np.concatenate([input_rvs[nm][c] for nm in sameRVgp.RVs]) for c in gpcol ] 
+                else:
+                    rvpargp_arr = np.column_stack( [np.concatenate([input_rvs[nm][c] for nm in sameRVgp.RVs]) for c in gpcol ])
+
+            #indices of the gp params for this rv file
+            same_rv_gpind        = rvGPindex == sameRVgp.first_index 
+            same_rv_gppars       = rv_gppars[same_rv_gpind] #the gp params
+            same_rv_gppars_names = rv_gppars_names[same_rv_gpind] #the gp params names
+
+            if useGPrv[j]=='sp' and ndim_gp>1:
+                same_rv_gppars, gp_off, gp_jitt = same_rv_gppars[:-2*(ndim_gp-1)], same_rv_gppars[-2*(ndim_gp-1):-(ndim_gp-1)], same_rv_gppars[-(ndim_gp-1):] #get the gp parameters for this rv file, offset and jitter
+                same_rv_gppars_names = same_rv_gppars_names[:-2*(ndim_gp-1)] #get the gp parameters for this rv file
+
+            #need conversion of gp pars to original package values before setting them
+            gp_conv             = gp_params_convert()
+            kernels             = [f"{useGPrv[sameRVgp.first_index]}_{gpk}" for gpk in rv_gpkerns[j]] #prepend correct GP package symbol for the kernel--> ce_sho,sp_mat32...
+            same_rv_gppars_orig = gp_conv.get_values(kernels=kernels, data="rv",pars=same_rv_gppars)
+
             
             if useGPrv[sameRVgp.first_index] in ['ge','ce']:
+                srt_rvgp   = np.argsort(rvpargp_arr) if ndim_gp == 1 else np.argsort(rvpargp_arr[:,0])  #indices to sort the gp axis
+                unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
+
                 gp = rvGPobjects[sameRVgp.first_index]
-                gp.set_parameter_vector(all_rv_gppars)
-                gp.compute(rvpargp[srt_rvgp], yerr = np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp])
+                gp.set_parameter_vector(same_rv_gppars_orig)
+                gp.compute(rvpargp_arr[srt_rvgp], yerr = np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp])
             else:
-                gp = cov.Cov(t=rvpargp[srt_rvgp],err=term.Error(np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp]),
-                                kterm=deepcopy(rvGPobjects[sameRVgp.first_index]))
-                gp.set_param(all_rv_gppars)
+                if ndim_gp == 1:
+                    srt_rvgp   = np.argsort(rvpargp_arr) if ndim_gp == 1 else np.argsort(rvpargp_arr[:,0])
+                    unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
+
+                    gp = cov.Cov(t=rvpargp_arr[srt_rvgp],err=term.Error(np.concatenate([err_all[i] for i in sameRVgp.indices])[srt_rvgp]),
+                                    kterm=deepcopy(rvGPobjects[sameRVgp.first_index]))
+                    gp.set_param(same_rv_gppars_orig)
+                else:
+                    #first merge time series across all rvs in sameRV then append gp columns in a list
+                    Yerr    = [np.concatenate([input_rvs[nm][c] for nm in sameRVgp.RVs]) for c in gpcol_err]
+                    Yerr[0] = np.concatenate([err_all[i] for i in sameRVgp.indices])
+                    for ee in range(1,ndim_gp):       #add jitter for error of each timeseries
+                        Yerr[ee] = np.sqrt(Yerr[ee]**2 + gp_jitt[ee-1]**2)
+
+                    Y    = [np.concatenate([input_rvs[nm][c] for nm in sameRVgp.RVs]) for c in gpcol]
+                    Y[0] = np.concatenate([residual_all[i] for i in sameRVgp.indices])
+                    for ee in range(1, ndim_gp):
+                        Y[ee] = Y[ee] - gp_off[ee-1]
+
+                    T    = [np.concatenate([input_rvs[nm]["col0"] for nm in sameRVgp.RVs])]*ndim_gp #time array is same for all timeseries
+
+                    t_full, y_full, yerr_full, series_index = cov.merge_series(T, Y, Yerr)
+                    gp = cov.Cov(   t   = t_full, 
+                                    err = term.Error(yerr_full),
+                                    GP  = term.MultiSeriesKernel(deepcopy(rvGPobjects[sameRVgp.first_index]), series_index,
+                                                                np.ones(ndim_gp), np.ones(ndim_gp)),
+                                )
+                    gp.set_param(same_rv_gppars_orig)
 
 
             if inmcmc == 'y':
+                resid_cctn = np.concatenate([residual_all[i] for i in sameRVgp.indices])
                 if useGPrv[sameRVgp.first_index] in ['ge','ce']:
-                    lnprob_allRV = gp.log_likelihood((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp], quiet=True)
+                    lnprob_allRV = gp.log_likelihood(resid_cctn[srt_rvgp], quiet=True)
                 else:
-                    lnprob_allRV = gp.loglike((np.concatenate([residual_all[i] for i in sameRVgp.indices]))[srt_rvgp])
+                    if ndim_gp == 1:
+                        lnprob_allRV = gp.loglike(resid_cctn[srt_rvgp])
+                    else:
+                        lnprob_allRV = gp.loglike(y_full)
                 
                 lnprob       = lnprob + lnprob_allRV
 
             if inmcmc == 'n':
                 resid_cctn = np.concatenate([residual_all[i] for i in sameRVgp.indices])
                 for j in sameRVgp.indices:
-                    if isinstance(gpcol, str):
-                        thisrvpargp = input_rvs[RVnames[j]][gpcol] 
-                    else:
-                        thisrvpargp = np.column_stack( [input_rvs[RVnames[j]][c] for c in gpcol] ) 
-
-                    thissrt_rvgp   = np.argsort(thisrvpargp) if thisrvpargp.ndim==1 else np.argsort(thisrvpargp[:,0])  #indices to sort the gp axis
-                    thisunsrt_rvgp = np.argsort(thissrt_rvgp)  #indices to unsort the gp axis
                     which_GP       = "George" if useGPrv[j]=='ge' else "Celerite" if useGPrv[j]=='ce' else "Spleaf"
 
-                    if useGPrv[j] in ['ge','ce']:
-                        base_gp_all[j]  = gp.predict(resid_cctn[srt_rvgp],t=thisrvpargp[thissrt_rvgp], return_cov=False, return_var=False)[thisunsrt_rvgp]
+                    if ndim_gp == 1:
+                        thisrvpargp_arr = input_rvs[RVnames[j]][gpcol] 
                     else:
-                        base_gp_all[j]  = gp.conditional(resid_cctn[srt_rvgp], thisrvpargp[thissrt_rvgp], calc_cov=False)[thisunsrt_rvgp]
-                    
+                        thisrvpargp_arr = np.column_stack( [input_rvs[RVnames[j]][c] for c in gpcol] ) 
+
+                    if useGPrv[j] in ['ge','ce']:
+                        thissrt_rvgp   = np.argsort(thisrvpargp_arr) if thisrvpargp_arr.ndim==1 else np.argsort(thisrvpargp_arr[:,0])  #indices to sort the gp axis
+                        thisunsrt_rvgp = np.argsort(thissrt_rvgp)  #indices to unsort the gp axis
+                        
+                        base_gp_all[j] = gp.predict(resid_cctn[srt_rvgp],t=thisrvpargp_arr[thissrt_rvgp], return_cov=False, return_var=False)[thisunsrt_rvgp]
+                    else:
+                        if ndim_gp == 1:
+                            base_gp_all[j]  = gp.conditional(resid_cctn[srt_rvgp], thisrvpargp_arr[thissrt_rvgp], calc_cov=False)[thisunsrt_rvgp]
+                        else:
+                            gp.kernel["GP"].set_conditional_coef(series_id=0) #predict only RV time series
+                            base_gp_all[j]  = gp.conditional(y_full, input_rvs[RVnames[j]]["col0"], calc_cov=False)
+
+
+                    rvGPsave[RVnames[j]] = GPSaveObj(fname=RVnames[j], gp_pck=useGPrv[j], gp=gp, kernel=kernels,
+                                                        ndim_gp=ndim_gp, gp_cols=gpcol, gp_cols_err=gpcol_err,
+                                                        gp_pars = {k:v for k,v in zip(same_rv_gppars_names,same_rv_gppars) },
+                                                        x=T[0] if (useGPrv[j] == 'sp' and ndim_gp > 1) else thisrvpargp_arr, 
+                                                        residuals=y_full if (useGPrv[j] == 'sp' and ndim_gp > 1) else resid_cctn[srt_rvgp])
+
                     full_mod_all[j] = full_mod_all[j] + base_gp_all[j] #update mod_RV_base with base_gpRV [gp + planet rv + baseline(para+spl+gamma)]
                     mod             = np.concatenate((mod,full_mod_all[j]))
                     emod            = np.concatenate((emod,err_all[j]))
@@ -1032,5 +1169,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                             # e=np.array(sesinwin)**2+np.array(secoswin)**2, w=np.degrees(np.arctan2(sesinwin,secoswin)) ))
 
         if isinstance(durin,(int,float)): durin = [durin]    
-        return (mod, emod, T0in, perin, durin)
+        if get_GPobj:
+            GPobj = SimpleNamespace(lc=lcGPsave,rv=rvGPsave)
+            return (mod, emod, T0in, perin, durin,GPobj)
+        else:
+            return (mod, emod, T0in, perin, durin)
 

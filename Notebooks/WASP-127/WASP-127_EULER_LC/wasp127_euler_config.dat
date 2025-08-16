@@ -1,4 +1,4 @@
-# ========================================== CONAN configuration file v3.3.11 ======================================== 
+# ========================================== CONAN configuration file v3.3.12 ======================================== 
 #      *********** KEYS *****************************************************************************************
 #      PRIORS: *Fix-F(val), *Norm-N(mu,std), *Uni-U(min,start,max), *TruncNorm–(min,max,mu,std), *LogUni-LU(min,start,max)
 #      Ssmp         : supersampling - x{factor} e.g. x30 to create 30 subexposures per point
@@ -7,8 +7,8 @@
 #      spline       : c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 
 #      ***********************************************************************************************************
 # -----------------------------------------------------------------------------------------------------------------------
-	LC_filepath: ../data/
-	RV_filepath: ../data/
+	LC_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP-127_EULER_LC/../data/
+	RV_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP-127_EULER_LC/
 	n_planet: 1
 # -----------------------------------------PHOTOMETRY--------------------------------------------------------------------
 	LC_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5
@@ -22,11 +22,11 @@
 	lc4bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    0    1    0    0|n    4 n  None           
 	lc5bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    2    2    0    2    1    0    0|n    5 n  None           
 	lc6bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    2    1    0    0|n    6 n  None           
-	lc7bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    2    1    0    0|n    7 n  None            
+	lc7bjd.dat R   0.6  |None c1:W11C4n1   med_sub |  y    0    0    0    2    1    0    0|n    7 n  None           
 # ============ Sinusoidal signals: Amp*trig(2𝜋/P*(x-x0)) - trig=sin or cos or both added==========================
 	name/filt  trig     n_harmonics  x     Amp[ppm]            P                   x0                
 # ============ Photometry GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) =========
-	name/filt  kern  par    h1:[Amp_ppm]       h2:[len_scale1]    h3:[Q,η,α,b]       h4:[P]       
+	name/filt  kern  par    h1:[Amp]           h2:[len_scale1]    h3:[Q,η,C,α,b]     h4:[P]       
 # -----------------------------------------RADIAL VELOCITY---------------------------------------------------------------
 	RV_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for the RVs
 	exclude_cols:   []                         # list of column numbers (e.g. [3,4]) to exclude from decorrelation.
@@ -34,7 +34,7 @@
 # ============ Input RV curves, baseline function, GP, spline,  gamma ============================================ 
 	name   RVunit scl_col |col0 col3 col4 col5| sin GP spline_config   | gamma_km/s     
 # ============ RV GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) =======
-	name   kern  par    h1:[Amp_ppm]       h2:[len_scale]     h3:[Q,η,C,α,b]     h4:[P]      
+	name   kern  par    h1:[Amp_ppm]       h2:[len_scale]     h3:[Q,η,C,α,b]     h4:[P]       | h5:[Der_Amp_ppm] ErrCol
 # -----------------------------------------------------------------------------------------------------------------------
 # ============ Planet parameters (Transit and RV) setup ========================================================== 
 	name                       fit 	prior                              	note
@@ -79,7 +79,7 @@
 	R  	F(0)                
 # ============ Stellar input properties ======================================================================
 	# parameter     value 
-	Radius_[Rsun]  N(1.33,0.03)
+	Radius_[Rsun]  N(1.333,0.027)
 	Mass_[Msun]    N(0.95,0.02)
 	Input_method:[R+rho(Rrho), M+rho(Mrho)]: Rrho
 # -----------------------------------------------------------------------------------------------------------------------
@@ -96,9 +96,13 @@
 	nested_sampling(static/dynamic[pfrac])    static 
 	leastsq_for_basepar(y/n)                  n 
 	apply_LCjitter(y/n,list)                  y 
-	apply_RVjitter(y/n,list)                  [] 
+	apply_RVjitter(y/n,list)                  y 
 	LCjitter_loglims(auto/[lo,hi])            auto 
 	RVjitter_lims(auto/[lo,hi])               auto 
 	LCbasecoeff_lims(auto/[lo,hi])            auto 
 	RVbasecoeff_lims(auto/[lo,hi])            auto 
-	Light_Travel_Time_correction(y/n)         n
+	Light_Travel_Time_correction(y/n)         n 
+	apply_LC_GPndim_jitter(y/n)               y 
+	apply_RV_GPndim_jitter(y/n)               y 
+	apply_LC_GPndim_offset(y/n)               y 
+	apply_RV_GPndim_offset(y/n)               y 

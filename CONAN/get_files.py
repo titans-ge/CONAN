@@ -7,7 +7,7 @@ from astropy.io import fits
 from astropy.table import Table
 from astropy.units import UnitsWarning
 from astroquery.mast import Observations
-from .utils import rho_to_tdur
+from .utils import rho_to_tdur, robust_std
 from uncertainties import ufloat
 import warnings
 
@@ -91,7 +91,8 @@ class get_TESS_data(object):
         if exptime is not None: self.exptime = exptime
         # assert select_flux in ["pdcsap_flux","sap_flux"], "select_flux must be either 'pdcsap_flux' or 'sap_flux'"
 
-        if isinstance(self.sectors,int): self.sectors = [self.sectors]
+        if isinstance(self.sectors,int): 
+            self.sectors = [self.sectors]
 
         for s in self.sectors:
             self.lc[s] = lk.search_lightcurve(self.planet_name,author=self.author,sector=s,
@@ -509,6 +510,249 @@ class get_Kepler_data(object):
             #     t, f, e = self.lc[s]["time"].value, self.lc[s]["flux"].value, self.lc[s]["flux_err"].value
             t = t + 2454833 - bjd_ref
             file = f"{folder}/{self.planet_name}_Q{s}.dat" if out_filename is None else f"{folder}/{out_filename}"
+            np.savetxt(file, np.stack((t,f,e),axis=1),fmt='%.8f',
+                        header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s}')
+            print(f"saved file as: {file}")
+
+class get_K2_data(object):
+    """
+    Class to download and save K2 light curves from MAST (using the `lightkurve` package).
+
+    Parameters
+    ----------
+    planet_name : str
+        Name of the planet.
+
+    Examples
+    --------
+    >>> from CONAN.get_files import get_TESS_data
+    >>> df = get_K2_data("K2-233")
+    >>> df.search(campaign=[15], exptime=60)
+    >>> df.download(campaign=[2,4,7], exptime=60)
+    >>> df.scatter()
+    >>> df.save_CONAN_lcfile(bjd_ref = 2450000, folder="data")
+    """
+
+    def __init__(self, planet_name):
+        self.planet_name = planet_name
+        self.lc          = {}
+        self.contam      = {}
+
+    def search(self,campaigns=None,author=None, exptime=None):
+        """
+        Search for K2 light curves on MAST using the lightkurve package.
+        see documentation for lightkurve.search_lightcurve for more information.
+
+        Parameters
+        ----------
+        campaigns : int or list of ints
+            campaigns to search for light curves.
+        author : str
+            Author of the light curve. one of ["K2", "K2SFF", "EVEREST"]. Default is None. 
+        exptime : float
+            Exposure time of the light curve.
+        """
+        search_res = lk.search_lightcurve(self.planet_name,author=author,campaign=campaigns,
+                                    exptime=exptime, mission="K2")
+        print(search_res)
+        self.campaigns = campaigns if campaigns!=None else [int(q[-2:]) for q in search_res.mission]
+        self.campaigns = list(np.unique(self.campaigns))
+        self.exptime = exptime
+        
+    def download(self,campaigns=None,exptime=None, author="K2SFF",select_flux="fcor", merge_same_campaign=True,quality_bitmask="default"):
+        """  
+        Download Kepler K2 light curves from MAST using the lightkurve package
+
+        Parameters
+        ----------
+        campaigns : int or list of ints
+            campaign lightcurve to download.
+        exptime : float
+            Exposure time of the light curve.
+        select_flux : str
+            Flux to select from the light curve. One of ["pdcsap_flux","sap_flux"]. Default is "pdcsap_flux".
+        merge_same_campaign : bool
+            Merge light curves from the same campaign. Default is True.
+        quality_bitmask : str
+            Quality bitmask to use for the lightkurve package. options are ["none","default","hard","hardest"]. Default is "default".
+        """
+        self.campaigns = self.campaigns if campaigns is None else campaigns
+        if author  is not None: self.author  = author
+        if exptime is not None: self.exptime = exptime
+
+        if isinstance(self.campaigns,int): 
+            self.campaigns = [self.campaigns]
+
+        for s in self.campaigns:
+            self.lc[s] = lk.search_lightcurve(self.planet_name,author=author,campaign=s,exptime=self.exptime
+                                                    ).download(quality_bitmask=quality_bitmask)
+            try:
+                self.lc[s] = self.lc[s].select_flux(select_flux)
+            except:
+                print(f"{select_flux} is not available. select another flux column in {self.lc.keys()}")
+                # self.contam[s] =  1 - self.lc[s].hdu[1].header["CROWDSAP"]
+            
+            self.lc[s]= self.lc[s].remove_nans().normalize()
+            print(f"downloaded {author} lightcurve for campaign {s}")
+
+            if all(np.isnan(self.lc[s]["flux_err"])):
+                self.lc[s]["flux_err"] = robust_std(np.diff(self.lc[s]["flux"]))/np.sqrt(2)
+
+        if hasattr(self,"_ok_mask"): del self._ok_mask
+        self.data_splitted = False
+        
+
+    def discard_ramp(self,length=0.25, gap_size=1, start=True, end=True):
+        """
+        Discard data at the start/end of the orbits (or large gaps) that typically feature ramps
+
+        Parameters
+        ----------
+        length : float,list
+            length of data (in days) to discard at beginning of each orbit. give list of length for each campaign or single value for all campaigns.
+
+        gap_size : float
+            minimum size of gap (in days) to detect for separating the orbits.
+
+        start : bool
+            discard data of length days at the start of the orbit. Default is True.
+
+        end : bool
+            discard data of length days at the end of the orbit. Default is True.    
+        """
+        if hasattr(self,"_ok_mask"): 
+            print("points have already been discarded. Run `.download()` again to restart.")
+            return
+        assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
+        if isinstance(length,(int,float)): length = [length]*len(self.campaigns)
+        assert len(length)==len(self.campaigns), "length must be a single value or list of the same length as campaigns"
+
+        for i,s in enumerate(self.campaigns):
+            tt = self.lc[s].time.value
+            gap = np.diff(tt) 
+            gap = np.insert(gap,0,0)   #insert diff of 0 at the beginning
+            
+            gap_bool = gap > gap_size
+            print(f"campaign {s}: {sum(gap_bool)} gap(s)>{gap_size}d detected",end="; ")
+            chunk_start_ind = np.append(0, np.where(gap_bool)[0])
+            chunk_end_ind   = np.append(np.where(gap_bool)[0]-1, len(tt)-1)
+
+            #mask points that are length days from chunk_start_ind
+            start_mask, end_mask = [], []
+            for st_ind,end_ind in zip(chunk_start_ind, chunk_end_ind):
+                if start: start_mask.append((tt >= tt[st_ind]) & (tt < tt[st_ind]+length[i]))
+                if end: end_mask.append((tt <= tt[end_ind]) & (tt > tt[end_ind]-length[i]))
+            try:
+                start_mask = np.logical_or(*start_mask) if start else np.array([False]*len(tt))
+                end_mask   = np.logical_or(*end_mask) if end else np.array([False]*len(tt))
+                self._nok_mask = np.logical_or(start_mask, end_mask)
+                self._ok_mask  = ~np.logical_or(start_mask, end_mask)
+                self.lc[s] = self.lc[s][self._ok_mask]
+                print(f"discarded {sum(self._nok_mask)} points")
+            except:
+                print("could not discard points")
+        #TODO: discards ramp only when one gap is detected. fix
+
+    def scatter(self):
+        """
+        Plot the scatter of the light curves.
+        """
+        assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
+        for s in self.campaigns:
+            ax = self.lc[s].scatter()
+            ax.set_title(f"campaign {s}")
+
+    def split_data(self, gap_size=None, split_times=None, show_plot=True):
+        """
+        Split the light curves into sections based on (1)gaps in the data, (2)given time intervals (3)given split time(s).
+
+        Parameters
+        ----------
+        gap_size : float
+            minimum gap size at which data will be splitted. same unit as the time axis. Default is None.
+        split_times : float,list
+            Time to split the data. Default is None.
+        show_plot : bool
+            Show plot of the split times. Default is True.
+        """
+
+        assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
+        if isinstance(split_times,(int,float)): split_times = [split_times] #convert to list
+        if self.data_splitted: 
+            print("data has already being split. Run `.download()` again to restart.")
+            return
+
+        remove_campaigns = []
+        curr_campaign = self.campaigns.copy()
+        for s in curr_campaign:
+            t = self.lc[s].time.value
+    
+            if gap_size is not None:
+                self._find_gaps(t,gap_size)
+                if show_plot:
+                    ax = self.lc[s].scatter()
+                    [ax.axvline(t[i], color='r', linestyle='--') for i in self.gap_ind[1:-1]]
+                nsplit = len(self.gap_ind)-1
+                for i in range(len(self.gap_ind)-1):
+                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= t[self.gap_ind[i]]) & (t < t[self.gap_ind[i+1]])]
+            
+            if split_times is not None:
+                split_times = np.array([0] +split_times +[t[-1]])
+                if show_plot:
+                    ax = self.lc[s].scatter()
+                    [ax.axvline(ti, color='r', linestyle='--') for ti in split_times[1:-1]]
+                nsplit = len(split_times)-1
+                for i in range(len(split_times)-1):
+                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= split_times[i]) & (t < split_times[i+1])]
+            
+            if split_times is None and gap_size is None:
+                raise ValueError("either gap_size or split_time must be given")
+            
+            remove_campaigns.append(s)
+            self.campaigns += [f"{s}_{i+1}" for i in range(nsplit)]
+        
+        print(f"campaign {s} data splitted into {nsplit} chunks: {list(self.campaigns)}")
+        #remove campaigns that have been split        
+        _ = [self.campaigns.pop(self.campaigns.index(s)) for s in remove_campaigns]
+        self.data_splitted = True
+        
+
+    def _find_gaps(self,t,gap_size):
+        """
+        find gaps in the data
+        """
+        gap = np.diff(t) 
+        gap = np.insert(gap,len(gap),0) #insert diff of 0 at the beginning
+        self.gap_ind = np.where(gap > gap_size)[0]
+        self.gap_ind = np.array([0]+list(self.gap_ind)+[len(t)-1])
+        # self.gap_ind = np.append(0,self.gap_ind)
+        # self.gap_ind = np.append(self.gap_ind, len(t)-1)
+
+    
+    def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None):
+        """
+        Save Kepler K2 light curves as a CONAN light curve file.
+
+        Parameters
+        ----------
+        bjd_ref : float
+            BJD reference time to use for the light curve file. Note that Kepler K2 time is in BJD-2454833
+        folder : str
+            Folder to save the light curve file in.
+        out_filename : str
+            Name of the output file. Default is None in which case the file will be named as "{planet_name}_S{campaign}.dat"
+        """
+
+        assert self.lc != {}, "No light curves downloaded yet. Run `download()` first."
+        if not os.path.exists(folder): os.mkdir(folder)
+
+        for s in self.campaigns:
+            # try:
+            t, f, e = self.lc[s]["time"].value, np.array(self.lc[s]["flux"]), np.array(self.lc[s]["flux_err"])   
+            # except AttributeError:
+            #     t, f, e = self.lc[s]["time"].value, self.lc[s]["flux"].value, self.lc[s]["flux_err"].value
+            t = t + 2454833 - bjd_ref
+            file = f"{folder}/{self.planet_name}_C{s}.dat" if out_filename is None else f"{folder}/{out_filename}"
             np.savetxt(file, np.stack((t,f,e),axis=1),fmt='%.8f',
                         header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s}')
             print(f"saved file as: {file}")

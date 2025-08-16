@@ -151,6 +151,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                 else: 
                     ax_main.plot(p1[p1_srt],fit_mod[i].planet_mod[p1_srt],"r",zorder=5,label="planet_model")
             
+            ax_main.legend()
             # Plot residuals
             for label in ax_main.get_xticklabels():
                 label.set_visible(False)  # Hide x-axis tick labels on main plot only
@@ -1203,11 +1204,11 @@ class load_lightcurves:
                     self._tra_occ_pars[p] = [self._tra_occ_pars[p]]*self._nplanet
                 elif isinstance(self._tra_occ_pars[p], (list)): 
                     assert len(self._tra_occ_pars[p]) == self._nplanet, \
-                    f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
+                    f"get_decorr(): `{p}` must be a list of same length as number of planets {self._nplanet} but {len(self._tra_occ_pars[p])} given."
                 elif isinstance(self._tra_occ_pars[p],type(None)):
                     self._tra_occ_pars[p] = [0]*self._nplanet
             else:
-                assert isinstance(self._tra_occ_pars[p],(int,float,tuple,type(None))),f"get_decorr(): {p} must be one of int/float/tuple/None but {self._tra_occ_pars[p]} given "
+                assert isinstance(self._tra_occ_pars[p],(int,float,tuple,type(None))),f"get_decorr(): `{p}` must be one of int/float/tuple/None but {self._tra_occ_pars[p]} given "
 
         ld_q1, ld_q2 = {},{}
         for i,fil in enumerate(self._filnames):
@@ -2036,18 +2037,18 @@ class load_lightcurves:
         for p in ["par","degree","knot_spacing"]:
             if DA[p] is None: DA[p] = [None]*nlc_spl
             if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]*nlc_spl
-            if isinstance(DA[p], list): assert len(DA[p])==nlc_spl, f"add_spline(): {p} must be a list of length {nlc_spl} or length 1 (if same is to be used for all lcs)."
+            if isinstance(DA[p], list): assert len(DA[p])==nlc_spl, f"add_spline(): `{p}` must be a list of length {nlc_spl} or length 1 (if same is to be used for all lcs)."
             
             #check if inputs are valid
             for list_item in DA[p]:
                 if p=="par":
-                    if isinstance(list_item, str): assert list_item in ["col0","col3","col4","col5","col6","col7","col8",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {list_item} given.'
+                    if isinstance(list_item, str): assert list_item in ["col0","col3","col4","col5","col6","col7","col8",None],f'add_spline(): `{p}` must be in ["col0","col3","col4","col5"] but {list_item} given.'
                     if isinstance(list_item, tuple): 
-                        for tup_item in list_item: assert tup_item in ["col0","col3","col4","col5","col6","col7","col8",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {tup_item} given.'
+                        for tup_item in list_item: assert tup_item in ["col0","col3","col4","col5","col6","col7","col8",None],f'add_spline(): `{p}` must be in ["col0","col3","col4","col5"] but {tup_item} given.'
                 if p=="degree": 
-                    assert isinstance(list_item, (int,tuple)),f'add_spline(): {p} must be an integer but {list_item} given.'
+                    assert isinstance(list_item, (int,tuple)),f'add_spline(): `{p}` must be an integer but {list_item} given.'
                     if isinstance(list_item, tuple):
-                        for tup_item in list_item: assert isinstance(tup_item, int),f'add_spline(): {p} must be an integer but {tup_item} given.'
+                        for tup_item in list_item: assert isinstance(tup_item, int),f'add_spline(): `{p}` must be an integer but {tup_item} given.'
 
         if plot_knots>0:
             n_data = len(lc_list)
@@ -2149,8 +2150,8 @@ class load_lightcurves:
             trigonometric function to fit. must be one of ['sin','cos','sincos']. Default is 'sin'. 
             Give list of trig functions if different for each lc file. e.g. ["sin","cos"] for sin(x) 
             for lc1.dat and cos(x) for lc2.dat.
-        n : int, tuple, list, optional
-            number of harmonics of the sinusoid to fit. Default is 1 for only sin(x) term, 2 for 
+        n : int, list, optional
+            number of harmonics of the sinusoid to fit. Default is 1 for only sin(x)/cos(x)/sin(x)cos(x) term, 2 for 
             sin(2x), .... max value is 3
         par : str, list, optional
             column of input data representing the independent variable x of the sinusoid. must be 
@@ -2186,7 +2187,8 @@ class load_lightcurves:
         init_sine = lambda name,fit : SN(name=name, fit=fit, trig=None, n=1, par="col0", npars=3, nfree=0, 
                                                         Amp=_param_obj.from_tuple(0), P=_param_obj.from_tuple(0), 
                                                         x0=_param_obj.from_tuple(0))
-        for i in range(self._nphot): self._bases[i][7]="n"
+        for i in range(self._nphot): 
+            self._bases[i][7]="n"
 
         if lc_list is None or lc_list==[]:
             self._sine_dict = {"same":init_sine("same","same")}#{k:None for k in self._names}
@@ -2229,7 +2231,7 @@ class load_lightcurves:
                 sin_names = lc_list
                 lc_list = "slct"    #list of selected lcs
             elif all([lc in self._filnames for lc in lc_list]):
-                for i in np.where(np.array(self._filters)==lc_list)[0]: 
+                for i in np.concatenate([np.where(np.array(self._filters)==lc)[0] for lc in lc_list]): 
                     self._bases[i][7]="y"
                 sin_names = lc_list
                 lc_list = "filt"
@@ -2246,24 +2248,24 @@ class load_lightcurves:
             if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]*nLC_sin
             if isinstance(DA[p], list): 
                 if len(DA[p])==1: DA[p] = DA[p]*nLC_sin
-                assert len(DA[p])==nLC_sin, f"add_sinusoid(): {p} must be a list of length {nLC_sin} to specify value for each lc/filter or length 1 to use same value for all lcs/filters)."
+                assert len(DA[p])==nLC_sin, f"add_sinusoid(): `{p}` must be a list of length {nLC_sin} to specify value for each lc/filter or length 1 to use same value for all lcs/filters)."
         
             for list_item in DA[p]:
-                if p=="trig": assert list_item in ["sin","cos","sincos"], f"add_sinusoid(): {p} must be in ['sin','cos','sincos'] but {list_item} given."
-                if p=="n": assert list_item in [1,2,3], f"add_sinusoid(): {p} must be an integer (<= 3) but {list_item} given."
-                if p=="par": assert list_item in ["col0","col3","col4","col5","col6","col7","col8"], f"add_sinusoid(): {p} must be in ['col0','col3','col4','col5','col6','col7','col8'] but {list_item} given."
+                if p=="trig": assert list_item in ["sin","cos","sincos"], f"add_sinusoid(): `{p}` must be in ['sin','cos','sincos'] but {list_item} given."
+                if p=="n": assert list_item in [1,2,3], f"add_sinusoid(): `{p}` must be an integer (<= 3) but {list_item} given."
+                if p=="par": assert list_item in ["col0","col3","col4","col5","col6","col7","col8"], f"add_sinusoid(): `{p}` must be in ['col0','col3','col4','col5','col6','col7','col8'] but {list_item} given."
                 if p=="Amp": 
-                    if isinstance(list_item, (int,float)): assert list_item >= 0, f"add_sinusoid(): {p} must be a positive float/int/tuple but {list_item} given."
+                    if isinstance(list_item, (int,float)): assert list_item >= 0, f"add_sinusoid(): `{p}` must be a positive float/int/tuple but {list_item} given."
                     if isinstance(list_item, tuple): 
-                        assert len(list_item) in [2,3], f"add_sinusoid(): {p} must be a tuple of length 2/3 but {list_item} given."
-                        if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2], f"add_sinusoid(): uniform prior for {p} must be in increasing order but {list_item} given."
+                        assert len(list_item) in [2,3], f"add_sinusoid(): `{p}` must be a tuple of length 2/3 but {list_item} given."
+                        if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2], f"add_sinusoid(): uniform prior for `{p}` must be in increasing order but {list_item} given."
                 if p in ["P", "x0"]: 
-                    assert isinstance(list_item, (int,float,tuple)) or list_item is None, f"add_sinusoid(): {p} must be a float/int/tuple or None but {list_item} given."
+                    assert isinstance(list_item, (int,float,tuple)) or list_item is None, f"add_sinusoid(): `{p}` must be a float/int/tuple or None but {list_item} given."
                     if p=="P":
-                        if isinstance(list_item, (int,float)): assert list_item > 0, f"add_sinusoid(): {p} must be a positive float/int/tuple but {list_item} given."
+                        if isinstance(list_item, (int,float)): assert list_item > 0, f"add_sinusoid(): `{p}` must be a positive float/int/tuple but {list_item} given."
                     if isinstance(list_item, tuple):
-                        assert len(list_item) in [2,3], f"add_sinusoid(): {p} must be a tuple of length 2/3 but {list_item} given."
-                        if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2], f"add_sinusoid(): uniform prior for {p} must be in increasing order but {list_item} given."
+                        assert len(list_item) in [2,3], f"add_sinusoid(): `{p}` must be a tuple of length 2/3 but {list_item} given."
+                        if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2], f"add_sinusoid(): uniform prior for `{p}` must be in increasing order but {list_item} given."
         
         #initialize sinusoid to None for all lcs or all filters
         # self._sine_dict = {k:None for k in self._names} if lc_list=="slct" else {k:None for k in self._filnames} if lc_list=="filt" else {k:None for k in sin_names}
@@ -2470,10 +2472,10 @@ class load_lightcurves:
                 
             if isinstance(DA[p], list): 
                 if self._sameLCgp.flag: 
-                    assert len(DA[p])==1, f"add_GP(): {p} must be a list of length 1 (if same GP is to be used for all LCs)."
+                    assert len(DA[p])==1, f"add_GP(): `{p}` must be a list of length 1 (if same GP is to be used for all LCs)."
                     DA[p] = DA[p]*len(lc_list)
                 elif self._sameLCgp.filtflag:
-                    assert len(DA[p]) in [1, len(self._sameLCgp.filters)], f"add_GP(): {p} must be a list of length 1 or {len(self._sameLCgp.filters)} (if same GP per filter)."
+                    assert len(DA[p]) in [1, len(self._sameLCgp.filters)], f"add_GP(): `{p}` must be a list of length 1 or {len(self._sameLCgp.filters)} (if same GP per filter)."
                     if len(DA[p])==1: DA[p] = DA[p]*len(lc_list)
                     else:
                         da_p = [0]*len(lc_list)
@@ -2485,7 +2487,7 @@ class load_lightcurves:
                     if len(DA[p])==1: 
                         DA[p] = DA[p]*len(lc_list)
 
-            assert len(DA[p])==len(lc_list), f"add_GP(): {p} must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs) but {len(DA[p])} given."
+            assert len(DA[p])==len(lc_list), f"add_GP(): `{p}` must be a list of length {len(lc_list)} or length 1 (if same is to be used for all LCs) but {len(DA[p])} given."
             
         for p in ["par","kernel","operation","amplitude","lengthscale","h3","h4"]:
             #check if inputs for p are valid
@@ -2493,19 +2495,19 @@ class load_lightcurves:
                 if p=="par":
                     if isinstance(list_item, str): 
                         ngp = 1
-                        assert list_item in gp_allowed_columns,  f'add_GP(): inputs of {p} must be in {gp_allowed_columns}   but {list_item} given.'
+                        assert list_item in gp_allowed_columns,  f'add_GP(): inputs of `{p}` must be in {gp_allowed_columns}   but {list_item} given.'
                         DA["operation"][i] = ""  # no operation for single kernel
                         
                     elif isinstance(list_item, tuple): # more than 1 kernel
                         ngp = len(list_item)
                         if gp_pck[i]=="ce": 
                             assert len(set(DA[p][i]))==1, f"add_GP(): celerite GP cannot act across more than one dimension but {DA[p][i]} given."
-                        # assert len(list_item)==ngp,f'add_GP(): max of 3 gp kernels can be combined, but {list_item} given in {p}.'
+                        # assert len(list_item)==ngp,f'add_GP(): max of 3 gp kernels can be combined, but {list_item} given in `{p}`.'
                         # assert DA["operation"][i] in ["+","*"],f'add_GP(): operation must be one of ["+","*"] to combine kernels but {DA["operation"][i]} given.'
                         if isinstance(DA["operation"][i], str):
                             DA["operation"][i] = (DA["operation"][i],)*(ngp-1)
                         for tup_item in list_item: 
-                            assert tup_item in gp_allowed_columns,  f'add_GP(): {p} must be in {gp_allowed_columns}   but {tup_item} given.'
+                            assert tup_item in gp_allowed_columns,  f'add_GP(): `{p}` must be in {gp_allowed_columns}   but {tup_item} given.'
                         
                         # assert that a tuple of length 2 is also given for kernels, amplitude and lengthscale.
                         if DA["h3"][i]==None: DA["h3"][i]=(None,)*ngp
@@ -2517,13 +2519,13 @@ class load_lightcurves:
                                 assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==ngp,f'add_GP(): expected tuple of {ngp} priors for element {i} of {chk_p},  but {DA[chk_p][i]} given.'
                             
                     else:
-                        _raise(TypeError, f"add_GP(): elements of {p} must be a str or tuple of length {ngp} but {list_item} given.")
+                        _raise(TypeError, f"add_GP(): elements of `{p}` must be a str or tuple of length {ngp} but {list_item} given.")
                 
                 if p=="kernel":
                     if isinstance(list_item, str): 
-                        if gp_pck[i]=="ge": assert list_item in list(george_kernels.keys()),  f'add_GP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {list_item} given.'
-                        if gp_pck[i]=="ce": assert list_item in list(celerite_kernels.keys()),f'add_GP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {list_item} given.'
-                        if gp_pck[i]=="sp": assert list_item in list(spleaf_kernels.keys()),  f'add_GP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {list_item} given.'
+                        if gp_pck[i]=="ge": assert list_item in list(george_kernels.keys()),  f'add_GP(): `{p}` must be one of the george kernels:   {list(george_kernels.keys())}   but {list_item} given.'
+                        if gp_pck[i]=="ce": assert list_item in list(celerite_kernels.keys()),f'add_GP(): `{p}` must be one of the celerite kernels: {list(celerite_kernels.keys())} but {list_item} given.'
+                        if gp_pck[i]=="sp": assert list_item in list(spleaf_kernels.keys()),  f'add_GP(): `{p}` must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {list_item} given.'
                         if list_item in ["sho","exps2","rquad"]:
                             if list_item=="sho":
                                 if  DA["h3"][i] == None: 
@@ -2537,9 +2539,9 @@ class load_lightcurves:
                     
                     elif isinstance(list_item, tuple): # >=2 kernels
                         for ti,tup_item in enumerate(list_item): 
-                            if gp_pck[i]=="ge":  assert tup_item in list(george_kernels.keys()),  f'add_GP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {tup_item} given.'
-                            if gp_pck[i]=="ce": assert tup_item in list(celerite_kernels.keys()), f'add_GP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {tup_item} given.'
-                            if gp_pck[i]=="sp": assert tup_item in list(spleaf_kernels.keys()),   f'add_GP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {tup_item} given.'
+                            if gp_pck[i]=="ge":  assert tup_item in list(george_kernels.keys()),  f'add_GP(): `{p}` must be one of the george kernels:   {list(george_kernels.keys())}   but {tup_item} given.'
+                            if gp_pck[i]=="ce": assert tup_item in list(celerite_kernels.keys()), f'add_GP(): `{p}` must be one of the celerite kernels: {list(celerite_kernels.keys())} but {tup_item} given.'
+                            if gp_pck[i]=="sp": assert tup_item in list(spleaf_kernels.keys()),   f'add_GP(): `{p}` must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {tup_item} given.'
                             if tup_item in ["sho","exps2","rquad"]:
                                 if tup_item=="sho":
                                     if  DA["h3"][i][ti] == None: 
@@ -2552,16 +2554,16 @@ class load_lightcurves:
                                 assert DA["h3"][i][ti] != None and DA["h4"][i][ti] != None, f"add_GP(): 3rd and 4th hyperparameters (h3,h4) of {tup_item} kernel cannot be None, requires {gp_h3h4names.h3[tup_item]} and {gp_h3h4names.h4[tup_item]}."
                         
                     else:
-                        _raise(TypeError, f"add_GP(): elements of {p} must be a str or tuple of length {ngp} but {list_item} given.")
+                        _raise(TypeError, f"add_GP(): elements of `{p}` must be a str or tuple of length {ngp} but {list_item} given.")
 
                 if p=="operation":
                     if isinstance(list_item, str): 
-                        assert list_item in ["+","*",""],f'add_GP(): {p} must be one of ["+","*",""] but {list_item} given.'
+                        assert list_item in ["+","*",""],f'add_GP(): `{p}` must be one of ["+","*",""] but {list_item} given.'
                         DA["operation"][i] = (DA["operation"][i],) # convert to tuple
                     elif isinstance(list_item, tuple): # >=2 kernels
-                        assert len(list_item)== ngp-1,f'add_GP(): {p} must be of length {ngp-1}' 
+                        assert len(list_item)== ngp-1,f'add_GP(): `{p}` must be of length {ngp-1}' 
                         for tup_item in list_item:
-                            assert tup_item in ["+","*"],f'add_GP(): {p} must be one of ["+","*"] but {tup_item} given.'
+                            assert tup_item in ["+","*"],f'add_GP(): `{p}` must be one of ["+","*"] but {tup_item} given.'
 
                 if p in ["amplitude", "lengthscale","h3","h4"]:
                     if isinstance(list_item, (int,float,type(None))): 
@@ -2572,16 +2574,12 @@ class load_lightcurves:
                                 if isinstance(tup, (int,float,type(None))): 
                                     pass
                                 elif isinstance(tup, tuple): 
-                                    assert len(tup) in [2,3,4],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
-                                    # if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
-                                    # if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
-                                else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {tup} given.")
+                                    assert len(tup) in [2,3,4],f'add_GP(): `{p}` must be a float/int or tuple of length 2/3/4 but {tup} given.'
+                                else: _raise(TypeError, f"add_GP(): elements of `{p}` must be a tuple of length 2/3/4 or float/int but {tup} given.")
                         else:
-                            assert len(list_item) in [2,3,4],f'add_GP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
-                            # if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_GP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
-                            # if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
+                            assert len(list_item) in [2,3,4],f'add_GP(): `{p}` must be a float/int or tuple of length 2/3/4 but {tup} given.'
                     else: 
-                        _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {list_item} given.")
+                        _raise(TypeError, f"add_GP(): elements of `{p}` must be a tuple of length 2/3/4 or float/int but {list_item} given.")
 
         #setup parameter objects
         for i,lc in enumerate(lc_list):
@@ -2628,7 +2626,7 @@ class load_lightcurves:
                             else: steps = 0.1*v[1]
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[0],step_size=steps,prior="p", 
                                                                         prior_mean=v[0], prior_width_lo=v[1], prior_width_hi=v[1], 
-                                                                        bounds_lo=max(v[0]-10*v[1],b_lo), bounds_hi=v[0]+10*v[1],     #10sigma cutoff
+                                                                        bounds_lo=v[0]-10*v[1], bounds_hi=v[0]+10*v[1],     #10sigma cutoff
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'N({v[0]},{v[1]})')
                         elif len(v)==3:
@@ -2637,7 +2635,7 @@ class load_lightcurves:
                             else: steps = min(0.001,0.001*np.ptp(v))
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
-                                                                        prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],   #bounds_lo has a lower limit of 1minute (0.0007d) or 0.0007ppm
+                                                                        prior_width_hi=0, bounds_lo=v[0], bounds_hi=v[2],   #bounds_lo has a lower limit of 1minute (0.0007d) or 0.0007ppm
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'U({v[0]},{v[1]},{v[2]})')
                         elif len(v)==4 and v[-1]=="LU":
@@ -2655,10 +2653,10 @@ class load_lightcurves:
                             else: steps = 0.1*v[3]
                             self._GP_dict[lc][p+str(j)] = _param_obj(to_fit="y", start_value=v[2],step_size=steps,prior="p", 
                                                                         prior_mean=v[2], prior_width_lo=v[3], prior_width_hi=v[3], 
-                                                                        bounds_lo=max(v[0],b_lo), bounds_hi=v[1], 
+                                                                        bounds_lo=v[0], bounds_hi=v[1], 
                                                                         user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
                                                                         prior_str=f'TN({v[0]},{v[1]},{v[2]},{v[3]})')
-                    else: _raise(TypeError, f"add_GP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {v} given.")
+                    else: _raise(TypeError, f"add_GP(): elements of `{p}` must be a tuple of length 2/3/4 or float/int but {v} given.")
         if verbose: 
             _print_output(self,"lc_baseline")
             _print_output(self,"gp")
@@ -3468,7 +3466,8 @@ class load_lightcurves:
 
     def contamination_factors(self, cont_ratio=0, verbose=True):
         """
-        add contamination factor for each unique filter defined in ``load_lightcurves()``.
+        add contamination factor for each unique filter defined in ``load_lightcurves()``. 
+        This is the sum of contaminating flux divided by the target star flux within the aperture.
 
         Parameters
         -----------
@@ -3671,7 +3670,8 @@ class load_rvs:
     _names : list;
         list of names of the input files
     _input_rv : dict;
-        dictionary to hold the input rv data
+        dictionary to hold the input rv data arrays. Keys of the dictionary should be the name for 
+        each file containing a 2D numpy array (n_pts X n_col).
     _RVunit : str;
         unit of the rv data
     _nRV : int;
@@ -3721,7 +3721,7 @@ class load_rvs:
                 if verbose: print("Linking the last created lightcurve object to the rv object for parameter linking. if this is not the related LC object, input the correct one using `lc_obj` argument of `load_rvs()`\n.")
             else:
                 if verbose: print("lightcurve object not found. Creating empty lc_obj.")
-                lc_obj = load_lightcurves(nplanet=self._nplanet)
+                lc_obj = load_lightcurves(nplanet=self._nplanet, verbose=False)
         self._lcobj    = lc_obj
         
         self._RVunit   = rv_unit
@@ -3738,7 +3738,7 @@ class load_rvs:
 
             nrow,ncol = fdata.shape
             if ncol > 6:
-                warnings.warn(f"load_lightcurves(): input file {f} has more than 9 columns, only the first 9 columns will be used.", UserWarning)
+                warnings.warn(f"load_rvs(): input file {f} has more than 6 columns, only the first 6 columns will be used.", UserWarning)
             elif ncol < 6:
                 # if verbose: print(f"Expected at least 6 columns for RV file: writing ones to the missing columns of file: {f}")
                 new_cols = np.ones((nrow,6-ncol))
@@ -3946,11 +3946,13 @@ class load_rvs:
         """
         #TODO add GP fit to RV get decorr
         assert isinstance(exclude_cols, list), f"get_decorr(): exclude_cols must be a list of column numbers to exclude from decorrelation but {exclude_cols} given."
-        for c in exclude_cols: assert isinstance(c, int), f"get_decorr(): column number to exclude from decorrelation must be an integer but {c} given in exclude_cols."
+        for c in exclude_cols: 
+            assert isinstance(c, int), f"get_decorr(): column number to exclude from decorrelation must be an integer but {c} given in exclude_cols."
         assert delta_BIC<0,f'get_decorr(): delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
         if isinstance(gamma, tuple):
             assert len(gamma)==2 or len(gamma)==3,f"get_decorr(): gamma must be float or tuple of length 2/3, but {gamma} given."
-        else: assert isinstance(gamma, (int,float)),f"get_decorr(): gamma must be float or tuple of length 2/3, but {gamma} given."
+        else: 
+            assert isinstance(gamma, (int,float)),f"get_decorr(): gamma must be float or tuple of length 2/3, but {gamma} given."
 
         blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[]}  #inputs to rv_baseline method
         self._rvdecorr_result = []   #list of decorr result for each lc.
@@ -3978,7 +3980,7 @@ class load_rvs:
                     self._rv_pars[p] = [self._rv_pars[p]]*self._nplanet
                 if isinstance(self._rv_pars[p], (list)): 
                     assert len(self._rv_pars[p]) == self._nplanet, \
-                        f"get_decorr(): {p} must be a list of same length as number of planets {self._nplanet} but {len(self._rv_pars[p])} given."
+                        f"get_decorr(): `{p}` must be a list of same length as number of planets {self._nplanet} but {len(self._rv_pars[p])} given."
 
         #check spline setup
         if [self._rvspline[rv].conf for rv in self._names] == ["None"]*self._nRV: #if no input spline in lc_obj, set to None
@@ -4131,23 +4133,30 @@ class load_rvs:
         #     if verbose: _print_output(self,"rv_baseline")
         #     return 
         
-        if isinstance(gamma, list): assert len(gamma) == self._nRV, f"gamma must be type tuple/int or list of tuples/floats/ints of len {self._nRV}."
-        elif isinstance(gamma, (tuple,float,int)): gamma=[gamma]*self._nRV
-        else: _raise(TypeError, f"gamma must be type tuple/int or list of tuples/floats/ints of len {self._nRV}." )
+        if isinstance(gamma, list): 
+            assert len(gamma) == self._nRV, f"gamma must be type tuple/int or list of tuples/floats/ints of len {self._nRV}."
+        elif isinstance(gamma, (tuple,float,int)): 
+            gamma=[gamma]*self._nRV
+        else: 
+            _raise(TypeError, f"gamma must be type tuple/int or list of tuples/floats/ints of len {self._nRV}." )
+        
         sinPs = [0]*self._nRV
 
         DA = locals().copy()     #get a dictionary of the input/variables arguments for easy manipulation
         _ = [DA.pop(item) for item in ["self","gamma","verbose"]]
 
         for par in DA.keys():            
-            if DA[par] is None: DA[par] = ["n"]*self._nRV if par=="gp" else [0]*self._nRV
-            elif isinstance(DA[par], (int,float,str)): DA[par] = [DA[par]]*self._nRV
+            if DA[par] is None: 
+                DA[par] = ["n"]*self._nRV if par=="gp" else [0]*self._nRV
+            elif isinstance(DA[par], (int,float,str)): 
+                DA[par] = [DA[par]]*self._nRV
             elif isinstance(DA[par],list): 
-                if len(DA[par])==1: DA[par]*self._nRV
+                if len(DA[par])==1: 
+                    DA[par] = DA[par]*self._nRV
                 assert len(DA[par]) == self._nRV, f"parameter {par} must be a list of length {self._nRV} or 1 if same is to be used for all RVs or None"
 
             if par=="gp":
-                for p in DA[par]: assert p in ["sp","ce","ge","n"], f"rv_baseline(): gp must be one of ['y','ce','n'] but {p} given."
+                for p in DA[par]: assert p in ["sp","ce","ge","n"], f"rv_baseline(): gp must be one of ['sp','ce','ge','n'] but {p} given."
             if 'dcol' in par:
                 for p in DA[par]: assert isinstance(p, (int,np.int64)) and p<3, f"rv_baseline(): polynomial order must be int of max 2 but {p} given."
 
@@ -4162,7 +4171,8 @@ class load_rvs:
         _ = [DA.pop(item) for item in ["dcol0","dcol3","dcol4","dcol5"]]
         self._rvdict   = DA
         
-        if not hasattr(self,"_rvspline"):  self.add_spline(None, verbose=False)
+        if not hasattr(self,"_rvspline"):  
+            self.add_spline(None, verbose=False)
         if np.all(np.array(self._useGPrv) == "n") or len(self._useGPrv)==0:        #if gp is "n" for all input rvs, run add_rvGP with None
             self.add_rvGP(None, verbose=False)
 
@@ -4293,7 +4303,7 @@ class load_rvs:
 
 
     def add_rvGP(self, rv_list=None, par=["col0"], kernel=["mat32"], operation=[""],amplitude=[], 
-                lengthscale=[], h3=None, h4=None, B_amplitude=None, gp_pck="ce",  verbose=True):
+                lengthscale=[], h3=None, h4=None, h5=None, err_col=None, gp_pck="ce",  verbose=True):
         """  
         Define GP hyperparameters for each RV. The first hyperparameter h1 is amplitude (standard deviation) 
         in RV unit while the second h2 is lengthscale in unit of the desired column. h3 and h4 are 
@@ -4347,6 +4357,10 @@ class load_rvs:
             3rd hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4
         h4 : float, tuple, list;
             4th hyperparameter of the GP kernel. Must be list of int/float or tuple of length 2/3/4    
+        h5 : float, tuple, list;
+            amplitude of the derivative of the GP kernel.
+        err_col: tuple, list;
+            column of the uncertainties for the gp axis. only relevant for spleaf multidimensional GP
         gp_pck : str, list;
             package to use for the GP. Must be one of ["ge","ce","sp"]. Default is "ce" for celerite.
         verbose : bool;
@@ -4369,10 +4383,13 @@ class load_rvs:
         gp_allowed_columns = ["col0","col3","col4","col5"]
 
 
-        if isinstance(gp_pck, str): assert gp_pck in ["ge","ce","sp"], f"add_GP(): gp_pck must be one of ['ge','ce','sp'] but {gp_pck} given."
+        if isinstance(gp_pck, str): 
+            assert gp_pck in ["ge","ce","sp"], f"add_GP(): gp_pck must be one of ['ge','ce','sp'] but {gp_pck} given."
         elif isinstance(gp_pck, list): 
-            for gg in gp_pck: assert gg in ["n","ge","ce","sp"], f"add_GP(): gp_pck must be a list of ['n','ge','ce','sp'] but {gp_pck} given."
-        else: _raise(TypeError, f"add_GP(): gp_pck must be a str or list of str but {gp_pck} given.")
+            for gg in gp_pck: 
+                assert gg in ["n","ge","ce","sp"], f"add_GP(): gp_pck must be a list of ['n','ge','ce','sp'] but {gp_pck} given."
+        else: 
+            _raise(TypeError, f"add_GP(): gp_pck must be a str or list of str but {gp_pck} given.")
 
         self._rvGP_dict = {}
         self._sameRVgp  = SN(flag = False, first_index =None)
@@ -4386,7 +4403,7 @@ class load_rvs:
                 if verbose:_print_output(self,"rv_gp")
             return
         
-        elif isinstance(rv_list, str) and rv_list in ["all","same"]: 
+        elif isinstance(rv_list, str) or (isinstance(rv_list, str) and rv_list in ["all","same"]): 
             if isinstance(gp_pck,str):
                 self._useGPrv = gp_pck = [gp_pck]*self._nRV
             elif isinstance(gp_pck, list):
@@ -4417,56 +4434,69 @@ class load_rvs:
         DA = locals().copy()
         _  = [DA.pop(item) for item in ["self","verbose"]]
 
-        for p in ["par","kernel","operation","amplitude","lengthscale","h3","h4"]:
+        for p in ["par","kernel","operation","amplitude","lengthscale","h3","h4","h5","err_col"]:
             if isinstance(DA[p], (str,int,float,tuple,type(None))): 
                 DA[p] = [DA[p]]   #convert to list
 
             if isinstance(DA[p], list): 
                 if self._sameRVgp.flag:    #ensure same inputs for all rvs with indicated gp
-                    assert len(DA[p])==1 or len(DA[p])==len(rv_list), f"add_rvGP(): {p} must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
+                    assert len(DA[p])==1 or len(DA[p])==len(rv_list), f"add_rvGP(): `{p}` must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
                     if len(DA[p])==2: 
-                        assert DA[p][0] == DA[p][1],f"add_rvGP(): {p} must be same for all rv files if sameGP is used."
+                        assert DA[p][0] == DA[p][1],f"add_rvGP(): `{p}` must be same for all rv files if sameGP is used."
                 if len(DA[p])==1: 
                     DA[p] = DA[p]*len(rv_list)
             
-            assert len(DA[p])==len(rv_list), f"add_rvGP(): {p} must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
+            assert len(DA[p])==len(rv_list), f"add_rvGP(): `{p}` must be a list of length {len(rv_list)} or length 1 (if same is to be used for all RVs)."
             
-        for p in ["par","kernel","operation","amplitude","lengthscale","h3","h4"]:
+        for p in ["par","kernel","operation","amplitude","lengthscale","h3","h4","h5","err_col"]:
             #check if inputs for p are valid
             for i,list_item in enumerate(DA[p]):
                 if p=="par":
                     if isinstance(list_item, str):
                         ngp = 1 
-                        assert list_item in gp_allowed_columns,  f'add_rvGP(): inputs of {p} must be in {gp_allowed_columns}   but {list_item} given.'
+                        assert list_item in gp_allowed_columns,  f'add_rvGP(): inputs of `{p}` must be in {gp_allowed_columns}   but {list_item} given.'
                         DA["operation"][i] = ""
 
                     elif isinstance(list_item, tuple): # more than 1 kernel
-                        ngp = len(list_item)
+                        ngp     = len(list_item)
+                        ngp_dim = len(set(list_item))
                         if gp_pck[i]=="ce": 
-                            assert len(set(DA[p][i]))==1, f"add_rvGP(): celerite GP cannot act across more than one dimension but {DA[p][i]} given."
-                        # assert len(list_item)==ngp,f'add_rvGP(): max of 3 gp kernels can be combined, but {list_item} given in {p}.'
-                        # assert DA["operation"][i] in ["+","*"],f'add_rvGP(): operation must be one of ["+","*"] to combine 2 kernels but {DA["operation"][i]} given.'
+                            assert ngp_dim==1, f"add_rvGP(): celerite GP cannot act across more than one dimension but {DA[p][i]} given."
+                        elif gp_pck[i]=="sp" and ngp_dim>1:
+                            assert ngp_dim == ngp, f"add_rvGP(): for multi-dim GP with spleaf GP, dimensions must refer to different columns, but {list_item} given."
+                            assert isinstance(DA["err_col"][i], (tuple,list)) and len(DA["err_col"][i])==ngp, f'add_rvGP(): spleaf GP requires err_col to be a tuple of length {ngp} but {DA["err_col"][i]} given.'
+                            assert list_item[0]=="col1", f"add_rvGP(): for multi-dim GP with spleaf, the first column must be 'col1' (RV measurements) but {list_item[0]} given."
+
+                        for tup_item in list_item: 
+                            if gp_pck[i]=="sp" and ngp_dim>1:
+                                assert tup_item not in  ["col0","col2"], f'add_rvGP(): for multi-dim GP with spleaf, `{p}` refers to the timeseries column to model as a function of time.' + \
+                                                                                        f'\nTherefore `{p}` cannot be "col0"(time) or "col2"(err), but {tup_item} was given.'
+                            else:
+                                assert tup_item in gp_allowed_columns,  f'add_rvGP(): `{p}` must be in {gp_allowed_columns} but {tup_item} given.'
+
                         if isinstance(DA["operation"][i], str):
                             DA["operation"][i] = (DA["operation"][i],)*(ngp-1)
-                        for tup_item in list_item: 
-                            assert tup_item in gp_allowed_columns,  f'add_rvGP(): {p} must be in {gp_allowed_columns} but {tup_item} given.'
 
                         # assert that a tuple of length 2 is also given for kernels, amplitude and lengthscale, h3, h4.
                         if DA["h3"][i]==None: DA["h3"][i]=(None,)*ngp
                         if DA["h4"][i]==None: DA["h4"][i]=(None,)*ngp
-                        for chk_p in ["kernel","amplitude","lengthscale","h3","h4"]:
+                        if DA["h5"][i]==None: DA["h5"][i]=(None,)*ngp
+                        if DA["err_col"][i]==None: DA["err_col"][i]=(None,)*ngp
+
+                        for chk_p in ["kernel","operation","amplitude","lengthscale","h3","h4","h5"]:
                             if chk_p=="operation": 
                                 assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==ngp-1,f'add_rvGP(): combining {ngp} GPs requires tuple of {ngp-1} {chk_p}s for element {i} but {DA[chk_p][i]} given.'
                             else:
                                 assert isinstance(DA[chk_p][i], tuple) and len(DA[chk_p][i])==ngp,f'add_rvGP(): expected tuple of {ngp} priors for element {i} of {chk_p},  but {DA[chk_p][i]} given.'
                             
-                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a str or tuple of length {ngp} but {list_item} given.")
+                    else: 
+                        _raise(TypeError, f"add_rvGP(): elements of `{p}` must be a str or tuple of length {ngp} but {list_item} given.")
                 
                 if p=="kernel":
                     if isinstance(list_item, str): 
-                        if gp_pck[i]=="ge": assert list_item in list(george_kernels.keys()),  f'add_rvGP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {list_item} given.'
-                        if gp_pck[i]=="ce": assert list_item in list(celerite_kernels.keys()),f'add_rvGP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {list_item} given.'
-                        if gp_pck[i]=="sp": assert list_item in list(spleaf_kernels.keys()),  f'add_rvGP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {list_item} given.'
+                        if gp_pck[i]=="ge": assert list_item in list(george_kernels.keys()),  f'add_rvGP(): `{p}` must be one of the george kernels:   {list(george_kernels.keys())}   but {list_item} given.'
+                        if gp_pck[i]=="ce": assert list_item in list(celerite_kernels.keys()),f'add_rvGP(): `{p}` must be one of the celerite kernels: {list(celerite_kernels.keys())} but {list_item} given.'
+                        if gp_pck[i]=="sp": assert list_item in list(spleaf_kernels.keys()),  f'add_rvGP(): `{p}` must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {list_item} given.'
                         if list_item in ["sho","exps2","rquad"]:
                             if list_item=="sho":
                                     if  DA["h3"][i] == None: 
@@ -4479,10 +4509,12 @@ class load_rvs:
                             assert DA["h3"][i] != None and DA["h4"][i] != None, f"add_rvGP(): 3rd and 4th hyperparameters (h3,h4) of {list_item} kernel cannot be None. hyperparameters {gp_h3h4names.h3[list_item]} and {gp_h3h4names.h4[list_item]} required"                        
                     
                     elif isinstance(list_item, tuple):  # >=2 kernels
+                        if gp_pck[i]=="sp" and ngp_dim>1:
+                            assert len(set(list_item))==1, f'add_rvGP(): for multi-dim GP with spleaf, `{p}` must be same for all kernels but {list_item} given.'
                         for ti,tup_item in enumerate(list_item): 
-                            if gp_pck[i]=="ge":  assert tup_item in list(george_kernels.keys()),  f'add_rvGP(): {p} must be one of the george kernels:   {list(george_kernels.keys())}   but {tup_item} given.'
-                            if gp_pck[i]=="ce": assert tup_item in list(celerite_kernels.keys()), f'add_rvGP(): {p} must be one of the celerite kernels: {list(celerite_kernels.keys())} but {tup_item} given.'
-                            if gp_pck[i]=="sp": assert tup_item in list(spleaf_kernels.keys()),   f'add_rvGP(): {p} must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {tup_item} given.'
+                            if gp_pck[i]=="ge":  assert tup_item in list(george_kernels.keys()),  f'add_rvGP(): `{p}` must be one of the george kernels:   {list(george_kernels.keys())}   but {tup_item} given.'
+                            if gp_pck[i]=="ce": assert tup_item in list(celerite_kernels.keys()), f'add_rvGP(): `{p}` must be one of the celerite kernels: {list(celerite_kernels.keys())} but {tup_item} given.'
+                            if gp_pck[i]=="sp": assert tup_item in list(spleaf_kernels.keys()),   f'add_rvGP(): `{p}` must be one of the spleaf kernels:   {list(spleaf_kernels.keys())}   but {tup_item} given.'
                             if tup_item in ["sho","exps2","rquad"]:
                                 if tup_item=="sho":
                                     if  DA["h3"][i][ti] == None: 
@@ -4494,35 +4526,37 @@ class load_rvs:
                             elif list_item in ["qp","qp_sc","qp_mp","qp_ce"]:
                                 assert DA["h3"][i][ti] != None and DA["h4"][i][ti] != None, f"add_GP(): 3rd and 4th hyperparameters (h3,h4) of {tup_item} kernel cannot be None. hyperparatemeters {gp_h3h4names.h3[tup_item]} and {gp_h3h4names.h4[tup_item]} required"
                     
-                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2 or str but {list_item} given.")
+                    else: _raise(TypeError, f"add_rvGP(): elements of `{p}` must be a tuple of length 2 or str but {list_item} given.")
 
                 if p=="operation":
                     if isinstance(list_item, str): 
-                        assert list_item in ["+","*",""],f'add_rvGP(): {p} must be one of ["+","*",""] but {list_item} given.'
+                        assert list_item in ["+","*",""],f'add_rvGP(): `{p}` must be one of ["+","*",""] but {list_item} given.'
                         DA["operation"][i] = (DA["operation"][i],) # convert to tuple
                     elif isinstance(list_item, tuple): # >=2 kernels
-                        assert len(list_item)== ngp-1,f'add_rvGP(): {p} must be of length {ngp-1}' 
+                        assert len(list_item)== ngp-1,f'add_rvGP(): `{p}` must be of length {ngp-1}' 
                         for tup_item in list_item:
-                            assert tup_item in ["+","*"],f'add_rvGP(): {p} must be one of ["+","*"] but {tup_item} given.'
+                            if gp_pck[i]=="sp" and ngp_dim>1:
+                                assert tup_item=="+",f'add_rvGP(): for multi-dim GP with spleaf, `{p}` must be "+" but {tup_item} given.'
+                            else:
+                                assert tup_item in ["+","*"],f'add_rvGP(): `{p}` must be one of ["+","*"] but {tup_item} given.'
                         
-                if p in ["amplitude", "lengthscale","h3","h4"]:
+                if p in ["amplitude", "lengthscale","h3","h4","h5"]:
                     if isinstance(list_item, (int,float,type(None))): 
                         pass
                     elif isinstance(list_item, tuple):
                         if isinstance(DA["par"][i],tuple): #if >=2 kernels defined
-                            for tup in list_item:
+                            for j,tup in enumerate(list_item):
+                                if gp_pck[i]=="sp" and ngp_dim>1:
+                                    if p in ["lengthscale","h3","h4"] and j!=0:
+                                        assert tup==None, f"add_rvGP(): for multi-dim GP with spleaf, `{p}` must be defined only for the first dimension as it is shared across dimensions, but {tup} given for element {j} "
                                 if isinstance(tup, (int,float,type(None))): 
                                     pass
                                 elif isinstance(tup, tuple): 
-                                    assert len(tup) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
-                                    # if len(tup)==3: assert tup[0]<tup[1]<tup[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {tup} given.'
-                                    # if len(tup)==4: assert tup[0]<tup[2]<tup[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {tup} given.'
-                                else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {tup} given.")
+                                    assert len(tup) in [2,3,4],f'add_rvGP(): `{p}` must be a float/int or tuple of length 2/3/4 but {tup} given.'
+                                else: _raise(TypeError, f"add_rvGP(): elements of `{p}` must be a tuple of length 2/3/4 or float/int but {tup} given.")
                         else:
-                            assert len(list_item) in [2,3,4],f'add_rvGP(): {p} must be a float/int or tuple of length 2/3/4 but {tup} given.'
-                            # if len(list_item)==3: assert list_item[0]<list_item[1]<list_item[2],f'add_rvGP(): uniform prior for {p} must follow (min, start, max) but {list_item} given.'
-                            # if len(list_item)==4: assert list_item[0]<list_item[2]<list_item[1],f'add_GP(): truncated normal prior for {p} must follow (min, max,mu,std) but {list_item} given.'
-                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/3/4 or float/int but {list_item} given.")
+                            assert len(list_item) in [2,3,4],f'add_rvGP(): `{p}` must be a float/int or tuple of length 2/3/4 but {tup} given.'
+                    else: _raise(TypeError, f"add_rvGP(): elements of `{p}` must be a tuple of length 2/3/4 or float/int but {list_item} given.")
 
         #setup parameter objects
         for i,rv in enumerate(rv_list):
@@ -4535,14 +4569,14 @@ class load_rvs:
                     if op=="*":
                         assert DA["amplitude"][i][nop+1] == -1, f"add_rvGP(): for multiplication of kernels, [{nop},{nop+1}], the amplitude of kernel {nop+1} must be fixed to -1 to deactivate it but {DA['amplitude'][i][nop+1]} given."
 
-            for p in ["amplitude", "lengthscale","h3","h4"]:
+            for p in ["amplitude", "lengthscale","h3","h4","h5"]:
                 for j in range(ngp):
                     if ngp==1: 
                         v = DA[p][i]
-                        this_kern, this_par = DA["kernel"][i], DA["par"][i]
+                        this_kern, this_par, this_par_err = DA["kernel"][i], DA["par"][i], 'col2' if DA["err_col"][i]==None else DA["err_col"][i]
                     else:
                         v = DA[p][i][j]
-                        this_kern, this_par = DA["kernel"][i][j], DA["par"][i][j]
+                        this_kern, this_par, this_par_err = DA["kernel"][i][j], DA["par"][i][j], 'col2' if DA["err_col"][i][j]==None else DA["err_col"][i][j]
 
                     # if hyperparameter h3 is η frm exps2/qp/qp_mp or C from qp_ce then it is allowed to be negative
                     b_lo = -np.inf if (p=="h3" and this_kern in ["exps2","qp_mp","qp","qp_ce"]) else 1e-6
@@ -4553,39 +4587,39 @@ class load_rvs:
                     elif isinstance(v, (int,float)):
                         self._rvGP_dict[rv][p+str(j)]     = _param_obj(to_fit="n", start_value=v,step_size=0,
                                                                         prior="n", prior_mean=v, prior_width_lo=0,
-                                                                        prior_width_hi=0, bounds_lo=1e-6, bounds_hi=0,
-                                                                        user_input=v,user_data = SN(kernel=this_kern, col=this_par), 
+                                                                        prior_width_hi=0, bounds_lo=0, bounds_hi=0,
+                                                                        user_input=v,user_data = SN(kernel=this_kern, col=this_par, errcol=this_par_err), 
                                                                         prior_str=f'F({v})')
                     elif isinstance(v, tuple):
                         if len(v)==2:
                             steps = 0 if (self._sameRVgp.flag and i!=0) else 0.1*v[1]   #if sameRVgp is set, only first pars will jump and be used for all rvs
                             self._rvGP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[0],step_size=steps,prior="p", 
                                                                         prior_mean=v[0], prior_width_lo=v[1], prior_width_hi=v[1], 
-                                                                        bounds_lo=max(v[0]-10*v[1],b_lo), bounds_hi=v[0]+10*v[1],
-                                                                        user_input=v,user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        bounds_lo=v[0]-10*v[1], bounds_hi=v[0]+10*v[1],
+                                                                        user_input=v,user_data=SN(kernel=this_kern, col=this_par, errcol=this_par_err), 
                                                                         prior_str=f'N({v[0]},{v[1]})')
                         elif len(v)==3:
                             steps = 0 if (self._sameRVgp.flag and i!=0) else min(0.001,0.001*np.ptp(v))
                             self._rvGP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
-                                                                        prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],
-                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        prior_width_hi=0, bounds_lo=v[0], bounds_hi=v[2],
+                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par, errcol=this_par_err), 
                                                                         prior_str=f'U({v[0]},{v[1]},{v[2]})')
                         elif len(v)==4 and v[-1]=="LU":
                             steps = 0 if (self._sameRVgp.flag and i!=0) else min(0.001,0.001*np.ptp(v[:-1]))
                             self._rvGP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[1],step_size=steps,
                                                                         prior="n", prior_mean=v[1], prior_width_lo=0,
                                                                         prior_width_hi=0, bounds_lo=max(v[0],b_lo), bounds_hi=v[2],
-                                                                        user_input=v[:-1], user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        user_input=v[:-1], user_data=SN(kernel=this_kern, col=this_par, errcol=this_par_err), 
                                                                         prior_str=f'LU({v[0]},{v[1]},{v[2]})')                            
                         elif len(v)==4:
                             steps = 0 if (self._sameRVgp.flag and i!=0) else 0.1*v[3]   #if sameRVgp is set, only first pars will jump and be used for all rvs
                             self._GP_dict[rv][p+str(j)] = _param_obj(to_fit="y", start_value=v[2],step_size=steps,prior="p", 
                                                                         prior_mean=v[2], prior_width_lo=v[3], prior_width_hi=v[3], 
                                                                         bounds_lo=v[0], bounds_hi=v[1], 
-                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par), 
+                                                                        user_input=v, user_data=SN(kernel=this_kern, col=this_par, errcol=this_par_err), 
                                                                         prior_str=f'TN({v[0]},{v[1]},{v[2]},{v[3]})')
-                    else: _raise(TypeError, f"add_rvGP(): elements of {p} must be a tuple of length 2/34 or float/int but {v} given.")
+                    else: _raise(TypeError, f"add_rvGP(): elements of `{p}` must be a tuple of length 2/34 or float/int but {v} given.")
 
         if verbose: 
             _print_output(self, "rv_baseline")
@@ -4677,18 +4711,18 @@ class load_rvs:
         for p in ["par","degree","knot_spacing"]:
             if DA[p] is None: DA[p] = [None]*nrv_spl
             if isinstance(DA[p], (str,int,float,tuple)): DA[p] = [DA[p]]*nrv_spl
-            if isinstance(DA[p], list): assert len(DA[p])==nrv_spl, f"add_spline(): {p} must be a list of length {nrv_spl} or length 1 (if same is to be used for all RVs)."
+            if isinstance(DA[p], list): assert len(DA[p])==nrv_spl, f"add_spline(): `{p}` must be a list of length {nrv_spl} or length 1 (if same is to be used for all RVs)."
             
             #check if inputs are valid
             for list_item in DA[p]:
                 if p=="par":
-                    if isinstance(list_item, str): assert list_item in ["col0","col3","col4","col5",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {list_item} given.'
+                    if isinstance(list_item, str): assert list_item in ["col0","col3","col4","col5",None],f'add_spline(): `{p}` must be in ["col0","col3","col4","col5"] but {list_item} given.'
                     if isinstance(list_item, tuple): 
-                        for tup_item in list_item: assert tup_item in ["col0","col3","col4","col5",None],f'add_spline(): {p} must be in ["col0","col3","col4","col5"] but {tup_item} given.'
+                        for tup_item in list_item: assert tup_item in ["col0","col3","col4","col5",None],f'add_spline(): `{p}` must be in ["col0","col3","col4","col5"] but {tup_item} given.'
                 if p=="degree": 
-                    assert isinstance(list_item, (int,tuple)),f'add_spline(): {p} must be an integer but {list_item} given.'
+                    assert isinstance(list_item, (int,tuple)),f'add_spline(): `{p}` must be an integer but {list_item} given.'
                     if isinstance(list_item, tuple):
-                        for tup_item in list_item: assert isinstance(tup_item, int),f'add_spline(): {p} must be an integer but {tup_item} given.'
+                        for tup_item in list_item: assert isinstance(tup_item, int),f'add_spline(): `{p}` must be an integer but {tup_item} given.'
 
         if plot_knots>0:
             n_data = len(rv_list)
@@ -4915,6 +4949,16 @@ class fit_setup:
         automatically determines the limits from data properties.
     LTT_corr: "y" or "n";
         whether to apply light travel time correction to the LC data. Default is "n".
+    apply_LC_GPndim_jitter: "y" or "n";
+        whether to apply a jitter term for each of the timeseries in the spleaf multi-dim GP fit.
+        Default is "y". A List can be given to specify y/n for each LC.
+    apply_RV_GPndim_jitter: "y" or "n";
+        whether to apply a jitter term for each of the timeseries in the spleaf multi-dim
+        GP fit. Default is "y". A List can be given to specify y/n for each timeseries.
+    apply_LC_GP_ndim_offset: "y" or "n";
+        whether to apply an offset for each of the LC timeseries in the spleaf multi-dim GP
+    apply_RV_GP_ndim_offset: "y" or "n";
+        whether to apply an offset for each of the RV timeseries in the spleaf multi-dim GP
     verbose: bool;
         print output. Default is True.
 
@@ -4954,21 +4998,23 @@ class fit_setup:
 
     def __init__(self, R_st=None, M_st=None, par_input = "Rrho",
                     apply_LCjitter="y", apply_RVjitter="y", 
+                    apply_LC_GPndim_jitter="y", apply_RV_GPndim_jitter="y",
+                    apply_LC_GPndim_offset="y", apply_RV_GPndim_offset="y",
                     LCjitter_loglims="auto", RVjitter_lims="auto",
                     LCbasecoeff_lims = "auto", RVbasecoeff_lims = "auto", 
                     leastsq_for_basepar="n", LTT_corr = "n", verbose=True):
         
         self._obj_type = "fit_obj"
-        self._lcobj = _linker.lc_obj if _linker.lc_obj != None else None
-        self._rvobj = _linker.rv_obj if _linker.rv_obj != None else None
+        self._lcobj = _linker.lc_obj if _linker.lc_obj != None else load_lightcurves(verbose=False)
+        self._rvobj = _linker.rv_obj if _linker.rv_obj != None else load_rvs(verbose=False)
 
         if isinstance(apply_LCjitter,str):
             assert apply_LCjitter in ["y","n"], f"fit_setup(): apply_LCjitter must be one of ['y','n'] but {apply_LCjitter} given."
-            if self._lcobj != None: 
-                apply_LCjitter = [apply_LCjitter]*self._lcobj._nphot if self._lcobj._nphot>0 else apply_LCjitter
+            apply_LCjitter = [apply_LCjitter]*self._lcobj._nphot if self._lcobj._nphot>0 else [apply_LCjitter]
         elif isinstance(apply_LCjitter, list):
-            if self._lcobj != None: 
-                if len(apply_LCjitter)==1: apply_LCjitter=apply_LCjitter*self._lcobj._nphot
+            if self._lcobj._nphot > 0: 
+                if len(apply_LCjitter)==1: 
+                    apply_LCjitter=apply_LCjitter*self._lcobj._nphot
                 assert len(apply_LCjitter)==self._lcobj._nphot, f"fit_setup(): apply_LCjitter must be a list of length equal to the number of loaded light curves({self._lcobj._nphot})  but len {len(apply_LCjitter)} given."
                 for val in apply_LCjitter:
                     assert val in ["y","n"], f"fit_setup(): elements of apply_LCjitter must be one of ['y','n'] but {val} given."
@@ -4977,16 +5023,20 @@ class fit_setup:
 
         if isinstance(apply_RVjitter,str):
             assert apply_RVjitter in ["y","n"], f"fit_setup(): apply_RVjitter must be one of ['y','n'] but {apply_RVjitter} given."
-            if self._rvobj != None: 
-                apply_RVjitter = [apply_RVjitter]*self._rvobj._nRV if self._rvobj._nRV>0 else apply_RVjitter
+            apply_RVjitter = [apply_RVjitter]*self._rvobj._nRV if self._rvobj._nRV>0 else [apply_RVjitter]
         elif isinstance(apply_RVjitter, list):
-            if self._rvobj != None: 
-                if len(apply_RVjitter)==1: apply_RVjitter=apply_RVjitter*self._rvobj._nRV
+            if self._rvobj._nRV > 0: 
+                if len(apply_RVjitter)==1: 
+                    apply_RVjitter = apply_RVjitter*self._rvobj._nRV
                 assert len(apply_RVjitter)==self._rvobj._nRV, f"fit_setup(): apply_RVjitter must be a list of length equal to the number of loaded RV files({self._rvobj._nRV}) but len {len(apply_RVjitter)} given."
                 for val in apply_RVjitter:
                     assert val in ["y","n"], f"fit_setup(): elements of apply_RVjitter must be one of ['y','n'] but {val} given."
         else:
             raise TypeError(f"fit_setup(): apply_RVjitter must be one of ['y','n'] or a list containing these but {apply_RVjitter} given.")
+
+
+        for val in [apply_LC_GPndim_jitter, apply_RV_GPndim_jitter,apply_LC_GPndim_offset, apply_RV_GPndim_offset]:
+            assert val in ["y","n"], f"fit_setup(): fitting multi-dim GP with spleaf, (apply_LC_GPndim_jitter, apply_RV_GPndim_jitter,apply_LC_GP_ndim_offset, apply_RV_GP_ndim_offset) must be one of ['y','n'] but {val} given for one of them."
 
 
         assert leastsq_for_basepar in ['y','n'], f"fit_setup(): leastsq_for_basepar must be one of ['y','n'] but {leastsq_for_basepar} given."
@@ -5234,7 +5284,7 @@ class load_result:
             else:                                                                  # if the function is a function, get the function
                 self._ind_para["custom_LCfunc"].get_func = self._ind_para["custom_LCfunc"].func
 
-        assert list(self._par_names) == list(self._ind_para["jnames"]),'load_result(): the fitting parameters do not match those saved in the chains_dict.pkl file' + \
+        assert set(self._par_names) == set(self._ind_para["jnames"]),'load_result(): the fitting parameters do not match those saved in the chains_dict.pkl file' + \
             f'\nThey differ in these parameters: {list(set(self._par_names).symmetric_difference(set(self._ind_para["jnames"])))}.'
 
         if not hasattr(self,"_chains"):
@@ -5317,6 +5367,7 @@ class load_result:
                             #load each lcfile as a pandas dataframe and store all in dictionary
                             indata       = {fname:pd.DataFrame(df) for fname,df in input_lcs.items()}, 
                             check_corr   = self._create_res_obj("lc").get_decorr,
+                            GP           = self._stat_vals["GP"].lc if "GP" in self._stat_vals else {},
                             _obj_type    = "lc_obj"
                                         )
             
@@ -5326,13 +5377,13 @@ class load_result:
             
             #RV data and functions
             self.rv = SN(   names        = self._rvnames,
-                            # filters      = self._ind_para["filters"],
                             evaluate     = self._evaluate_rv,
                             get_baseline = self._get_rvbaseline,
                             outdata      = self._load_result_array(["rv"],verbose=verbose),
                             #load each rvfile as a pandas dataframe and store all in dictionary
                             indata       = {fname:pd.DataFrame(df) for fname,df in input_rvs.items()},
                             check_corr   = self._create_res_obj("rv").get_decorr,
+                            GP           = self._stat_vals["GP"].rv if "GP" in self._stat_vals else {},
                             _obj_type    = "rv_obj"
                             )
             self.rv.plot_bestfit = self._plot_bestfit_rv
@@ -5373,7 +5424,7 @@ class load_result:
         assert pars is None or isinstance(pars, list) or pars == "all", f'pars must be None, "all", or list of relevant parameters.'
         if pars is None or pars == "all": pars = [p for p in self._par_names]
         for p in pars:
-            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
+            assert p in self._par_names, f'`{p}` is not one of the parameter labels in the mcmc run.'
         
         ndim = len(pars)
         if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
@@ -5421,7 +5472,7 @@ class load_result:
         assert pars is None or isinstance(pars, list) or pars == "all", f'pars must be None, "all", or list of relevant parameters.'
         if pars is None or pars == "all": pars = [p for p in self._par_names]
         for p in pars:
-            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
+            assert p in self._par_names, f'`{p}` is not one of the parameter labels in the mcmc run.'
         
         ndim = len(pars)
         if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
@@ -5506,7 +5557,7 @@ class load_result:
 
 
         for i,p in enumerate(pars):
-            assert p in self._par_names, f'{p} is not one of the parameter labels in the mcmc run.'
+            assert p in self._par_names, f'`{p}` is not one of the parameter labels in the mcmc run.'
             if self.fit_sampler=="emcee":
                 samples[:,i] = self._chains[p][:,discard::thin].reshape(-1) * multiply_by[i] + add_value[i] 
             else:
@@ -6355,7 +6406,7 @@ class compare_results:
                 assert len(range) == len(pars), "range must be a list (of tuples/floats) with length equal to the number of parameters in pars."
                 prange = range
             elif isinstance(range,dict):
-                for p in range.keys(): assert p in pars, f"{p} in range is not a parameter in in pars"
+                for p in range.keys(): assert p in pars, f"`{p}` in range is not a parameter in in pars"
                 prange = [None]*len(pars)
                 for i,p in enumerate(pars):
                     if p in range.keys():
@@ -6412,7 +6463,7 @@ class compare_results:
         color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
         
         for p in pars:
-            assert p in self.all_params, f"parameter {p} given in pars does not exist in any of the loaded result chains."
+            assert p in self.all_params, f"parameter `{p}` given in pars does not exist in any of the loaded result chains."
 
         cc  = ChainConsumer()
         for i,r in enumerate(self.results_list):  
@@ -6458,9 +6509,9 @@ class compare_results:
         fig = plt.figure(figsize=figsize)
         plt.title(f"{res1._folder} – {res2._folder}")
         for i,p in enumerate(pars):
-            assert p in p1 and p in p2, f"{p} not in both results"
+            assert p in p1 and p in p2, f"`{p}` not in both results"
             diff = p1[p]-p2[p]
-            assert isinstance(diff, type(ufloat(0,1)-0)), f"parameter {p} is not a ufloat"
+            assert isinstance(diff, type(ufloat(0,1)-0)), f"parameter `{p}` is not a ufloat"
             plt.plot(i, diff.n/diff.s, "o")
         
         plt.xticks(np.arange(len(pars)), pars, rotation=45)
