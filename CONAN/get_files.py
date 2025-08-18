@@ -107,7 +107,10 @@ class get_TESS_data(object):
             self.lc[s]= self.lc[s].remove_nans().normalize()
             print(f"downloaded lightcurve for sector {s}")
 
-            self.contam[s] = 1 - self.lc[s].hdu[1].header["CROWDSAP"]
+            #crowdsap is the ratio of target flux to total flux in the aperture. contamination fraction is fcontam/ftarget
+            fcontam        = 1 - self.lc[s].hdu[1].header["CROWDSAP"]
+            ftarget        = self.lc[s].hdu[1].header["CROWDSAP"]
+            self.contam[s] = fcontam/ftarget
 
         if hasattr(self,"_ok_mask"): del self._ok_mask
         self.data_splitted = False
@@ -222,9 +225,10 @@ class get_TESS_data(object):
             remove_sectors.append(s)
             self.sectors += [f"{s}_{i+1}" for i in range(nsplit)]
         
-        print(f"Sector {s} data splitted into {nsplit} chunks: {list(self.sectors)}")
         #remove sectors that have been split        
         _ = [self.sectors.pop(self.sectors.index(s)) for s in remove_sectors]
+        print(f"Sector {s} data splitted into {nsplit} chunks: {list(self.sectors)}")
+
         self.data_splitted = True
         
 

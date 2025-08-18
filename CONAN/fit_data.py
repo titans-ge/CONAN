@@ -92,7 +92,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if True, rerun CONAN with previous fit result in order to regenerate plots and files. 
         This also allows to create files compatibile with latest CONAN version. Default is False.
     shared_params: dict, optional
-        dict specifying parameters that shared a value. Defualt is empty dict {}. 
+        dict specifying parameters that shared a value. Default is empty dict {}. 
         use `CONAN.get_parameter_names(lc_obj, rv_obj)` to see all parameter names.
     conditionals: dict, optional
         dict specifying conditional parameter dependencies or constraints not captured by the prior function. 
@@ -1547,6 +1547,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     # for each shared parameter, update the value of the recipient and make sure it is not jumping (step=0)
     for sp in shared_params:
         assert sp in pnames_all, f"Shared parameter '{sp}' not found in parameter names"
+        assert isinstance(shared_params[sp], list), f"Shared parameter '{sp}' should be given as a list of parameter names."
         for s_recip in shared_params[sp]:
             assert s_recip in pnames_all, f"Shared parameter '{s_recip}' not found in parameter names"
             initial[pnames_all == s_recip] = np.nan#f"->{sp}"#initial[pnames_all == sp] . #specify that it takes its value from a shared parameter

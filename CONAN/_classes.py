@@ -848,9 +848,7 @@ class load_lightcurves:
             self._names    = [file_list] if isinstance(file_list, str) else [] if file_list is None else file_list
             for lc in self._names: 
                 assert os.path.exists(self._fpath+lc), f"file {lc} does not exist in the path {self._fpath}."
-            if verbose: 
-                print(f"load_lightcurves(): loading lightcurves from path -  {self._fpath}")
-            
+
         self._nphot    = len(self._names)
 
         if lamdas is not None:
@@ -1136,7 +1134,10 @@ class load_lightcurves:
         if isinstance(pc_model, str): 
             pc_model = [pc_model]*self._nphot
         if isinstance(pc_model, list): 
-            assert len(pc_model)== self._nphot, f"get_decorr(): pc_model must be a list of same length as number of input lcs ({self._nphot})"
+            if len(pc_model)==1:
+                pc_model = pc_model*self._nphot
+            else:
+                assert len(pc_model)== self._nphot, f"get_decorr(): pc_model must be a list of same length as number of input lcs ({self._nphot})"
             for pcm in pc_model: 
                 assert isinstance(pcm, str) and pcm in ["cosine","lambert"], f"get_decorr(): pc_model must be a str or list of str."
         else: 
@@ -1175,10 +1176,13 @@ class load_lightcurves:
         if Eccentricity == omega == sesinw == secosw == None: 
             Eccentricity, omega = 0, 90
             # sesinw, secosw = 0, 0  #set to zero if not given
-
         if Eccentricity is not None and omega is not None:
             om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
-            sesinw, secosw = ecc_om_par(Eccentricity, om_rad, conv_2_obj=True, return_tuple=True)
+            sesinw, secosw = [], []
+            for ec,om in zip(Eccentricity, om_rad):
+                ssw, scw = ecc_om_par(ec, om, conv_2_obj=True, return_tuple=True)
+                sesinw.append(ssw)
+                secosw.append(scw)
             input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
         elif sesinw is not None and secosw is not None:
             input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw, secosw=secosw, K=K)
@@ -3162,7 +3166,8 @@ class load_lightcurves:
             len_fxnpars = len(inspect.signature(fxn).parameters) # number of arguments fxn takes
 
             assert isinstance(func_args, dict), "add_custom_LC_function(): func_args must be a dictionary."
-            if extra_args == None: extra_args=dict()
+            if extra_args == None: 
+                extra_args=dict()
             assert isinstance(extra_args, dict), "add_custom_LC_function(): extra_args must be a dictionary."
             #check that opfunc takes two array arguments
             if not replace_LCmodel: 
@@ -3179,7 +3184,7 @@ class load_lightcurves:
                 tp_arg = inspect.signature(fxn).parameters["LC_pars"].default
                 assert isinstance(tp_arg, dict) and len(tp_arg)==16, "add_custom_LC_function(): LC_pars argument in func must be a dictionary with 16 keys."
                 assert all([k in tp_arg.keys() for k in ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","Fn","ph_off","A_ev","f1_ev","A_db"]]), \
-                    'add_custom_LC_function(): LC_pars argument in func must same keys as planet_parameters ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","Fn","ph_off","A_ev","f1_ev","A_db"].'
+                    'add_custom_LC_function(): LC_pars argument in func must same keys ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","Fn","ph_off","A_ev","f1_ev","A_db"].'
                 #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args + LC_pars
                 assert len_fxnpars==len(func_args)+3, f"add_custom_LC_function(): number of arguments in func_args must be equal to number of arguments in func minus 2."
         else: 
@@ -3191,7 +3196,8 @@ class load_lightcurves:
         nfree    = 0
         for k in func_args.keys():
             par_dict[k] = _param_obj.from_tuple(func_args[k], user_input=func_args[k],func_call="add_custom_LC_function():")
-            if par_dict[k].to_fit=="y": nfree += 1
+            if par_dict[k].to_fit=="y": 
+                nfree += 1
 
         self._custom_LCfunc = SN(func=func, get_func=fxn, x=x,op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_LCmodel=replace_LCmodel)
 
@@ -3710,8 +3716,6 @@ class load_rvs:
             self._names    = [file_list] if isinstance(file_list,str) else [] if file_list is None else file_list 
             for rv in self._names: 
                 assert os.path.exists(self._fpath+rv), f"file {rv} does not exist in the path {self._fpath}."
-            if verbose:
-                print(f"load_rvs(): loading RVs from path - {self._fpath}")
 
         self._nRV = len(self._names)
 

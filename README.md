@@ -13,7 +13,7 @@ _**CO**de for exopla**N**et **AN**alysis: A flexible bayesian framework for mode
 
 ---
 
-`CONAN` is an open-source Python package designed for comprehensive analysis of exoplanetary systems. 
+`CONAN` (COde for exoplaNet ANalysis) is an open-source Python package to perform comprehensive analyses of exoplanetary systems. 
 It provides a unified framework for simultaneous modeling of diverse observational data including
 photometric transit light curves, occultations, phase curves, and radial velocity measurements. 
 It is designed to be flexible, easy to use, and fast. 
@@ -25,13 +25,13 @@ Key features:
 -------------
 - **Multi-dataset analysis**: Seamless analysis of combined lightcurve (LC) and radial velocity (RV) datasets from various instruments (see Notebooks: [1](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP127_LC_RV), [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469) ).
 - **Multiplanet support:** Simultaneous fit to multiple planets in a single system (see Notebooks: [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216)).
-- **Comprehensive photometric modeling**: Robust modeling of transits, occultations, and phase curves, including effects such as ellipsoidal variations and Doppler beaming ([see Model definition](https://github.com/titans-ge/CONAN/wiki/LC-and-RV-models)).
-- **Support for modeling light curve variations**: Analysis of transit timing variations (TTVs) and  transit depth variations (transmission spectroscopy) (see Notebooks: [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216)).
-- **Flexible baseline and noise modeling**: Selection of one or combination of Polynomial, sinusoidal, multi-D Gaussian Processes (GP), and 2-D spline functions for data detrending (see Notebooks: [1](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP127_LC_RV), [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216), [4](https://github.com/titans-ge/CONAN/tree/main/Notebooks/KELT-20) ).
+- **Comprehensive photometric modeling**: Robust modeling of transits, occultations, and phase curves, including effects such as ellipsoidal variations and Doppler beaming ([see Model definition](https://github.com/titans-ge/CONAN/wiki/LC-and-RV-models) and Notebooks: [6](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-121_phasecurve), [7](https://github.com/titans-ge/CONAN/tree/main/Notebooks/KELT-20)).
+- **Modeling time- and wavelength-dependent signals**: Analysis of light curves with  transit timing variations (TTVs) and  transit depth variations (transmission spectroscopy) (see Notebooks: [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216)).
+- **Flexible baseline and noise modeling**: Selection of one or combination of polynomial, sinusoidal, multi-D Gaussian Processes (GP), and 2-D spline functions for data detrending (see Notebooks: [1](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP127_LC_RV), [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216), [4](https://github.com/titans-ge/CONAN/tree/main/Notebooks/KELT-20) ).
 - **Extensible and customizable modeling**: Users can easily incorporate new LC and RV models or modify default ones to suit specific needs, e.g., modeling the transit of non-spherical planets, Rossiter–McLaughlin signals, or even non-planetary signals.
-- **Robust Bayesian inference**: Parameter estimation via MCMC (`emcee`) or nested sampling (`dynesty`)
-- **Derivation of priors limb darkening coefficients**: Incorporation of `ldtk` to derive priors for the quadratic limb darkening coefficients from the stellar parameters (see Notebooks: [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
-- **Automated selection of parametric model parameters**: Uses the Bayesian Information Criterion to suggest best combination of vectors to use in decorrelating the data (see Notebooks: [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
+- **Robust Bayesian inference**: Parameter estimation and/or model comparison via nested sampling with `dynesty` or Markov-Chain Monte Carlo sampling with `emcee`. 
+- **Derivation of priors on limb darkening coefficients**:  Derive priors for the quadratic limb darkening coefficients from the stellar parameters using `ldtk` (see Notebooks: [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
+- **Automated selection of parametric model parameters**: Uses the Bayesian Information Criterion to suggest best combination of cotrending basis vectors to use in decorrelating the data (see Notebooks: [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
 - **Science data download**: Built-in support for downloading data from various instruments (including TESS, CHEOPS, Kepler, and K2) and also system parameters from [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/) (see Notebooks: [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [3](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI-216)).
 - **Quick result visualization and manipulation**: Instant plot of the best-fit model and a result object that can be easily manipulated for customized analysis (see Notebooks: [2](https://github.com/titans-ge/CONAN/tree/main/Notebooks/TOI469), [5](https://github.com/titans-ge/CONAN/tree/main/Notebooks/WASP-127/WASP-127_EULER_LC)).
 
@@ -92,8 +92,12 @@ pip install git+https://github.com/titans-ge/CONAN.git
 See [change_log.rst](https://github.com/titans-ge/CONAN/blob/main/change_log.rst)
 
 
-## Run fit from config file 
-Fit can be launched from a config file within `python` or from the `command line`
+## Fitting data
+`CONAN` can be run interactively in python shell/Jupyter notebook, but can also be quickly launched from configuration files (.dat or .yaml).
+
+Here are sample [.dat](https://github.com/titans-ge/CONAN/blob/main/sample_config.dat) and [.yaml](https://github.com/titans-ge/CONAN/blob/main/sample_config.yaml) configfiles for fitting the lightcurves and RVs of WASP-127b.
+
+Fitting from a config file can be launched within `python` or from the `command line`
 
 - Within `python`
     ```

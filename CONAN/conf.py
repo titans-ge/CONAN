@@ -73,7 +73,7 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
 def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbose=True):
     """
     rerun the fit using config_save.dat file in a previous result folder. 
-    This can be to regenerate plot or comintue sampling with same setup.
+    This can be to regenerate plot or continue sampling with same setup.
 
     Parameters
     -----------
@@ -93,17 +93,24 @@ def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbo
     """
     
     assert os.path.exists(result_folder), f"{result_folder} does not exist"
-    assert os.path.exists(result_folder+"/config_save.dat"), f"config_save.dat file does not exist in {result_folder}"
+    assert os.path.exists(result_folder+"/config_save.dat") or os.path.exists(result_folder+"/config_save.yaml"), f"config_save file (.dat or .yaml) does not exist in {result_folder}"
 
     if out_folder is None: out_folder = result_folder
-    result = fit_configfile(config_file = result_folder+"/config_save.dat", out_folder = out_folder, 
-                            rerun_result=True, resume_sampling=resume_sampling, verbose=verbose)
+    try:
+        result = fit_configfile(config_file = result_folder+"/config_save.dat", out_folder = out_folder, 
+                                rerun_result=True, resume_sampling=resume_sampling, verbose=verbose)
+    except Exception as e:
+        print(f"Error occurred while rerunning result with config_save.dat: {e}")
+        result = fit_configfile(config_file = result_folder+"/config_save.yaml", out_folder = out_folder, 
+                                rerun_result=True, resume_sampling=resume_sampling, verbose=verbose)
+
     return result
     
 def _skip_lines(file, n):
     """ takes an open file object and skips the reading of lines by n lines """
     for i in range(n):
         dump = file.readline()
+
 
 def _prior_value(str_prior): 
     """
@@ -176,7 +183,6 @@ def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_co
 
     if filename.endswith((".yaml", ".yml")) or both==True:
         create_yamlfile(lc_obj=lc_obj, rv_obj=rv_obj, fit_obj=fit_obj, filename=filename.split('.')[0]+'.yaml', verify=verify)
-
 
 
 def create_datfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_config.dat",verify=False): 
@@ -264,31 +270,7 @@ def create_datfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_confi
     if verify:
         lc_obj1, rv_obj1, fit_obj1 = deepcopy(lc_obj), deepcopy(rv_obj), deepcopy(fit_obj)
         lc_obj2, rv_obj2, fit_obj2 = load_configfile(filename, verbose=False)
-        # if "_decorr_result" in vars(lc_obj1):  #delete attributes gotten from the decorrelation to allow comparison of other attributes
-        #     del lc_obj1._decorr_result
-        #     del lc_obj1._tra_occ_pars, 
-        #     del lc_obj1._tmodel
-        #     del lc_obj1._bases_init 
-        #     del lc_obj2._bases_init 
-        # if "_custom_LCfunc" in vars(lc_obj1):  #delete attributes of custom function that differ in class/func names because they are read from memory or file  
-        #     for obj in [lc_obj1,lc_obj2]:
-        #         del obj._custom_LCfunc.func
-        #         del obj._custom_LCfunc.get_func
-        #         del obj._custom_LCfunc.op_func
 
-        # if "_decorr_result" in vars(rv_obj1):  #delete attributes gotten from the decorrelation to allow comparison of other attributes
-        #     del rv_obj1._rvdecorr_result
-        #     del rv_obj1._rv_pars
-        #     del rv_obj1._rvmodel
-        #     del rv_obj1._RVbases_init
-        #     del rv_obj2._RVbases_init
-        # del rv_obj1._lcobj, rv_obj2._lcobj
-
-        # if "_custom_RVfunc" in vars(rv_obj1):  #delete attributes of custom function that differ in class/func names because they are read from memory or file  
-        #     for obj in [rv_obj1,rv_obj2]:
-        #         del obj._custom_RVfunc.func
-        #         del obj._custom_RVfunc.get_func
-        #         del obj._custom_RVfunc.op_func
         ignore = [  "_lcobj","_rvobj","_fitobj", "_custom_LCfunc", "_custom_RVfunc", 
                     "_decorr_result", "_rvdecorr_result", "_tmodel", "_bases_init", "_RVbases_init",
                     "_tra_occ_pars", "_rv_pars", "_rvmodel"]
@@ -430,12 +412,10 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
             if rv_obj._sameRVgp.flag or equal_allrvgp:  #dont print the other RV GPs if all are the same
                 break
 
-    # Add custom representer for lists
-    # yaml.add_representer(list, represent_list)
-
+    # Template for the configuration file
     template = {
         # Header comment will be added separately
-        'version': __version__,
+        # 'version': __version__,
         
         # General Configuration
         'general': {
@@ -503,7 +483,7 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
             
             'ttv': {
                 'fit_ttvs': lc_obj._ttvs.to_fit,
-                'dt_priors': 'U'+str(lc_obj._ttvs.dt) if len(lc_obj._ttvs.dt)==3 else 'N'+str(lc_obj._ttvs.dt),
+                'dt': 'U'+str(lc_obj._ttvs.dt) if len(lc_obj._ttvs.dt)==3 else 'N'+str(lc_obj._ttvs.dt),
                 'baseline': lc_obj._ttvs.baseline,
                 'per_LC_T0': lc_obj._ttvs.per_LC_T0,
                 'include_partial': lc_obj._ttvs.include_partial
@@ -521,11 +501,11 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
                 },
             
             'custom_LC_function': {
-                'function': lc_obj._custom_LCfunc.func,
+                'function': lc_obj._custom_LCfunc.func.__name__ if lc_obj._custom_LCfunc.func!=None else None,
                 'x': lc_obj._custom_LCfunc.x,
-                'func_pars': lc_obj._custom_LCfunc.func_args if lc_obj._custom_LCfunc.func_args!={} else None,
+                'func_pars': {k:v.prior_str for k,v in lc_obj._custom_LCfunc.par_dict.items()} if lc_obj._custom_LCfunc.func_args!={} else None,
                 'extra_args': lc_obj._custom_LCfunc.extra_args if lc_obj._custom_LCfunc.extra_args!={} else None,
-                'op_func': lc_obj._custom_LCfunc.op_func,
+                'op_func': lc_obj._custom_LCfunc.op_func.__name__ if lc_obj._custom_LCfunc.op_func!=None else None,
                 'replace_LCmodel': lc_obj._custom_LCfunc.replace_LCmodel
                 },
             
@@ -562,11 +542,11 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
             'gp': rv_gp_sect,
             
             'custom_RV_function': {
-                'function': rv_obj._custom_RVfunc.func,
+                'function': rv_obj._custom_RVfunc.func.__name__ if rv_obj._custom_RVfunc.func!=None else None,
                 'x': rv_obj._custom_RVfunc.x,
-                'func_pars': rv_obj._custom_RVfunc.func_args if rv_obj._custom_RVfunc.func_args!={} else None,
+                'func_pars': {k:v.prior_str for k,v in rv_obj._custom_RVfunc.par_dict.items()} if rv_obj._custom_RVfunc.func_args!={} else None,
                 'extra_args': rv_obj._custom_RVfunc.extra_args if rv_obj._custom_RVfunc.extra_args!={} else None,
-                'op_func': rv_obj._custom_RVfunc.op_func,
+                'op_func': rv_obj._custom_RVfunc.op_func.__name__ if rv_obj._custom_RVfunc.op_func!=None else None,
                 'replace_RVmodel': rv_obj._custom_RVfunc.replace_RVmodel
             }
         },
@@ -638,7 +618,7 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
     # Write the formatted file
     header = """# ========================================== CONAN YAML Configuration ==========================================\n"""
     header += f"""# This is a template YAML configuration file for CONAN v{__version__}\n"""
-    header += """# PRIORS: Fix-F(val), Norm-N(mu,std), Uni-U(min,start,max), TruncNorm–(min,max,mu,std), LogUni-LU(min,start,max)\n\n"""
+    header += """# PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'\n\n"""
 
 
     with open(filename, 'w') as f:
@@ -658,7 +638,6 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
         if not compare_objs(lc_obj1,lc_obj2, ignore=ignore):   print("\nlc_obj loaded from this config file is not equal to original lc_obj")
         if not compare_objs(rv_obj1,rv_obj2, ignore=ignore):   print("rv_obj loaded from this config file is not equal to original rv_obj")
         if not compare_objs(fit_obj1,fit_obj2, ignore=ignore): print("fit_obj loaded from this config file is not equal to original fit_obj")
-
 
 
 def load_configfile(configfile, return_fit=False, init_decorr=False, 
@@ -1447,8 +1426,8 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
     """
 
     _file    = yaml.safe_load(open(configfile,'r'))
-    version  = _file["version"]
-    version  = tuple(map(int, (version.split("."))))   # -> (3,3,1)
+    # version  = _file["version"]
+    # version  = tuple(map(int, (version.split("."))))   # -> (3,3,1)
 
     fpath    = _file["general"]["lc_filepath"]                         # the path where the files are
     rv_fpath = _file["general"]["rv_filepath"]                        # the path where the files are
@@ -1697,7 +1676,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
         
         #TTVS
         ttv = _file["photometry"]["ttv"]
-        ttvs, dt, base = ttv["fit_ttvs"], _prior_value(ttv["dt_priors"]), ttv["baseline"]
+        ttvs, dt, base = ttv["fit_ttvs"], _prior_value(ttv["dt"]), ttv["baseline"]
         per_LC_T0, incl_partial = ttv["per_LC_T0"], ttv["include_partial"]
 
         #phase curve
@@ -1736,19 +1715,10 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
             func_x    = cf["x"]
             func_args = {}
             if cf["func_pars"]!='None':
-                str_pars  = cf["func_pars"].split("),")
-                str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
-                for p in str_pars:
-                    p_name, p_prior = p.split(":")
+                for p_name, p_prior in cf["func_pars"].items():
                     func_args[p_name] = _prior_value(p_prior)
 
-            extra_args = {}
-            if cf["extra_args"]!='None':
-                str_expars  = cf["extra_args"].split(",")
-                for p in str_expars:
-                    p_name, p_val = p.split(":")
-                    extra_args[p_name] = p_val
-
+            extra_args  = cf["extra_args"] if cf["extra_args"]!='None' else {}
             opfunc_name = cf["op_func"]
             if opfunc_name!='None':
                 op_func = getattr(custom_LCfunc, opfunc_name)
@@ -1925,20 +1895,11 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
             rvfunc_x    = cf["x"]
             rvfunc_args = {}
             if cf["func_pars"]!='None':
-                str_pars  = cf["func_pars"].split("),")
-                str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
-                for p in str_pars:
-                    p_name, p_prior = p.split(":")
+                for p_name, p_prior in cf["func_pars"].items():
                     rvfunc_args[p_name] = _prior_value(p_prior)
 
-            rvextra_args = {}
-            if cf["extra_args"]!='None':
-                str_expars  = cf["extra_args"].split(",")
-                for p in str_expars:
-                    p_name, p_val = p.split(":")
-                    rvextra_args[p_name] = p_val
-
-            opfunc_name = cf["op_func"]
+            rvextra_args = cf["extra_args"] if cf["extra_args"]!='None' else {}
+            opfunc_name  = cf["op_func"]
             if opfunc_name!='None':
                 op_rvfunc = getattr(custom_RVfunc, opfunc_name)
             else: 
@@ -1976,14 +1937,14 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
             if v == 'None':
                 pl_pars[k] = None
             else:
-                assert v[0:2] in ['F(','U(','N(','TN('], f"planet parameters: {k} must be a uniform prior but {v} given"
+                assert v.startswith(('F(','U(','LU(','N(','TN(')), f"planet parameters: {k} must be a prior string starting with one of ['F','U','LU','N','TN'] but {v} given"
                 pl_pars[k] = _prior_value(v)
         else:
             if isinstance(v, str):
                 if v == 'None':
                     pl_pars[k] = None
                 else:
-                    assert v[0:2] in ['F(','U(','N(','TN('], f"planet parameters: {k} must be a uniform prior but {v} given"
+                    assert v.startswith(('F(','U(','LU(','N(','TN(')), f"planet parameters: {k} must be a prior string starting with one of ['F','U','LU','N','TN'] but {v} given"
                     pl_pars[k] = [_prior_value(v)] * nplanet
             elif isinstance(v, list):
                 if len(v)==1: # if it is a single value, convert to list of nplanet
@@ -2124,9 +2085,6 @@ def convert_numpy_to_native(obj):
     else:
         return obj
     
-def represent_list(dumper, data):
-    """Custom representer to make lists inline"""
-    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
 
 def format_yaml(data, indent_size=2):
     """Create aligned YAML with proper spacing and formatting rules"""
@@ -2139,7 +2097,7 @@ def format_yaml(data, indent_size=2):
             return "True" if value else "False"
         elif isinstance(value, str):
             # Check if string starts with prior patterns and ends with )
-            if re.match(r'^(U|F|N|TN)\(.*\)$', value):
+            if re.match(r'^(U|F|N|TN|LU)\(.*\)$', value):
                 return f"'{value}'"
             return value
         elif isinstance(value, list):
@@ -2168,6 +2126,17 @@ def format_yaml(data, indent_size=2):
                 formatted_items.append(str(item))
         
         return f"[{', '.join(formatted_items)}]"
+    
+    def format_inline_dict(d):
+        """Format dictionary as inline for 'func_pars','extra_args' in custom functions"""
+        if not d:
+            return "{}"
+        
+        items = []
+        for k, v in d.items():
+            formatted_v = format_value(v)
+            items.append(f"{k}: {formatted_v}")
+        return "{" + ", ".join(items) + "}"
 
     def format_dict(d, level=0, is_top_level=False):
         """Format dictionary with alignment"""
@@ -2185,10 +2154,16 @@ def format_yaml(data, indent_size=2):
             key_str = str(key)
             
             if isinstance(value, dict):
-                # For nested dictionaries
-                aligned_key = f"{key_str}:"
-                lines.append(f"{indent}{aligned_key}")
-                lines.extend(format_dict(value, level + 1))
+                # Check if this key is 'func_pars','extra_args' from "custom" - if so, format as single line
+                if key_str.lower() in ['func_pars','extra_args']:
+                    aligned_key = f"{key_str:<{max_key_len}}"
+                    formatted_dict = format_inline_dict(value)
+                    lines.append(f"{indent}{aligned_key}: {formatted_dict}")
+                else:
+                    # For regular nested dictionaries
+                    aligned_key = f"{key_str}:"
+                    lines.append(f"{indent}{aligned_key}")
+                    lines.extend(format_dict(value, level + 1))
                 
                 # Add spacing after top-level sections (except the last one)
                 if is_top_level and i < len(dict_items) - 1:
@@ -2233,6 +2208,7 @@ def format_yaml(data, indent_size=2):
                 lines.append(f"{indent}{aligned_key}: {formatted_value}")
         
         return lines
+    
     # Format the entire document
     lines = format_dict(data, level=0, is_top_level=True)
     return '\n'.join(lines)

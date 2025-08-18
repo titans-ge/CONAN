@@ -1,8 +1,7 @@
 # ========================================== CONAN YAML Configuration ==========================================
 # This is a template YAML configuration file for CONAN v3.3.12
-# PRIORS: Fix-F(val), Norm-N(mu,std), Uni-U(min,start,max), TruncNorm–(min,max,mu,std), LogUni-LU(min,start,max)
+# PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
 
-version           : 3.3.12
 general:
   lc_filepath: Notebooks/WASP-127/data/
   rv_filepath: Notebooks/WASP-127/data/
@@ -62,7 +61,7 @@ photometry:
     div_white: n
   ttv:
     fit_ttvs       : n
-    dt_priors      : 'U(-0.125, 0, 0.125)'
+    dt             : 'U(-0.125, 0, 0.125)'
     baseline       : 0.25
     per_LC_T0      : False
     include_partial: True

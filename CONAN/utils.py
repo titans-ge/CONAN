@@ -1545,3 +1545,26 @@ def jitter_estimate(f,e):
     Estimate the jitter of a light curve
     """
     return np.sqrt(rms_estimate_LC(f)**2 - np.mean(e)**2)
+
+
+
+def decontaminate(F,contam_frac):
+    """
+    decontaminate flux F following prescription by eq. 8 of kipping & Tinetti https://doi.org/10.1111/j.1365-2966.2010.17094.x
+    
+    Equivalently written as: Fcorr = F*(1+Fcont/F_st)- Fcont/F_st
+    
+    Parameters
+    -----------
+    F: array-like;
+        observed contaminated flux that needs correction
+    contam_frac: float;
+        fraction of contamination/target flux in aperture i.e. Fcontam/Ftarget
+
+    Returns:
+    --------
+    F_corr: array-like;
+        decontaminated flux
+    """
+    target_frac =  1-contam_frac
+    return F*(1+contam_frac/target_frac) - contam_frac/target_frac

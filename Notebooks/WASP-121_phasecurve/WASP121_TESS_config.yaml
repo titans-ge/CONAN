@@ -3,10 +3,10 @@
 # PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
 
 general:
-  lc_filepath: Notebooks/TOI469/data/
-  rv_filepath: Notebooks/TOI469/data/
-  n_planet   : 3
-  rv_unit    : m/s
+  lc_filepath: Notebooks/WASP-121_phasecurve/data/
+  rv_filepath: Notebooks/WASP-121_phasecurve/data/
+  n_planet   : 1
+  rv_unit    : km/s
 
 photometry:
   auto_decorr:
@@ -16,17 +16,17 @@ photometry:
     exclude_pars: []
     enforce_pars: []
   light_curves:
-    names        : [TOI-469_S06.dat, TOI-469_S33.dat]
+    names        : [WASP-121_S7_1.dat, WASP-121_S7_2.dat]
     filters      : [T, T]
     wavelength_um: [0.8, 0.8]
     supersampling: [None, None]
-    clip_outliers: [c1:W15C4n1, None]
+    clip_outliers: [c1:W15C4n1, c1:W15C4n1]
     scale_columns: [None, None]
     spline       : [None, None]
     apply_jitter : [y, y]
     baseline:
-      offset: [n, n]
-      col0  : [0, 0]
+      offset: [y, y]
+      col0  : [2, 1]
       col3  : [0, 0]
       col4  : [0, 0]
       col5  : [0, 0]
@@ -42,19 +42,19 @@ photometry:
     amp  : []
     x0   : []
   gp:
-    - lc_name     : all
-      kernel      : [mat32]
-      par         : [col0]
-      h1_amp      : ['U(1,100,700)']
-      h2_len_scale: ['U(0.1,1,20)']
-      h3_other    : [None]
-      h4_period   : [None]
-      operation   : []
-      gp_pck      : ce
+    - lc_name     : None
+      kernel      : None
+      par         : None
+      h1_amp      : None
+      h2_len_scale: None
+      h3_other    : None
+      h4_period   : None
+      op          : 
+      gp_pck      : n
   limb_darkening:
     filters: [T]
-    q1     : ['N(0.3532,0.0153)']
-    q2     : ['N(0.4032,0.0118)']
+    q1     : ['N(0.2450,0.0280)']
+    q2     : ['N(0.3519,0.0279)']
   tdv:
     fit_ddfs : n
     drprs    : 'U(-0.5,0,0.5)'
@@ -67,10 +67,10 @@ photometry:
     include_partial: True
   phase_curve:
     filters : [T]
-    D_occ   : ['F(0)']
-    Fn      : [None]
-    ph_off  : [None]
-    A_ev    : ['F(0)']
+    D_occ   : ['U(0,400,600)']
+    Fn      : ['U(0,10,100)']
+    ph_off  : ['U(-7,0,7)']
+    A_ev    : ['U(0,80,200)']
     f1_ev   : ['F(0)']
     A_db    : ['F(0)']
     pc_model: [cosine]
@@ -83,7 +83,7 @@ photometry:
     replace_LCmodel: False
   contamination:
     filters      : [T]
-    contam_factor: ['F(0)']
+    contam_factor: ['F(0.0973)']
 
 radial_velocity:
   auto_decorr:
@@ -93,28 +93,28 @@ radial_velocity:
     exclude_pars: []
     enforce_pars: []
   rv_curves:
-    names        : [TOI469rv1.dat, TOI469rv2.dat]
-    scale_columns: [None, None]
-    spline       : [None, None]
-    apply_jitter : [y, y]
+    names        : []
+    scale_columns: []
+    spline       : []
+    apply_jitter : [y]
     baseline:
-      gammas: ['N(81728,10)', 'N(81728,10)']
-      col0  : [0, 0]
-      col3  : [0, 0]
-      col4  : [0, 0]
-      col5  : [0, 0]
+      gammas: []
+      col0  : []
+      col3  : []
+      col4  : []
+      col5  : []
   gp:
-    - rv_name     : same
-      kernel      : [cos, expsq]
-      par         : [col0, col0]
-      h1_amp      : ['U(0.1,2,20)', 'F(-1)']
-      h2_len_scale: ['U(0.01,1,100)', 'U(0.01,1,60)']
+    - rv_name     : None
+      kernel      : None
+      par         : None
+      h1_amp      : None
+      h2_len_scale: None
       h3_other    : None
       h4_period   : None
       h5_der_amp  : None
-      error_col   : [col2, col2]
-      operation   : ['*']
-      gp_pck      : ge
+      error_col   : None
+      operation   : 
+      gp_pck      : n
   custom_RV_function:
     function       : None
     x              : None
@@ -124,21 +124,21 @@ radial_velocity:
     replace_RVmodel: False
 
 planet_parameters:
-  rho_star    : 'N(1.42,0.1)'
-  Duration    : None
-  RpRs        : ['U(0.001,0.0321,0.1)', 'U(0.001,0.0146,0.1)', 'U(0.001,0.0127,0.1)']
-  Impact_para : ['U(0,0.28,1)', 'U(0,0.617,1)', 'U(0,0.273,1)']
-  T_0         : ['U(2210.4,2210.634,2210.8)', 'U(2207.1,2207.252,2207.5)', 'U(2225.1,2225.259,2225.5)']
-  Period      : ['U(13.6,13.63,13.7)', 'U(3.5,3.5379,3.6)', 'U(6.4,6.42975,6.5)']
-  Eccentricity: ['F(0)', 'F(0)', 'F(0)']
-  omega       : ['F(90)', 'F(90)', 'F(90)']
+  rho_star    : None
+  Duration    : 'N(0.12105416666666667,0.0002708333333333333)'
+  RpRs        : ['U(0.1,0.12355,0.15)']
+  Impact_para : ['U(0,0.1,0.5)']
+  T_0         : ['N(1119.720739999786,0.00017)']
+  Period      : ['N(1.27492504,1.5e-07)']
+  Eccentricity: ['F(0)']
+  omega       : ['F(90)']
   sesinw      : None
   secosw      : None
-  K           : ['U(0,2,10)', 'U(0,2,10)', 'U(0,2,10)']
+  K           : ['F(0)']
 
 stellar_parameters:
-  radius_rsun : 'N(0.993, 0.034)'
-  mass_msun   : 'N(0.88, 0.035)'
+  radius_rsun : 'N(1.46, 0.03)'
+  mass_msun   : None
   input_method: Rrho
 
 fit_setup:
@@ -146,11 +146,11 @@ fit_setup:
   number_of_processes         : 10
   emcee_number_steps          : 2000
   leastsq_for_basepar         : n
-  light_travel_time_correction: n
+  light_travel_time_correction: y
   emcee_number_chains         : 64
   emcee_burnin_length         : 500
   emcee_move                  : stretch
-  dynesty_nlive               : 1000
+  dynesty_nlive               : 150
   force_nlive                 : False
   dynesty_dlogz               : 0.1
   dynesty_nested_sampling     : static

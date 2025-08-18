@@ -7,6 +7,8 @@
 :maxdepth: 2
 
 installation
+quick_fit
+changes.rst
 Ask AI <https://gurubase.io/g/conan>
 ```
 
@@ -18,10 +20,12 @@ Ask AI <https://gurubase.io/g/conan>
 tutorial/CONAN_WASP-127_LC_RV_tutorial.ipynb
 tutorial/CONAN_WASP127_EULER.ipynb
 tutorial/CONAN_WASP-127_RV_tutorial.ipynb
+tutorial/WASP121_TESS_pc.ipynb
 tutorial/TOI469_multiplanet_LC_RV.ipynb
 tutorial/kelt-20_cheops_roll_compare.ipynb
 tutorial/TOI-216_TTV_fit.ipynb
 tutorial/WASP-103_2D-GP-george.ipynb
+tutorial/k2-233_reanalysis.ipynb
 ```
 
 ```{toctree}
