@@ -17,6 +17,7 @@ def test_empty_init(verbose=False):
 def test_WASP127_LC_RV_init(init_only=True, verbose=False):
     lc_obj, rv_obj, fit_obj = load_configfile(  configfile  = 'Notebooks/WASP-127/WASP127_LC_RV/wasp127_lcrv_config.dat',
                                                 lc_path     = 'Notebooks/WASP-127/data/',
+                                                rv_path     = 'Notebooks/WASP-127/data/',
                                                 verbose     = verbose)
 
     # create_configfile(lc_obj, rv_obj, fit_obj, 'Notebooks/WASP-127/WASP127_LC_RV/wasp127_lcrv_config.yaml',both=True)
