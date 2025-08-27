@@ -1,0 +1,65 @@
+# ========================================== CONAN YAML Configuration ==========================================
+# This is a template YAML configuration file for CONAN v3.3.12
+# PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
+
+general:
+  n_planet   : 1
+
+photometry:
+  light_curves:
+    filepath     : Notebooks/WASP-127/data/
+    names        : [lc4bjd.dat, lc6bjd.dat, lc7bjd.dat]
+    filters      : R
+    wavelength_um: 0.6
+    clip_outliers: c1:W11C4n1
+    scale_columns: med_sub
+    baseline     : None
+
+  limb_darkening:
+    filters: [R]
+    q1     : ['N(0.4223,0.0240)']
+    q2     : ['N(0.3961,0.0157)']
+  
+  auto_decorr:
+    get_decorr  : True
+    delta_bic   : -5
+
+# # ==== RADIAL VELOCITY CONFIGURATION ====
+radial_velocity:   
+  rv_curves:
+      filepath     : Notebooks/WASP-127/data/ # directory of rv files
+      rv_unit      : km/s                     # unit for radial velocity data: m/s or km/s 
+      names        : [rv1.dat, rv2.dat]
+      scale_columns: [med_sub, med_sub]       # rescale data (med_sub=subtract median, rs0to1=rescale 0-1, rs-1to1=rescale -1 to 1, None=no rescaling)
+      spline       : [None, None]             # c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 or c0:d3K2|c4:d3K2 for two dimensional
+      apply_jitter : [y, y]                   # Whether to fit jitter term for each rv ('y'=yes, 'n'=no)
+      baseline:
+          gammas: ['N(-9.22924,0.1)', 'N(-9.2105,0.1)']  # systemic velocity priors 
+          col0  : [2, 0]                      # Time trend (0=none, 1=linear, 2=quadratic)
+          col3  : [1, 0]                      # Column 3 decorrelation order
+          col4  : [1, 0]                      # Column 4 decorrelation order
+          col5  : [0, 0]                      # Column 5 decorrelation order
+  auto_decorr:
+    get_decorr  : True
+    delta_bic   : -5
+
+planet_parameters:
+  rho_star    : 'N(0.565,0.035)'
+  Duration    : None
+  RpRs        : ['U(0.05,0.102,0.17)']
+  Impact_para : ['U(0,0.29,1)']
+  T_0         : ['N(6776.621239999775,0.001)']
+  Period      : ['F(4.17806203)']
+  Eccentricity: ['F(0)']
+  omega       : ['F(90)']
+  K           : ['U(0,0.01,0.05)'] #['F(0)']
+
+stellar_parameters:
+  radius_rsun : 'N(1.333, 0.027)'
+  mass_msun   : 'N(0.95, 0.02)'
+
+fit_setup:
+  sampler                     : dynesty
+  number_of_processes         : 10
+  dynesty_nlive               : 300
+# ============ END OF FILE ============================================

@@ -135,6 +135,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         t_in       = thisLCdata["col0"] if t is None else t
         f_in       = thisLCdata["col1"]
         e_in       = thisLCdata["col2"]
+        
+        if custom_LCfunc.func!=None and custom_LCfunc.replace_LCmodel==False:
+            if custom_LCfunc.x.startswith('col'):
+                custom_LCfunc.xarr = thisLCdata[custom_LCfunc.x]
+                custom_LCfunc.t    = thisLCdata['col0']   #needed to create interpolate func for other columns 
 
         s_samp[j]  = s_samp[j] if t is None else None  # if t is provided, don't use s_samp
 
@@ -741,6 +746,10 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         RV_in = thisRVdata["col1"]
         e_in  = thisRVdata["col2"]
 
+        if custom_RVfunc.func!=None and custom_RVfunc.replace_RVmodel==False:
+            if custom_RVfunc.x.startswith('col'):
+                custom_RVfunc.xarr = thisRVdata[custom_RVfunc.x]
+                custom_RVfunc.t    = thisRVdata['col0']   #needed to create interpolate func for other columns 
 
         if baseLSQ == "y": bvarRV = bvarsRV[j][0]
         else : bvarRV = []

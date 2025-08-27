@@ -188,7 +188,7 @@ def _print_output(self, section: str, file=None):
         #define print out format
         txtfmt = f"\n{spacing}{{0:16s}}: {{1:40s}}\t{{2}}"
         _print_custom_function += txtfmt.format("function", DA.func.__name__ if flag else 'None', "#custom function/class to combine with/replace LCmodel")
-        _print_custom_function += txtfmt.format("x",DA.x if flag else 'None',"#independent variable [time, phase_angle]")
+        _print_custom_function += txtfmt.format("x",DA.x if flag else 'None',"#independent variable [time, phase_angle, col3-8]")
         if flag:
             if DA.func_args == {}:   # if custom func does not takein any additional arguments
                 fa_str = 'None'
@@ -217,7 +217,7 @@ def _print_output(self, section: str, file=None):
         #define print out format
         txtfmt = f"\n{spacing}{{0:16s}}: {{1:40s}}\t{{2}}"
         _print_custom_function += txtfmt.format("function", DA.func.__name__ if flag else 'None', "#custom function/class to combine with/replace RVmodel")
-        _print_custom_function += txtfmt.format("x",DA.x if flag else 'None',"#independent variable [time, true_anomaly]")
+        _print_custom_function += txtfmt.format("x",DA.x if flag else 'None',"#independent variable [time, true_anomaly,col3-5]")
         if flag:
             if DA.func_args == {}:   # if custom func does not takein any additional arguments
                 fa_str = 'None'
@@ -348,7 +348,6 @@ def _print_output(self, section: str, file=None):
             DA = self._rvdict
             txtfmt = f"\n{spacing}{{0:{max_name_len}s}}"+" {1:6s} {2:7s} |{3:4d} {4:4d} {5:4d} {6:4d}| {7:3d} {8:2s} {9:15s} | {10:14s}"         
             for i in range(self._nRV):
-                # gam_pri_ = f'N({DA["gammas"][i]},{DA["sig_lo"][i]})' if DA["sig_lo"][i] else f'U({DA["bound_lo"][i]},{DA["gammas"][i]},{DA["bound_hi"][i]})' if DA["bound_hi"][i] else f"F({DA['gammas'][i]})"
                 gam_pri_ = prior_str(DA["gamma"][i].user_input)
                 t = txtfmt.format(self._names[i],self._RVunit,self._rescaled_data.config[i], *self._RVbases[i],
                                     self._useGPrv[i],self._rvspline[self._names[i]].conf,gam_pri_)

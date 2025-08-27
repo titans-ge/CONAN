@@ -860,7 +860,8 @@ class get_CHEOPS_data(object):
             #remove points with high background
             d.lc["bg"] = d.lc["bg"]*d.flux_median
             mask       = d.lc["bg"] > bg_MAD_reject*np.nanmedian(d.lc["bg"])
-            if verbose: print(f'    BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"]):.2f}]', end="->")
+            if verbose: 
+                print(f'    BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"]):.2f}]', end="->")
             _,_,_       = d.mask_data(mask, verbose=False)
 
             #iterative sigma clipping

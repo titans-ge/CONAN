@@ -6,7 +6,7 @@ import inspect,sys
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats
-from scipy.interpolate import LSQUnivariateSpline, LSQBivariateSpline
+from scipy.interpolate import LSQUnivariateSpline, LSQBivariateSpline, interp1d
 from types import SimpleNamespace
 
 from numpy import (array, size, argmin, abs, diag, log, median,  where, zeros, exp, pi, double)
@@ -317,13 +317,13 @@ class Planet_LC_Model:
                 ph_occultation  = np.where((y < 0))
                 npo_occultation = len(z[ph_occultation])
                 u1, u2          = 0., 0.              # no limb darkening
-                
+
                 mm0[ph_occultation], _ = occultquad(z[ph_occultation],u1,u2,abs(RR),npo_occultation)   
-                
+
                 # b_occ       = impact_parameter(inc*180/np.pi, ars, ecc, ome_deg,"occ")
                 # full_depth  = abs(RR)**2                    # full non-LD transit depth of planet with radius RR
                 # obs_depth   = transit_depth(abs(RR), b_occ) # depth to be observed at the impact parameter of occultation which could be different due to grazing eclipse config
-                # depth_ratio = obs_depth/full_depth if (full_depth>0 and obs_depth>0) else 1       #ratio 
+                # depth_ratio = obs_depth/full_depth if (full_depth>0 and obs_depth>0) else 1       #ratio
                 # Fp          = Fp * depth_ratio              # scale the occultation depth to get the observed depth at the configuration
                 if len(mm0[ph_occultation]) > 0: 
                     mm0[ph_occultation] = 1 + Fp*(rescale0_1(mm0[ph_occultation])-1)  #rescale the occ model to observable occ depth
@@ -364,7 +364,18 @@ class Planet_LC_Model:
 
         # combine the lc model with custom model
         if custom_LCfunc!=None and custom_LCfunc.replace_LCmodel==False:
-            cst_model = custom_LCfunc.get_func(tt_ss,**self.cst_pars) if custom_LCfunc.x=="time" else custom_LCfunc.get_func(ph_angle,**self.cst_pars)
+            if custom_LCfunc.x=="time":
+                cst_model = custom_LCfunc.get_func(tt_ss,**self.cst_pars)  
+            elif custom_LCfunc.x == "phase_angle":
+                cst_model = custom_LCfunc.get_func(ph_angle,**self.cst_pars)
+            elif custom_LCfunc.x.startswith("col"):
+                if not list(tt_ss)==list(custom_LCfunc.t):    # if tt_ss is a different time array than input data, interpolate xarr column
+                    interp_func = interp1d(custom_LCfunc.t, custom_LCfunc.xarr, bounds_error=False, 
+                                            fill_value=(custom_LCfunc.xarr[0],custom_LCfunc.xarr[-1]))
+                    cst_model = custom_LCfunc.get_func(interp_func(tt_ss),**self.cst_pars)
+                else: 
+                    cst_model = custom_LCfunc.get_func(custom_LCfunc.xarr,**self.cst_pars)
+
             mm = custom_LCfunc.op_func(mm,cst_model)
 
         mm = ss.rebin_flux(mm) if ss is not None else mm    #rebin the full model to the original cadence
@@ -373,7 +384,7 @@ class Planet_LC_Model:
 
         return mm, model_components
 
-def spline_fit(data,res,useSpline):
+def spline_fit(data,res,useSpline, return_splfunc=False):
     """
     Fit a spline to the data
 
@@ -394,13 +405,21 @@ def spline_fit(data,res,useSpline):
     """
     knots_loc,s_par,dim = useSpline.knots_loc, useSpline.par,useSpline.dim
     if dim==1:
+
         x      = np.copy(data[s_par])
         srt    = np.argsort(x)   
         xs, ys = x[srt], res[srt]
         err    = np.copy(data["col2"])[srt]
 
-        splfunc = LSQUnivariateSpline(xs, ys, knots_loc, w=1/err, k=useSpline.deg, ext="const")
-        spl     = splfunc(x)     #evaluate the spline at the original x values
+        if len(knots_loc)==1 and knots_loc[0]==x[-1]:    # a single knot at the end of the timeseries, use simple np.polyfit
+            spl = np.polyval (np.polyfit(xs,ys,deg=useSpline.deg,w=1/err), x)
+        else:
+            try:
+                splfunc = LSQUnivariateSpline(xs, ys, knots_loc, w=1/err, k=useSpline.deg, ext="const")
+            except:
+                splfunc = LSQUnivariateSpline(xs, ys, knots_loc, w=1/err, k=useSpline.deg, ext="const",
+                                                bbox=[xs[0]-min(np.diff(xs)), xs[-1]+min(np.diff(xs))])
+            spl     = splfunc(x)     #evaluate the spline at the original x values
     
     if dim==2:
         x1 = np.copy(data[s_par[0]])
@@ -410,7 +429,7 @@ def spline_fit(data,res,useSpline):
         splfunc = LSQBivariateSpline(x1, x2, ys, knots_loc[0], knots_loc[1], w=1/data["col2"], kx=useSpline.deg[0], ky=useSpline.deg[1])
         spl = splfunc(x1,x2,grid=False)     #evaluate the spline at the original x values
 
-    return spl
+    return (spl,splfunc) if return_splfunc else spl
 
 
 def basefuncLC(coeff, LCdata,res,useSpline):
@@ -533,7 +552,7 @@ def Planet_RV_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=None,c
     >>> plt.axhline(0,ls="--")
     
     """
-    
+
     if isinstance(T0, (int,float)): T0 = [T0]
     if isinstance(per, (int,float)): per = [per]
     if isinstance(K, (int,float)): K = [K]
@@ -549,7 +568,7 @@ def Planet_RV_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=None,c
 
         ecc, ome_rad = sesinw_secosw_to_ecc_omega(sesinw[n],secosw[n])
         ome_deg = ome_rad*180/np.pi
-        
+
         if custom_RVfunc!=None and custom_RVfunc.replace_RVmodel:
             RV_pars = dict(T_0=T0[n],Period=per[n],K=K[n],Eccentricity=ecc,omega=ome_deg)
             m_RV = custom_RVfunc.get_func(tt,**cst_pars,extra_args=custom_RVfunc.extra_args,RV_pars=RV_pars)
@@ -559,11 +578,22 @@ def Planet_RV_Model(tt,T0,per,K,sesinw=0,secosw=0,Gamma=0,cst_pars={},npl=None,c
             # get the model RV at each time stamp
             m_RV = K[n] * (np.cos(TA_rv + ome_rad) + ecc * np.cos(ome_rad))  #ome is of the planet, eqn 6 in https://arxiv.org/pdf/2212.06966
 
-
+            # combine the lc model with custom model
             if custom_RVfunc!=None and custom_RVfunc.replace_LCmodel==False:
-                cst_model = custom_RVfunc.get_func(tt,**cst_pars) if custom_RVfunc.x=="time" else custom_RVfunc.get_func(TA_rv,**cst_pars)
+                if custom_RVfunc.x=="time":
+                    cst_model = custom_RVfunc.get_func(tt,**cst_pars)  
+                elif custom_RVfunc.x == "true_anomaly":
+                    cst_model = custom_RVfunc.get_func(TA_rv,**cst_pars)
+                elif custom_RVfunc.x.startswith("col"):
+                    if not list(tt)==list(custom_RVfunc.t):    # if tt is a different time array than input data, interpolate xarr column
+                        interp_func = interp1d(custom_RVfunc.t, custom_RVfunc.xarr, bounds_error=False, 
+                                                fill_value=(custom_RVfunc.xarr[0],custom_RVfunc.xarr[-1]))
+                        cst_model = custom_RVfunc.get_func(interp_func(tt),**cst_pars)
+                    else: 
+                        cst_model = custom_RVfunc.get_func(custom_RVfunc.xarr,**cst_pars)
+
                 m_RV      = custom_RVfunc.op_func(m_RV,cst_model)
-        
+
         model_components[f"pl_{n+1}"] = m_RV
         mod_RV += m_RV      #add RV of each planet to the total RV
 

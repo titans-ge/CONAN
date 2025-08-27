@@ -1,3 +1,11 @@
+(doc:yamlconf)=
+
+# YAML config file
+
+A full sample of `CONAN` **.yaml** config file is given below:
+
+```{code-block} yaml
+:lineno-start: 1
 # ========================================== CONAN YAML Configuration ==========================================
 # This is a template YAML configuration file for CONAN v3.3.12
 # PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
@@ -189,3 +197,13 @@ fit_setup:
   apply_lc_gpndim_offset      : n         # Offset for each GP dimension (LC)  
   apply_rv_gpndim_offset      : n         # Offset for each GP dimension (RV)
 # ============ END OF FILE ============================================
+```
+
+
+There are 6 main sections:
+`general`: specify the number of planets to model in the LC and RV models.
+`photometry`: define the setup for the lightcurves. can be excluded if no lightcurves to analyse.
+`radial_velocity`: define the setup for the rvs. Can be excluded if no rv files to analyse.
+`planet_parameters`: define priors for fitting the planet's orbit and physical parameters
+`stellar_parameters`: give stellar radius and mass to use post-fit to convert planet radius and mass to actual punits. when fitting a phase curve or occultation, the stellar radius is also used to compute the light-travel-time delay.
+`fit_setup`: specify the desired sampling strategy and other options.

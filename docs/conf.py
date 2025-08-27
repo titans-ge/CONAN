@@ -10,7 +10,7 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('../'))
 
-#copy notebooks to tutorials folder for sphinx to find them
+# copy notebooks to tutorials folder for sphinx to find them
 print("\nCopying notebooks to tutorial folder...")
 os.system("cp ../Notebooks/TOI-216/TOI-216_TTV_fit.ipynb tutorial/")
 os.system("cp ../Notebooks/TOI469/TOI469_multiplanet_LC_RV.ipynb tutorial/")
@@ -18,10 +18,11 @@ os.system("cp ../Notebooks/KELT-20/kelt-20_cheops_roll_compare.ipynb tutorial/")
 os.system("cp ../Notebooks/WASP-127/WASP127_RV/CONAN_WASP-127_RV_tutorial.ipynb tutorial/")
 os.system("cp ../Notebooks/WASP-127/WASP-127_EULER_LC/CONAN_WASP127_EULER.ipynb tutorial/")
 os.system("cp ../Notebooks/WASP-127/WASP127_LC_RV/CONAN_WASP-127_LC_RV_tutorial.ipynb tutorial/")
-os.system("cp ../Notebooks/george_2D_GP/WASP-103_2D-GP-george.ipynb tutorial/")
+os.system("cp ../Notebooks/WASP-103/WASP-103_2D-GP-george.ipynb tutorial/")
 os.system("cp ../Notebooks/WASP-121_phasecurve/WASP121_TESS_pc.ipynb tutorial/")
 os.system("cp ../Notebooks/K2-233_spleaf_3D_GP/k2-233_reanalysis.ipynb tutorial/")
-#----------------
+os.system("cp ../Notebooks/WASP-103/WASP-103_custom_LC_function.ipynb tutorial/")
+# ----------------
 # os.system("cp ../Notebooks/WASP-127/WASP127_LC_RV/wasp127_lcrv_config.dat ../sample_config.dat")
 # os.system("cp ../Notebooks/WASP-127/WASP127_LC_RV/wasp127_lcrv_config.yaml ../sample_config.yaml")
 
@@ -71,16 +72,15 @@ templates_path         = ['_templates']
 exclude_patterns       = ['_build', 'Thumbs.db', '.DS_Store', "_autoapi_templates"]
 
 
-
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 # html_theme = 'sphinx_rtd_theme'
 html_theme           = 'sphinx_book_theme'
 html_static_path     = ['_static']
-html_js_files = [
-    'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
-    'gurubase-widget.js']
+# html_js_files = [
+#     'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
+#     'gurubase-widget.js']
 html_show_sourcelink = True
 html_theme_options   = {
                         "path_to_docs": "docs",

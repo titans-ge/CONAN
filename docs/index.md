@@ -8,10 +8,10 @@
 
 installation
 quick_fit
+config_files
 changes.rst
 Ask AI <https://gurubase.io/g/conan>
 ```
-
 
 ```{toctree}
 :caption: Tutorials
@@ -26,6 +26,7 @@ tutorial/kelt-20_cheops_roll_compare.ipynb
 tutorial/TOI-216_TTV_fit.ipynb
 tutorial/WASP-103_2D-GP-george.ipynb
 tutorial/k2-233_reanalysis.ipynb
+tutorial/WASP-103_custom_LC_function.ipynb
 ```
 
 ```{toctree}

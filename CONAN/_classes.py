@@ -7,6 +7,8 @@ import os
 import matplotlib
 import pandas as pd
 from lmfit import minimize, Parameters, Parameter
+from scipy.interpolate import interp1d
+import importlib
 
 from os.path import splitext
 from ldtk import SVOFilter
@@ -115,8 +117,8 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                         t_bin,y_bin,e_bin = bin_data_with_gaps(p1[p1_srt],dt_flux[p1_srt],p3[p1_srt],binsize=binsize)
                     else: 
                         t_bin,y_bin = bin_data_with_gaps(p1[p1_srt],dt_flux[p1_srt],binsize=binsize); e_bin=None
-                    
-                    ax_main.errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3,label=f"{binsize*24*60:.0f}min bins")
+
+                    ax_main.errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3,label=f"{binsize*24*60:.0f}min bins" if phase_plot==0 else None)
                 else: 
                     ax_main.errorbar(p1[p1_srt],dt_flux[p1_srt],p3 if p3 is None else p3[p1_srt],fmt=".", ms=6, color="C0", alpha=0.6, capsize=2)
 
@@ -140,7 +142,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                     else: 
                         t_bin,y_bin = bin_data_with_gaps(p1[p1_srt],p2[p1_srt],binsize=binsize); e_bin=None
                     
-                    ax_main.errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3, label=f"{binsize*24*60:.0f}min bins")
+                    ax_main.errorbar(t_bin,y_bin,yerr=e_bin, fmt="o", color='midnightblue', capsize=2, zorder=3, label=f"{binsize*24*60:.0f}min bins" if phase_plot==0 else None)
                 else: 
                     ax_main.errorbar(p1[p1_srt],p2[p1_srt],yerr=p3 if p3 is None else p3[p1_srt], fmt=".",ms=6, color="C0", alpha=0.6, capsize=2)
                 
@@ -205,10 +207,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                 offset=None, A0=None, B0=None, A3=None, B3=None,A4=None, B4=None, 
                 A5=None, B5=None,A6=None, B6=None, A7=None, B7=None, A8=None, B8=None,
                 sin_Amp=0, sin2_Amp=0, sin3_Amp=0, cos_Amp=0, cos2_Amp=0, cos3_Amp=0, sin_P=0,  sin_x0=0,
-                gp_pars = {},
-                # log_GP_amp1=0, log_GP_amp2=0, log_GP_len1=0, log_GP_len2=0, log_GP_h31=0, log_GP_h41=0,
-                # log_GP_h32=0, log_GP_h42=0, 
-                npl=1,jitter=0,Rstar=None,pc_model="cosine",custom_LCfunc=None,return_models=False):
+                gp_pars = {}, npl=1,jitter=0,Rstar=None,pc_model="cosine",custom_LCfunc=None,return_models=False):
     """
     linear decorrelation with different columns of data file. It performs a linear model fit to the columns of the file.
     It uses columns 0,3,4,5,6,7,8 to construct the linear trend model. A spline can also be included to decorrelate against any column.
@@ -374,7 +373,8 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
     
     #transit model based on TransitModel       
     def transit_occ_model(tr_params,t=None,ss_exp=ss_exp,Rstar=None,vcont=cont,pc_model=pc_model,custom_LCfunc=custom_LCfunc,npl=1):
-        if t is None: t = df["col0"].values
+        if t is None: 
+            t = df["col0"].values
         ss = supersampling(ss_exp/(60*24),int(ss_exp)) if ss_exp is not None else None
         pl_ind = [(f"_{n}" if npl>1 else "") for n in range(1,npl+1)]
 
@@ -389,6 +389,9 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         dur      = tr_params["Duration"].value if "Duration" in tr_params.keys() else None 
 
         cst_pars = {p:tr_params[p].value for p in custom_LCfunc.func_args.keys()} if custom_LCfunc is not None else {}
+        if custom_LCfunc is not None and custom_LCfunc.x.startswith("col"):
+                custom_LCfunc.xarr = df[custom_LCfunc.x].values
+                custom_LCfunc.t    = df['col0'].values
 
         TM  = Planet_LC_Model(rho_star, dur, t0, rp, b, per, sesinw, secosw,ddf=0,q1=tr_params["q1"].value,
                             q2=tr_params["q2"].value,occ=tr_params["D_occ"].value,Fn=tr_params["Fn"].value,
@@ -456,10 +459,11 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
         for n,lbl in enumerate(pl_ind):
             # phase["pl1"] if only one planet and counting for more
             phase[f"pl{n+1}"]    = phase_fold(t=df["col0"],per=tr_params["Period"+lbl].value,t0=tr_params["T_0"+lbl].value, phase0=-0.25)
-            phase_sm[f"pl{n+1}"] = phase_fold(t=tsm,       per=tr_params["Period"+lbl].value,t0=tr_params["T_0"+lbl].value, phase0=-0.25)
+            phase[f"pl{n+1}"]    = phase[f"pl{n+1}"]%1 if all(abs(phase[f"pl{n+1}"])>0.1) else phase[f"pl{n+1}"]   #if data excludes transit, so phasefold on occultation
+            phase_sm[f"pl{n+1}"] = phase_fold(t=tsm,       per=tr_params["Period"+lbl].value,t0=tr_params["T_0"+lbl].value, phase0=min(phase[f"pl{n+1}"]))
 
         mods = SN(  time              = df["col0"],
-                    phase             = phase,
+                    phase             = phase,   
                     det_flux          = det_flux,
                     err               = flux_err,
                     tot_trnd_mod      = df["col1"]/det_flux, 
@@ -490,13 +494,7 @@ def _decorr(df, T_0=None, Period=None, rho_star=None, Duration=None, Impact_para
                 res_mod = (u[0]-fit_params[p].value)/u[1]
                 res = np.append(res, res_mod ) #if gp==None else res+res_mod**2
         return res
-    
-    # def jacobian(fit_params):
-    #     flux_model = trend_model(fit_params)*transit_occ_model(fit_params,npl=npl)
-    #     spl        = spline_fit(df,df["col1"]/flux_model,spline) if spline!=None else np.ones_like(df["col1"])
-    #     resid      = df["col1"] - flux_model*spl
-    #     grad_nll   = gp_model(fit_params,resid,False,True)
-    #     return grad_nll
+
     
     fit_params = params+tr_params
     out = minimize(chisqr, fit_params, nan_policy='propagate', method='lbfgsb' if gp!=None else 'leastsq')#, jac=jacobian if gp!=None else None)  #lbfgsb does not give uncertainties on the parameters
@@ -624,6 +622,9 @@ def _decorr_RV(df, T_0=None, Period=None, K=None, sesinw=0, secosw=0, gamma=None
         secosw = [rv_params["secosw"+lbl].value for lbl in pl_ind]
 
         cst_pars = {p:rv_params[p].value for p in custom_RVfunc.func_args.keys()} if custom_RVfunc is not None else {}
+        if custom_RVfunc is not None and custom_RVfunc.x.startswith("col"):
+                custom_RVfunc.xarr = df[custom_RVfunc.x].values
+                custom_RVfunc.t    = df['col0'].values
 
         mod_RV,_  = Planet_RV_Model(t, t0, per, K, sesinw, secosw, rv_params["gamma"], cst_pars=cst_pars, 
                                         npl=npl, custom_RVfunc=custom_RVfunc)
@@ -1045,7 +1046,8 @@ class load_lightcurves:
             to be used for all filtets. Default is 0 for all filters.
         cont : float,list (optional);
             contamination factor of the lightcurve. must be float or list of floats as it does not vary in this least-squares fit.  
-            if list, must contain float for each lc. Default is 0.
+            if list, must contain float for each filter. If tuple (norm or uni) is given, the start value is extracted. 
+            Default is 0 for all filters.
         delta_BIC : float (negative);
             BIC improvement a parameter needs to provide in order to be considered relevant for 
             decorrelation. Default is conservative and set to -5 i.e, parameters needs to lower 
@@ -1101,6 +1103,16 @@ class load_lightcurves:
         --------
         decorr_result: list of result object
             list containing result object for each lc.
+
+        Attributes
+        -----------
+        _tmodel: list;
+            list of SimpleNamespace objects containing result from leastsquares fit.
+        _decorr_result:
+            list of parameter result from leastsquares fit.
+        _tra_occ_pars:
+            list of transit and occultation parameters.
+
         """
         if exclude_cols=="all": 
             exclude_cols = [0,3,4,5,6,7,8]
@@ -1117,19 +1129,12 @@ class load_lightcurves:
             fit_offset = self._fit_offset           # if None, use preset value
         elif isinstance(fit_offset,list):
             assert len(fit_offset)==1 or len(fit_offset)==self._nphot, f"get_decorr(): fit_offset must be a list of same length as number of input lcs ({self._nphot})"
-            if len(fit_offset)==1: fit_offset = fit_offset*self._nphot
-            for ofs in fit_offset: assert ofs in ["y","n"], f"get_decorr(): fit_offset must be one of ['y','n'] but {ofs} given."
+            if len(fit_offset)==1: 
+                fit_offset = fit_offset*self._nphot
+            for ofs in fit_offset: 
+                assert ofs in ["y","n"], f"get_decorr(): fit_offset must be one of ['y','n'] but {ofs} given."
         else:
             _raise(TypeError, "get_decorr(): fit_offset must be a str, list of str or None.")
-
-        if isinstance(cont, (int,float)): 
-            cont = [cont]*self._nphot
-        elif isinstance(cont, list): 
-            assert len(cont)== self._nphot, f"get_decorr(): cont must be a list of same length as number of input lcs ({self._nphot})"
-            for ct in cont: 
-                assert isinstance(ct, float), f"get_decorr(): cont must be a float or list of floats."
-        else: 
-            _raise(TypeError, "get_decorr(): cont must be a float or list of floats.")
 
         if isinstance(pc_model, str): 
             pc_model = [pc_model]*self._nphot
@@ -1145,6 +1150,10 @@ class load_lightcurves:
 
         if custom_LCfunc is not None: 
             assert callable(custom_LCfunc.func), "get_decorr(): custom_LCfunc must be a callable function"
+        else:
+            if self._custom_LCfunc.func is not None:
+                print("setting custom LC function from saved object attribute")
+                custom_LCfunc = self._custom_LCfunc
         
         nfilt = len(self._filnames)
         if isinstance(q1, np.ndarray): 
@@ -1153,36 +1162,56 @@ class load_lightcurves:
             assert len(q1) == nfilt, f"get_decorr(): q1 must be a list of same length as number of unique filters {nfilt} but {len(q1)} given." 
         else: 
             q1=[q1]*nfilt
+        
         if isinstance(q2, np.ndarray): 
             q2 = list(q2)
         if isinstance(q2, list): 
             assert len(q2) == nfilt, f"get_decorr(): q2 must be a list of same length as number of unique filters {nfilt} but {len(q2)} given." 
         else: 
             q2=[q2]*nfilt
+        
+        if isinstance(cont, list):
+            if len(cont)==1: 
+                cont= cont*nfilt 
+            assert len(cont) == nfilt, f"get_decorr(): cont must be a list of same length as number of unique filters {nfilt} but {len(cont)} given." 
+        elif isinstance(cont, (float, int, tuple)):
+            cont=[cont]*nfilt
+            
+        for cc in range(nfilt):
+            if isinstance(cont[cc], tuple):
+                assert len(cont[cc]) in [2,3],f"get_decorr(): each item in cont should be a float, if tuple given, it must be of len 2 or 3 but cont={cont[cc]} given"
+                cont[cc] = cont[cc][0] if len(cont[cc])==2 else cont[cc][1]
+            
 
         blpars = {"dcol0":[], "dcol3":[],"dcol4":[], "dcol5":[], "dcol6":[], "dcol7":[], "dcol8":[]}  #inputs to lc_baseline method
         self._decorr_result = []   #list of decorr result for each lc.
         
         if self._nplanet > 1:
             assert rho_star is not None, f"get_decorr(): rho_star must be given for multiplanet system but {rho_star} given."
-            assert  Duration==None, f"get_decorr(): Duration must be None for multiplanet systems, since transit model uses rho_star but {Duration=} given."
+            assert Duration==None, f"get_decorr(): Duration must be None for multiplanet systems, since transit model uses rho_star but {Duration=} given."
         else:
             if rho_star is None and Duration is None: 
                 Duration = 0
             #check that rho_star and Duration are not both given
-            if rho_star is not None: assert Duration is None, "get_decorr(): Duration must be None if rho_star is given."
-            if Duration is not None: assert rho_star is None, "get_decorr(): rho_star must be None if Duration is given."
+            if rho_star is not None: 
+                assert Duration is None, "get_decorr(): Duration must be None if rho_star is given."
+            if Duration is not None: 
+                assert rho_star is None, "get_decorr(): rho_star must be None if Duration is given."
 
         if Eccentricity == omega == sesinw == secosw == None: 
             Eccentricity, omega = 0, 90
             # sesinw, secosw = 0, 0  #set to zero if not given
         if Eccentricity is not None and omega is not None:
             om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
-            sesinw, secosw = [], []
-            for ec,om in zip(Eccentricity, om_rad):
-                ssw, scw = ecc_om_par(ec, om, conv_2_obj=True, return_tuple=True)
-                sesinw.append(ssw)
-                secosw.append(scw)
+            if np.iterable(Eccentricity) and np.iterable(om_rad):
+                sesinw, secosw = [], []
+                for ec,om in zip(Eccentricity, om_rad):
+                    ssw, scw = ecc_om_par(ec, om, conv_2_obj=True, return_tuple=True)
+                    sesinw.append(ssw)
+                    secosw.append(scw)
+            else:
+                sesinw, secosw = ecc_om_par(Eccentricity, om_rad, conv_2_obj=True, return_tuple=True)
+                
             input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, Eccentricity=Eccentricity, omega=omega, K=K)
         elif sesinw is not None and secosw is not None:
             input_pars = dict(T_0=T_0, Period=Period, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw, secosw=secosw, K=K)
@@ -1194,6 +1223,7 @@ class load_lightcurves:
         self._tra_occ_pars = dict(T_0=T_0, Period=Period, D_occ=D_occ, Impact_para=Impact_para, RpRs=RpRs, sesinw=sesinw,\
                                     secosw=secosw, Fn=Fn, ph_off=ph_off,A_ev=A_ev,f1_ev=f1_ev,A_db=A_db) #transit/occultation parameters
         # add rho_star/Duration to input_pars and self._tra_occ_pars if given
+        #TODO remove phasecurve parameters from _tra_occ_pars and treat them as priors per filter (like q1,q2,cont)
         if rho_star is not None: 
             input_pars["rho_star"]         = rho_star
             self._tra_occ_pars["rho_star"] = rho_star
@@ -1215,9 +1245,11 @@ class load_lightcurves:
                 assert isinstance(self._tra_occ_pars[p],(int,float,tuple,type(None))),f"get_decorr(): `{p}` must be one of int/float/tuple/None but {self._tra_occ_pars[p]} given "
 
         ld_q1, ld_q2 = {},{}
+        fcont = {}
         for i,fil in enumerate(self._filnames):
             ld_q1[fil] = q1[i]
             ld_q2[fil] = q2[i]
+            fcont[fil] = cont[i]
         
         assert delta_BIC<0,f'get_decorr(): delta_BIC must be negative for parameters to provide improved fit but {delta_BIC} given.'
         
@@ -1358,7 +1390,8 @@ class load_lightcurves:
     
             if ttv:  # if ttv is True, fit a unique T0 present in each lc file
                 for i,ttime in enumerate(self._tra_occ_pars["T_0"]):
-                    if isinstance(ttime, (int,float)): _raise(ValueError, "get_decorr(): cannot set ttv=True since T_0 is fixed.")
+                    if isinstance(ttime, (int,float)): 
+                        _raise(ValueError, "get_decorr(): cannot set ttv=True since T_0 is fixed.")
                     elif isinstance(ttime, tuple):
                         if len(ttime)==2: 
                             this_t0 = get_transit_time(df["col0"],self._tra_occ_pars["Period"][i],ttime[0])
@@ -1370,7 +1403,7 @@ class load_lightcurves:
             
             #perform first fit of all jump parameters(astro,gp,sine,spline) with offset as only decorr par
             out = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],
-                            q2=ld_q2[self._filters[j]], mask=mask, cont=cont[j], offset=0 if fit_offset[j]=="y" else None, 
+                            q2=ld_q2[self._filters[j]], mask=mask, cont=fcont[self._filters[j]], offset=0 if fit_offset[j]=="y" else None, 
                             decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                             jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
                             pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)    #no trend, only offset if no spline
@@ -1392,7 +1425,7 @@ class load_lightcurves:
                         dtmp = best_pars.copy()   #always include offset if no spline
                         dtmp[p] = 0               #setting the par p to 0 means it will be varied in the fit
                         out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
-                                        decorr_bound=decorr_bound,  mask=mask, cont=cont[j],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
+                                        decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                                         jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
                                         pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
                         if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
@@ -1411,7 +1444,7 @@ class load_lightcurves:
                         all_par.remove(par_in)            
 
             result = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
-                                **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=cont[j],spline=spline[j],sinus=sinusoid[file],
+                                **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],
                                 gp=GP[file],ss_exp=ss_exp[j], jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
                                 pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
 
@@ -1421,8 +1454,10 @@ class load_lightcurves:
             #calculate determined trend and tra/occ model over all data(no mask)
             pps = result.params.valuesdict()
             #set fn and ph_off to zero if they were not set. i.e no phase curve
-            if self._tra_occ_pars["Fn"]==None:     pps["Fn"]=None 
-            if self._tra_occ_pars["ph_off"]==None: pps["ph_off"]=None
+            if self._tra_occ_pars["Fn"]==None:     
+                pps["Fn"]=None 
+            if self._tra_occ_pars["ph_off"]==None: 
+                pps["ph_off"]=None
             #convert result transit parameters to back to a list
             for p in ['RpRs', 'Impact_para', 'T_0', 'Period', 'sesinw', 'secosw']:
                 if self._nplanet==1:
@@ -1440,7 +1475,7 @@ class load_lightcurves:
                 _ = [pps.pop(p) for p in custom_LCfunc.func_args.keys()] # remove custom_LCfunc parameters from pps
             else: best_custom_LCfunc = None
                 
-            self._tmodel.append(_decorr(df,**pps, gp_pars=gp_pars,spline=spline[j],sinus=sinusoid[file],gp=GP[file], cont=cont[j], ss_exp=ss_exp[j], Rstar=Rstar, pc_model=pc_model[j], custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
+            self._tmodel.append(_decorr(df,**pps, gp_pars=gp_pars,spline=spline[j],sinus=sinusoid[file],gp=GP[file], cont=fcont[self._filters[j]], ss_exp=ss_exp[j], Rstar=Rstar, pc_model=pc_model[j], custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
 
             #set-up lc_baseline model from obtained configuration
             blpars["dcol0"].append( 2 if pps["B0"]!=0 else 1 if  pps["A0"]!=0 else 0)
@@ -1721,32 +1756,47 @@ class load_lightcurves:
             return None
         
         if isinstance(select_column,str):
-            if select_column == "all": select_column = ["col1","col3","col4","col5","col6","col7","col8"]
-            else: select_column = [select_column]
+            if select_column == "all": 
+                select_column = ["col1","col3","col4","col5","col6","col7","col8"]
+            else: 
+                select_column = [select_column]
         if isinstance(select_column, list):
             for col in select_column: 
                     assert col in ["col1","col3","col4","col5","col6","col7","col8"],\
                             f'clip_outliers(): elements of select_column must be in ["col1","col3","col4","col5","col6","col7","col8"] but "{col}" given.'
         
-        if isinstance(lc_list, str) and (lc_list != 'all'): lc_list = [lc_list]
-        if lc_list == "all": lc_list = self._names
+        if isinstance(lc_list, str) and (lc_list != 'all'): 
+            lc_list = [lc_list]
+        if lc_list == "all": 
+            lc_list = self._names
 
-        if isinstance(width, int): width = [width]*len(lc_list)
+        if isinstance(width, int): 
+            width = [width]*len(lc_list)
         elif isinstance(width, list): 
-            if len(width)==1: width = width*len(lc_list)
-            for wid in width: assert isinstance(wid, int), f"clip_outliers(): width must be an int or list of int but {width=} given."
-        else: _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {clip=} given.")
+            if len(width)==1: 
+                width = width*len(lc_list)
+            for wid in width: 
+                assert isinstance(wid, int), f"clip_outliers(): width must be an int or list of int but {width=} given."
+        else: 
+            _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {clip=} given.")
             
-        if isinstance(clip, (int,float)): clip = [clip]*len(lc_list)
+        if isinstance(clip, (int,float)): 
+            clip = [clip]*len(lc_list)
         elif isinstance(clip, list): 
-            if len(clip)==1: clip = clip*len(lc_list)
-        else: _raise(TypeError, f"clip_outliers(): width must be an int/float or list of int/float but {clip=} given.")
+            if len(clip)==1: 
+                clip = clip*len(lc_list)
+        else: 
+            _raise(TypeError, f"clip_outliers(): width must be an int/float or list of int/float but {clip=} given.")
             
-        if isinstance(niter, (int)): niter = [niter]*len(lc_list)
+        if isinstance(niter, (int)): 
+            niter = [niter]*len(lc_list)
         elif isinstance(niter, list): 
-            if len(niter)==1: niter = niter*len(lc_list)
-            for ni in niter: assert isinstance(ni, int), f"clip_outliers(): niter must be an int or list of int but {niter=} given."
-        else: _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {niter=} given.")
+            if len(niter)==1: 
+                niter = niter*len(lc_list)
+            for ni in niter: 
+                assert isinstance(ni, int), f"clip_outliers(): niter must be an int or list of int but {niter=} given."
+        else: 
+            _raise(TypeError, f"clip_outliers(): width must be an int or list of int but {niter=} given.")
             
 
         assert len(width) == len(clip) == len(niter) == len(lc_list), f"clip_outliers(): width, clip, niter and lc_list must have same length but {len(width)=}, {len(clip)=} and {len(lc_list)=} given."
@@ -1766,7 +1816,8 @@ class load_lightcurves:
             if width[i]%2 == 0: width[i] += 1   #if width is even, make it odd
             
             sel_cols = "c"+"".join([col[-1] for col in select_column])+":"  #get last index of select_column to get e.g. c135:
-            if sel_cols == "c1345678:" : sel_cols = "ca:"
+            if sel_cols == "c1345678:" : 
+                sel_cols = "ca:"
             self._clipped_data.config[self._names.index(file)] = f"{sel_cols}W{width[i]}C{clip[i]}n{niter[i]}"
             #join all last index of select_column to get e.g. c135
 
@@ -1777,14 +1828,16 @@ class load_lightcurves:
             tot_npt = len(thisLCdata["col0"])
 
             for col in select_column:
-                if np.ptp(thisLCdata[col])==0.0: continue  #skip column if all values are the same (nothing to clip)
+                if np.ptp(thisLCdata[col])==0.0: 
+                    continue  #skip column if all values are the same (nothing to clip)
                 for _ in range(niter[i]):
                     thisLCdata  = {k:v[ok_iter] for k,v in thisLCdata.items()}   #remove clipped points from previous iteration
                     _,_,clpd_mask = outlier_clipping(x=thisLCdata["col0"],y=thisLCdata[col],clip=clip[i],width=width[i],
                                                         verbose=False, return_clipped_indices=True)   #returns mask of the clipped points
                     ok_iter = ~clpd_mask     #invert mask to get indices of points that are not clipped
                     ok[ok] &= ok_iter        #update points in ok mask with the new iteration clipping
-            if verbose and (not show_plot): print(f'\n{file}: Rejected {sum(~ok)}pts > {clip[i]:0.1f}MAD from the median of columns {select_column}')
+            if verbose and (not show_plot): 
+                print(f'\n{file}: Rejected {sum(~ok)}pts > {clip[i]:0.1f}MAD from the median of columns {select_column}')
 
             if show_plot:
                 ax[i].set_title(f'{file}:\nRejected {sum(~ok)}/{tot_npt}pts>{clip[i]:0.1f}MAD')
@@ -1803,7 +1856,7 @@ class load_lightcurves:
         self._clipped_data.flag = True # SimpleNamespace(flag=True, width=width, clip=clip, lc_list=lc_list, config=conf)
         if show_plot: 
             for i in range(len(lc_list),np.prod(nrow_ncols)): ax[i].axis("off")   #remove unused subplots
-            plt.tight_layout; plt.show()
+            plt.tight_layout(); plt.show()
 
     def lc_baseline(self, fit_offset="y", dcol0=0, dcol3=0, dcol4=0,  dcol5=0, dcol6=0, dcol7=0, dcol8=0, 
                     sin="n", grp=None, grp_id=None, gp="n", re_init=False,verbose=True):
@@ -1853,14 +1906,20 @@ class load_lightcurves:
             if isinstance(DA[par], (int,str)): DA[par] = [DA[par]]*self._nphot      #use same for all lcs
             elif DA[par] is None: DA[par] = [0]*self._nphot   #no decorr or gp for all lcs
             elif isinstance(DA[par], (list,np.ndarray)):
-                if par=="gp": assert len(DA[par]) == self._nphot, f"lc_baseline(): parameter `{par}` must be a list of length {self._nphot} or str (if same is to be used for all LCs) or None."
-                else: assert len(DA[par]) == self._nphot, f"lc_baseline(): parameter `{par}` must be a list of length {self._nphot} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
+                if par=="gp": 
+                    assert len(DA[par]) == self._nphot, f"lc_baseline(): parameter `{par}` must be a list of length {self._nphot} or str (if same is to be used for all LCs) or None."
+                else: 
+                    assert len(DA[par]) == self._nphot, f"lc_baseline(): parameter `{par}` must be a list of length {self._nphot} or int (if same degree is to be used for all LCs) or None (if not used in decorrelation)."
 
             for p in DA[par]:
-                if par=="gp": assert p in ["n","ge","ce","sp"], f"lc_baseline(): gp must be a list of 'n', 'ce', 'ge' or 'sp' for each lc but {p} given."
-                elif par=="fit_offset": assert p in ["y","n"], f"lc_baseline(): fit_offset must be a list of 'y' or 'n' for each lc but {p} given."
-                elif par=="sin": assert p in ["y","n"], f"lc_baseline(): sin must be a list of 'y' or 'n' for each lc but {p} given."
-                else: assert isinstance(p, (int,np.int64)) and p<3, f"lc_baseline(): decorrelation parameters must be a list of integers (max int value = 2) but {type(p)} {p} given for {par}."
+                if par=="gp": 
+                    assert p in ["n","ge","ce","sp"], f"lc_baseline(): gp must be a list of 'n', 'ce', 'ge' or 'sp' for each lc but {p} given."
+                elif par=="fit_offset": 
+                    assert p in ["y","n"], f"lc_baseline(): fit_offset must be a list of 'y' or 'n' for each lc but {p} given."
+                elif par=="sin": 
+                    assert p in ["y","n"], f"lc_baseline(): sin must be a list of 'y' or 'n' for each lc but {p} given."
+                else: 
+                    assert isinstance(p, (int,np.int64)) and p<3, f"lc_baseline(): decorrelation parameters must be a list of integers (max int value = 2) but {type(p)} {p} given for {par}."
 
         DA["grp_id"] = list(np.arange(1,self._nphot+1)) if grp_id is None else grp_id
 
@@ -1886,7 +1945,7 @@ class load_lightcurves:
         if not hasattr(self,"_lcspline") or re_init:      self.add_spline(None, verbose=False)
         if not hasattr(self,"_sine_dict") or re_init:     self.add_sinusoid(None, verbose=False)
         if not hasattr(self,"_ss") or re_init:            self.supersample(None, verbose=False)
-        if not hasattr(self,"_planet_pars") or re_init:    self.planet_parameters(verbose=False)
+        if not hasattr(self,"_planet_pars") or re_init:   self.planet_parameters(verbose=False)
         if not hasattr(self,"_ddfs") or re_init:          self.transit_depth_variation(verbose=False)
         if not hasattr(self,"_ttvs") or re_init:          self.transit_timing_variation(verbose=False)
         if not hasattr(self,"_PC_dict") or re_init:       self.phasecurve(verbose=False)
@@ -3171,7 +3230,8 @@ class load_lightcurves:
             assert isinstance(extra_args, dict), "add_custom_LC_function(): extra_args must be a dictionary."
             #check that opfunc takes two array arguments
             if not replace_LCmodel: 
-                assert x in ["time","phase_angle"], "add_custom_LC_function(): x must be 'time' or 'phase_angle'."
+                possible_x = ["time","phase_angle",'col3','col4','col5','col6','col7','col8']
+                assert x in possible_x, f"add_custom_LC_function(): x must be one of {possible_x} but x={x} given."
                 assert callable(op_func), "add_custom_LC_function(): op_func must be a callable function."
                 assert len(inspect.signature(op_func).parameters)==2, f"add_custom_LC_function(): op_func must take two arguments but {len(inspect.signature(op_func).parameters)} given."
                 #assert that number of arguments in fxn() is equal to the number of parameters in func_args + the independent variable x + extra_args dict
@@ -3188,7 +3248,7 @@ class load_lightcurves:
                 #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args + LC_pars
                 assert len_fxnpars==len(func_args)+3, f"add_custom_LC_function(): number of arguments in func_args must be equal to number of arguments in func minus 2."
         else: 
-            self._custom_LCfunc = SN(func=None, get_func=None, x=None,op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_LCmodel=False)
+            self._custom_LCfunc = SN(func=None, get_func=None, x=None, xarr=None,op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_LCmodel=False)
             if verbose: _print_output(self,"custom_LCfunction")
             return None
         
@@ -3199,7 +3259,7 @@ class load_lightcurves:
             if par_dict[k].to_fit=="y": 
                 nfree += 1
 
-        self._custom_LCfunc = SN(func=func, get_func=fxn, x=x,op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_LCmodel=replace_LCmodel)
+        self._custom_LCfunc = SN(func=func, get_func=fxn, x=x, xarr=None, op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_LCmodel=replace_LCmodel)
 
         if verbose: _print_output(self,"custom_LCfunction")
         return deepcopy(self._custom_LCfunc)
@@ -3495,9 +3555,11 @@ class load_lightcurves:
         """
         nfilt = len(self._filnames)
 
-        if isinstance(cont_ratio, (int,float,tuple)): cont_ratio = [cont_ratio]*nfilt
+        if isinstance(cont_ratio, (int,float,tuple)): 
+            cont_ratio = [cont_ratio]*nfilt
         elif isinstance(cont_ratio, list):
-            if len(cont_ratio)==1: cont_ratio = cont_ratio*nfilt
+            if len(cont_ratio)==1: 
+                cont_ratio = cont_ratio*nfilt
             assert len(cont_ratio)==nfilt, f"contamination(): cont_ratio must be a list of length {nfilt}  (for filters {list(self._filnames)}) or float/int/tuple."
         else:
             _raise(TypeError, f"contamination(): cont_ratio must be one of [tuple(of len 2/3/4), float, or list of float/tuple] but {cont_ratio} is given.")
@@ -3577,7 +3639,7 @@ class load_lightcurves:
 
 
     def plot(self, plot_cols=(0,1,2), col_labels=None, nrow_ncols=None, figsize=None, fit_order=0, 
-                show_decorr_model=False, detrend=False, phase_plot=0,hspace=None, wspace=None, binsize=0.0104, return_fig=False):
+                show_decorr_model=False, detrend=False, phase_plot=0,hspace=None, wspace=None, binsize=None, return_fig=False):
         """
         visualize data
 
@@ -3632,9 +3694,30 @@ class load_lightcurves:
         if col_labels is None:
             col_labels = ("time", "flux") if plot_cols[:2] == (0,1) else (f"column[{plot_cols[0]}]",f"column[{plot_cols[1]}]")
         
-        # if binsize==None:
-        #     binsize = self._tmodel.params[]/10
-        # if phase_plot>0: binsize = binsize/self._tmodel[]    #TODO
+        if hasattr(self, '_tmodel'):
+            lbl     = phase_plot if phase_plot>1 else ""
+            tr_pars = self._tmodel[-1].params
+
+            if binsize == None:
+                try:
+                    if "Duration" in tr_pars:
+                        dur = tr_pars['Duration'].value  
+                    else:
+                        scw = tr_pars["secosw"+lbl].value
+                        ssw = tr_pars["sesinw"+lbl].value
+                        ecc,om = sesinw_secosw_to_ecc_omega(ssw,scw, angle_unit="degrees")
+                        dur = rho_to_tdur(tr_pars["rho_star"].value, tr_pars["Impact_para"+lbl].value, tr_pars["RpRs"+lbl].value,
+                                            tr_pars["Period"+lbl].value, ecc, om)
+                    binsize = dur/10
+                except:
+                    binsize = 0.0104
+
+            if phase_plot>0: 
+                binsize = binsize/tr_pars['Period'+lbl].value
+
+        if binsize == None:
+            binsize = 0.0104
+
         if self._names != []:
             fig = _plot_data(self, plot_cols=plot_cols, col_labels = col_labels, nrow_ncols=nrow_ncols, figsize=figsize, fit_order=fit_order,
                             hspace=hspace, wspace=wspace, model_overplot=self._tmodel if show_decorr_model else None, detrend=detrend,
@@ -3968,7 +4051,15 @@ class load_rvs:
 
         if Eccentricity is not None and omega is not None:
             om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
-            sesinw, secosw = ecc_om_par(Eccentricity, om_rad, conv_2_obj=True, return_tuple=True)
+            if np.iterable(Eccentricity) and np.iterable(om_rad):
+                sesinw, secosw = [], []
+                for ec,om in zip(Eccentricity, om_rad):
+                    ssw, scw = ecc_om_par(ec, om, conv_2_obj=True, return_tuple=True)
+                    sesinw.append(ssw)
+                    secosw.append(scw)
+            else:
+                sesinw, secosw = ecc_om_par(Eccentricity, om_rad, conv_2_obj=True, return_tuple=True)
+
             input_pars = dict(T_0=T_0, Period=Period, Eccentricity=Eccentricity, omega=omega, K=K)
         elif sesinw is not None and secosw is not None:
             input_pars = dict(T_0=T_0, Period=Period, sesinw=sesinw, secosw=secosw, K=K)
@@ -3986,6 +4077,13 @@ class load_rvs:
                     assert len(self._rv_pars[p]) == self._nplanet, \
                         f"get_decorr(): `{p}` must be a list of same length as number of planets {self._nplanet} but {len(self._rv_pars[p])} given."
 
+        if custom_RVfunc is not None: 
+            assert callable(custom_RVfunc.func), "get_decorr(): custom_RVfunc must be a callable function"
+        else:
+            if self._custom_RVfunc.func is not None:
+                print("setting custom RV function from saved object attribute")
+                custom_RVfunc = self._custom_RVfunc
+        
         #check spline setup
         if [self._rvspline[rv].conf for rv in self._names] == ["None"]*self._nRV: #if no input spline in lc_obj, set to None
             spline = [None]*self._nRV
@@ -4172,7 +4270,7 @@ class load_rvs:
         for g in gamma:
             DA["gamma"].append(_param_obj.from_tuple(g, func_call="rv_baseline():"))
                     
-        _ = [DA.pop(item) for item in ["dcol0","dcol3","dcol4","dcol5"]]
+        _ = [DA.pop(item) for item in ["dcol0","dcol3","dcol4","dcol5","gp"]]
         self._rvdict   = DA
         
         if not hasattr(self,"_rvspline"):  
@@ -4269,17 +4367,20 @@ class load_rvs:
             len_fxnpars = len(inspect.signature(fxn).parameters)
 
             assert isinstance(func_args, dict), "add_custom_RV_function(): func_args must be a dictionary."
-            if extra_args == None: extra_args=dict()
+            if extra_args == None: 
+                extra_args=dict()
             assert isinstance(extra_args, dict), "add_custom_RV_function(): extra_args must be a dictionary."
-            assert x in ["time","true_anomaly"], "add_custom_RV_function(): x must be 'time' or 'true_anomaly'."
 
             #check that opfunc takes two array arguments
             if not replace_RVmodel: 
+                possible_x = ["time","true_anomaly",'col3','col4','col5']
+                assert x in possible_x, f"add_custom_RV_function(): x must be one of {possible_x} but x={x} given."
                 assert callable(op_func), "add_custom_RV_function(): op_func must be a callable function."
                 assert len(inspect.signature(op_func).parameters)==2, f"add_custom_RV_function(): op_func must take two arguments but {len(inspect.signature(op_func).parameters)} given."
                 #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args dict
                 assert len_fxnpars==len(func_args)+2, f"add_custom_RV_function(): number of arguments in func must be equal to number of parameters in func_args + the independent variable + extra_args."
             else:
+                assert x in ["time", "true_anomaly"], f"add_custom_RV_function(): x must be one of ['time','true_anomaly'] but x={x} given."
                 # assert RV_pars argument in func
                 assert "RV_pars" in inspect.signature(fxn).parameters, "add_custom_RV_function(): RV_pars dictionary argument must be in func in order to replace native transit model."
                 #assert RV_pars argument is a dict with keys in planet_parameters
@@ -4290,7 +4391,7 @@ class load_rvs:
                 #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args + RV_pars
                 assert len_fxnpars==len(func_args)+3, f"add_custom_RV_function(): number of arguments in func_args must be equal to number of arguments in func minus 2."
         else: 
-            self._custom_RVfunc = SN(func=None, get_func=None, x=None,op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_RVmodel=False)
+            self._custom_RVfunc = SN(func=None, get_func=None, x=None, xarr=None, op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_RVmodel=False)
             if verbose: _print_output(self,"custom_RVfunction")
             return None
         
@@ -4300,7 +4401,7 @@ class load_rvs:
             if isinstance(func_args[k], tuple): nfree += 1
             par_dict[k] = _param_obj.from_tuple(func_args[k], func_call="add_custom_RV_function():")
 
-        self._custom_RVfunc = SN(func=func, get_func=fxn, x=x,op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_RVmodel=replace_RVmodel)
+        self._custom_RVfunc = SN(func=func, get_func=fxn, x=x, xarr=None, op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_RVmodel=replace_RVmodel)
 
         if verbose: _print_output(self,"custom_RVfunction")
         return deepcopy(self._custom_RVfunc)
@@ -4628,15 +4729,6 @@ class load_rvs:
         if verbose: 
             _print_output(self, "rv_baseline")
             _print_output(self,"rv_gp")
-
-    def add_custom_rvGP( self, rv_list=None, module=None, kernel=[], par=[], GP_params=dict(), verbose=True):
-        
-        #user will need to provide the GPmodule to import, relevant kernel and GP parameters, how to get the loglikelihood and get samples(predict)
-
-        #import module using the string name
-        GPmodule = __import__(module)
-
-        raise NotImplementedError
 
     
     def add_spline(self, rv_list=None, par = None, degree=3, knot_spacing=None, plot_knots=0, verbose=True):
@@ -5278,7 +5370,6 @@ class load_result:
         self._ttvs          = self._ind_para["ttv_conf"]
 
         if self._ind_para["custom_LCfunc"].func is not None:   # must reload the saved custom_func from the result folder 
-            import importlib
             func_name = self._ind_para["custom_LCfunc"].func.__name__              #get_func_name
             module    = importlib.import_module(f"{self._folder.replace('/','.')}.custom_LCfunc")   #import module from result folder   #TODO this breaks when path of output folder is not in CWD 
             
@@ -5287,6 +5378,16 @@ class load_result:
                 self._ind_para["custom_LCfunc"].get_func = self._ind_para["custom_LCfunc"].get_model
             else:                                                                  # if the function is a function, get the function
                 self._ind_para["custom_LCfunc"].get_func = self._ind_para["custom_LCfunc"].func
+
+        if self._ind_para["custom_RVfunc"].func is not None:
+            func_name = self._ind_para["custom_RVfunc"].func.__name__              #get_func_name
+            module    = importlib.import_module(f"{self._folder.replace('/','.')}.custom_RVfunc")
+
+            self._ind_para["custom_RVfunc"].func = getattr(module, func_name)      # get the function from the module
+            if inspect.isclass(self._ind_para["custom_RVfunc"].func):              # if the function is a class,use the get_model method
+                self._ind_para["custom_RVfunc"].get_func = self._ind_para["custom_RVfunc"].get_model
+            else:                                                                  # if the function is a function, get the function
+                self._ind_para["custom_RVfunc"].get_func = self._ind_para["custom_RVfunc"].func
 
         assert set(self._par_names) == set(self._ind_para["jnames"]),'load_result(): the fitting parameters do not match those saved in the chains_dict.pkl file' + \
             f'\nThey differ in these parameters: {list(set(self._par_names).symmetric_difference(set(self._ind_para["jnames"])))}.'
@@ -5694,7 +5795,8 @@ class load_result:
                 for n in range(self._nplanet):
                     # phase["pl1"] if only one planet and counting for more
                     phase[f"pl{n+1}"]    = phase_fold(t=df["time"],                        per=self.params.P[n], t0=self.params.T0[n], phase0=-0.25)
-                    phase_sm[f"pl{n+1}"] = phase_fold(t=self._lc_smooth_time_mod[lc].time, per=self.params.P[n], t0=self.params.T0[n], phase0=-0.25)
+                    phase[f"pl{n+1}"]    = phase[f"pl{n+1}"]%1 if all(abs(phase[f"pl{n+1}"])>0.1) else phase[f"pl{n+1}"]
+                    phase_sm[f"pl{n+1}"] = phase_fold(t=self._lc_smooth_time_mod[lc].time, per=self.params.P[n], t0=self.params.T0[n], phase0=min(phase[f"pl{n+1}"]))
 
                 mop = SN(   time              = df["time"],
                             phase             = phase,
@@ -5907,8 +6009,12 @@ class load_result:
             res_obj = load_lightcurves( input_lc = resid_data, 
                                         filters  = self._ind_para["filters"],
                                         nplanet  = self._nplanet)
+            if hasattr(self, "_ind_para") and self._ind_para["custom_LCfunc"].func is not None:
+                res_obj._custom_LCfunc = self._ind_para["custom_LCfunc"]
         elif  data=="rv":
             res_obj = load_rvs(input_rv = resid_data, nplanet=self._nplanet)
+            if hasattr(self, "_ind_para") and self._ind_para["custom_RVfunc"].func is not None:
+                res_obj._custom_RVfunc = self._ind_para["custom_RVfunc"]
 
         return res_obj
 

@@ -1,38 +1,30 @@
 # ========================================== CONAN YAML Configuration ==========================================
-# This is a template YAML configuration file for CONAN v3.3.12
+# This is a YAML configuration file for CONAN v3.3.12
 # PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
 
 general:
-  lc_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
-  rv_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
-  n_planet   : 1
-  rv_unit    : km/s
+  n_planet: 1
 
 photometry:
-  auto_decorr:
-    get_decorr  : False
-    delta_bic   : -5
-    exclude_cols: []
-    exclude_pars: []
-    enforce_pars: []
   light_curves:
+    filepath     : /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
     names        : [lc6bjd.dat, WASP-127_S9.dat]
     filters      : [R, T]
     wavelength_um: [0.6, 0.8]
     supersampling: [None, 30]
     clip_outliers: [c1:W11C5n1, c1:W5C4.2n1]
     scale_columns: [med_sub, None]
-    spline       : [None, None]
-    apply_jitter : [y, y]
+    spline       : None
+    apply_jitter : y
     baseline:
-      offset: [y, y]
-      col0  : [0, 0]
-      col3  : [0, 0]
-      col4  : [0, 0]
+      offset: y
+      col0  : 0
+      col3  : 0
+      col4  : 0
       col5  : [2, 0]
       col6  : [1, 0]
-      col7  : [0, 0]
-      col8  : [0, 0]
+      col7  : 0
+      col8  : 0
   sinusoid:
     names: []
     trig : []
@@ -84,25 +76,27 @@ photometry:
   contamination:
     filters      : [R, T]
     contam_factor: ['F(0)', 'F(0)']
-
-radial_velocity:
   auto_decorr:
     get_decorr  : False
     delta_bic   : -5
     exclude_cols: []
     exclude_pars: []
     enforce_pars: []
+
+radial_velocity:
   rv_curves:
+    filepath     : /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
+    rv_unit      : km/s
     names        : [rv1.dat, rv2.dat]
-    scale_columns: [med_sub, med_sub]
-    spline       : [None, None]
-    apply_jitter : [y, y]
+    scale_columns: med_sub
+    spline       : None
+    apply_jitter : y
     baseline:
       gammas: ['N(-9.229240663524008,0.1)', 'N(-9.210554832958305,0.1)']
       col0  : [2, 0]
       col3  : [1, 0]
       col4  : [1, 0]
-      col5  : [0, 0]
+      col5  : 0
   gp:
     - rv_name     : None
       kernel      : None
@@ -122,6 +116,12 @@ radial_velocity:
     extra_args     : None
     op_func        : None
     replace_RVmodel: False
+  auto_decorr:
+    get_decorr  : False
+    delta_bic   : -5
+    exclude_cols: []
+    exclude_pars: []
+    enforce_pars: []
 
 planet_parameters:
   rho_star    : 'N(0.565,0.035)'

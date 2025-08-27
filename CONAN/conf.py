@@ -105,7 +105,7 @@ def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbo
                                 rerun_result=True, resume_sampling=resume_sampling, verbose=verbose)
 
     return result
-    
+
 def _skip_lines(file, n):
     """ takes an open file object and skips the reading of lines by n lines """
     for i in range(n):
@@ -303,6 +303,8 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
         A dictionary containing the YAML configuration.
     """
 
+    abbr_reps = lambda x: x if np.iterable(x) and len(set(x))>1 else [] if np.iterable(x) and len(set(x))==0 else x[0]  # abbreviate list of items. if all same, return the first item
+
     sine        = lc_obj._sine_dict
     planet_pars = lc_obj._planet_pars
     rho_dur     = 'rho' if "rho_star" in planet_pars["pl1"] else 'dur'
@@ -419,40 +421,31 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
         
         # General Configuration
         'general': {
-            'lc_filepath': lc_obj._fpath,
-            'rv_filepath': rv_obj._fpath,
             'n_planet': lc_obj._nplanet if lc_obj!=None else rv_obj._nplanet,
-            'rv_unit': rv_obj._RVunit if rv_obj!=None else 'm/s'
             },
         
         # Photometry Configuration
         'photometry': {
-            'auto_decorr': {
-                'get_decorr': False,
-                'delta_bic': -5,
-                'exclude_cols': [],
-                'exclude_pars': [],
-                'enforce_pars': []
-            },
             
             'light_curves': {
+                'filepath': lc_obj._fpath,
                 'names': lc_obj._names,
-                'filters': lc_obj._filters,
-                'wavelength_um': lc_obj._wl,
-                'supersampling': [int(c.config.split('x')[1]) if c.config[0]=='x' else c.config for c in lc_obj._ss],
-                'clip_outliers': lc_obj._clipped_data.config,
-                'scale_columns': lc_obj._rescaled_data.config,
-                'spline': [lc_obj._lcspline[n].conf for n in lc_obj._names],
-                'apply_jitter': fit_obj._fit_dict['apply_LCjitter'] if  fit_obj._fit_dict['apply_LCjitter']!=[] else 'n',
+                'filters': abbr_reps(lc_obj._filters),
+                'wavelength_um': abbr_reps(lc_obj._wl),
+                'supersampling': abbr_reps([int(c.config.split('x')[1]) if c.config[0]=='x' else c.config for c in lc_obj._ss]),
+                'clip_outliers': abbr_reps(lc_obj._clipped_data.config),
+                'scale_columns': abbr_reps(lc_obj._rescaled_data.config) if lc_obj._rescaled_data.config!=[] else [],
+                'spline': abbr_reps([lc_obj._lcspline[n].conf for n in lc_obj._names]),
+                'apply_jitter': abbr_reps(fit_obj._fit_dict['apply_LCjitter']) if  fit_obj._fit_dict['apply_LCjitter']!=[] else 'n',
                 'baseline': {
-                    'offset': lc_obj._fit_offset,
-                    'col0': [int(c[0]) for c in lc_obj._bases],
-                    'col3': [int(c[1]) for c in lc_obj._bases],
-                    'col4': [int(c[2]) for c in lc_obj._bases],
-                    'col5': [int(c[3]) for c in lc_obj._bases],
-                    'col6': [int(c[4]) for c in lc_obj._bases],
-                    'col7': [int(c[5]) for c in lc_obj._bases],
-                    'col8': [int(c[6]) for c in lc_obj._bases]
+                    'offset': abbr_reps(lc_obj._fit_offset),
+                    'col0': abbr_reps([int(c[0]) for c in lc_obj._bases]),
+                    'col3': abbr_reps([int(c[1]) for c in lc_obj._bases]),
+                    'col4': abbr_reps([int(c[2]) for c in lc_obj._bases]),
+                    'col5': abbr_reps([int(c[3]) for c in lc_obj._bases]),
+                    'col6': abbr_reps([int(c[4]) for c in lc_obj._bases]),
+                    'col7': abbr_reps([int(c[5]) for c in lc_obj._bases]),
+                    'col8': abbr_reps([int(c[6]) for c in lc_obj._bases])
                     }
                 },
 
@@ -512,30 +505,33 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
             'contamination': {
                 'filters': list(lc_obj._contfact_dict.keys()),
                 'contam_factor': [v.prior_str for v in lc_obj._contfact_dict.values()]
-                }
-        },
+                },
         
-        # Radial Velocity Configuration
-        'radial_velocity': {
             'auto_decorr': {
                 'get_decorr': False,
                 'delta_bic': -5,
                 'exclude_cols': [],
                 'exclude_pars': [],
                 'enforce_pars': []
-            },
+            },        
+        },
+        
+        # Radial Velocity Configuration
+        'radial_velocity': {
             
             'rv_curves': {
+                'filepath': rv_obj._fpath,
+                'rv_unit': rv_obj._RVunit if rv_obj!=None else 'm/s',
                 'names': rv_obj._names,
-                'scale_columns': rv_obj._rescaled_data.config,
-                'spline': [rv_obj._rvspline[n].conf for n in rv_obj._names],
-                'apply_jitter': fit_obj._fit_dict['apply_RVjitter'] if  fit_obj._fit_dict['apply_RVjitter']!=[] else 'n',
+                'scale_columns': abbr_reps(rv_obj._rescaled_data.config) if rv_obj._rescaled_data.config!=[] else [],
+                'spline': abbr_reps([rv_obj._rvspline[n].conf for n in rv_obj._names]),
+                'apply_jitter': abbr_reps(fit_obj._fit_dict['apply_RVjitter'] if  fit_obj._fit_dict['apply_RVjitter']!=[] else 'n'),
                 'baseline': {
                     'gammas': [gam.prior_str for gam in rv_obj._rvdict["gamma"]],
-                    'col0': [int(c[0]) for c in rv_obj._RVbases],
-                    'col3': [int(c[1]) for c in rv_obj._RVbases],
-                    'col4': [int(c[2]) for c in rv_obj._RVbases],
-                    'col5': [int(c[3]) for c in rv_obj._RVbases],
+                    'col0': abbr_reps([int(c[0]) for c in rv_obj._RVbases]),
+                    'col3': abbr_reps([int(c[1]) for c in rv_obj._RVbases]),
+                    'col4': abbr_reps([int(c[2]) for c in rv_obj._RVbases]),
+                    'col5': abbr_reps([int(c[3]) for c in rv_obj._RVbases]),
                 }
             },
             
@@ -548,6 +544,14 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
                 'extra_args': rv_obj._custom_RVfunc.extra_args if rv_obj._custom_RVfunc.extra_args!={} else None,
                 'op_func': rv_obj._custom_RVfunc.op_func.__name__ if rv_obj._custom_RVfunc.op_func!=None else None,
                 'replace_RVmodel': rv_obj._custom_RVfunc.replace_RVmodel
+            },
+            
+            'auto_decorr': {
+                'get_decorr': False,
+                'delta_bic': -5,
+                'exclude_cols': [],
+                'exclude_pars': [],
+                'enforce_pars': []
             }
         },
         
@@ -617,7 +621,7 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
 
     # Write the formatted file
     header = """# ========================================== CONAN YAML Configuration ==========================================\n"""
-    header += f"""# This is a template YAML configuration file for CONAN v{__version__}\n"""
+    header += f"""# This is a YAML configuration file for CONAN v{__version__}\n"""
     header += """# PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'\n\n"""
 
 
@@ -1426,47 +1430,63 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
     """
 
     _file    = yaml.safe_load(open(configfile,'r'))
-    # version  = _file["version"]
-    # version  = tuple(map(int, (version.split("."))))   # -> (3,3,1)
+    for k in _file:
+        assert k in ['general','photometry','radial_velocity','planet_parameters',
+                        'stellar_parameters','fit_setup']
+        if k == 'general':
+            for k1 in _file[k]:
+                assert k1 in ['n_planet']
+        if k == 'photometry':
+            for k1 in _file[k]:
+                assert k1 in ['light_curves','sinusoid','gp','limb_darkening','tdv','ttv',
+                                'phase_curve','custom_LC_function','contamination','auto_decorr']
+        if k == 'radial_velocity':
+            for k1 in _file[k]:
+                assert k1 in ['rv_curves','gp','custom_RV_function','auto_decorr']
+        if k == 'planet_parameters':
+            for k1 in _file[k]:
+                assert k1 in ['rho_star','Duration','RpRs','Impact_para','T_0','Period',
+                                'Eccentricity','omega','sesinw','secosw','K']
+        if k == 'stellar_parameters':
+            for k1 in _file[k]:
+                assert k1 in ['radius_rsun','mass_msun','input_method']
+        if k == 'fit_setup':
+            for k1 in _file[k]:
+                assert k1 in ['sampler','number_of_processes','emcee_number_steps',
+                                'leastsq_for_basepar','light_travel_time_correction',
+                                'emcee_number_chains','emcee_burnin_length',
+                                'emcee_move','dynesty_nlive','force_nlive',
+                                'dynesty_dlogz','dynesty_nested_sampling',
+                                'lc_jitter_loglims','rv_jitter_lims',
+                                'lc_basecoeff_lims','rv_basecoeff_lims',
+                                'apply_lc_gpndim_jitter','apply_rv_gpndim_jitter',
+                                'apply_lc_gpndim_offset','apply_rv_gpndim_offset']
 
-    fpath    = _file["general"]["lc_filepath"]                         # the path where the files are
-    rv_fpath = _file["general"]["rv_filepath"]                        # the path where the files are
 
-    
-    fpath    = fpath if lc_path is None else lc_path
-    rv_fpath = rv_fpath if rv_path is None else rv_path
-
-    nplanet  = _file["general"]["n_planet"]
-    RVunit   = _file["general"].get("rv_unit","m/s")  #default is m/s
-
+    nplanet  = _file["general"].get("n_planet", 1)
 
     assert nplanet > 0, f"n_planet must be > 0 but {nplanet} given"
-    assert os.path.exists(fpath), f"Light curve file path {fpath} does not exist"
-    assert os.path.exists(rv_fpath), f"Radial velocity file path {rv_fpath} does not exist"
 
     if "photometry" in _file:
-        #### auto decorrelation
-        use_decorr   = _file["photometry"]["auto_decorr"]["get_decorr"]
-        del_BIC      = _file["photometry"]["auto_decorr"]["delta_bic"]
-        exclude_cols = _file["photometry"]["auto_decorr"]["exclude_cols"]
-        exclude_pars = _file["photometry"]["auto_decorr"]["exclude_pars"]
-        enforce_pars = _file["photometry"]["auto_decorr"]["enforce_pars"]
 
         # ========== Lightcurve input ====================
         lcs         = _file["photometry"]["light_curves"]
+        lc_fpath    = lcs.get("filepath", None)                         # the path where the files are
+        lc_fpath    = lc_fpath if lc_path is None else lc_path
+
         if isinstance(lcs["names"], str):  # if it is a string, convert to list
             lcs["names"] = [lcs["names"]]
         elif isinstance(lcs["names"], list):
             assert len(set(lcs["names"])) == len(lcs["names"]), "Light curve names must be given in a list and must be unique"
-        
+
         nphot = len(lcs["names"])
     else:
         nphot = 0
 
-
+    
     if nphot>0:
         for k,v in lcs.items():
-            if k not in ['baseline','sinusoid']:
+            if k != 'baseline':
                 if isinstance(v, (str, int, float)):
                     v = [v] * nphot
                 elif isinstance(v, list):
@@ -1475,306 +1495,340 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                     else:
                         assert len(v)==nphot, f'{k} must be a list of length {nphot} but {len(v)} given'
                 lcs[k] = v
-            else:
-                if k =='sinusoid' and v["names"] in ["all","filt","same"]:
-                    for bk, bv in v.items():
-                        assert isinstance(bv, (str,float,int)) or (isinstance(bv, list) and len(bv)==1), f'{k}:{bk} must be a string, float, int or a list of length 1 but {bv} given'
-                        if isinstance(bv, list):
-                            lcs[k][bk] = bv[0]
-                else:
-                    for bk, bv in v.items():
-                        if isinstance(bv, (str, int, float)):
-                            bv = [bv] * nphot
-                        elif isinstance(bv, list):
-                            if len(bv)==1: # if it is a single value, convert to list of nphot
-                                bv = [bv[0]] * nphot
-                            else:
-                                assert len(bv)==nphot, f'{k}:{bk} must be a list of length {nphot} but {len(bv)} given'
-                        lcs[k][bk] = bv
+            elif k == 'baseline' and lcs["baseline"]!='None':
+                for bk, bv in v.items():
+                    if isinstance(bv, (str, int, float)):
+                        bv = [bv] * nphot
+                    elif isinstance(bv, list):
+                        if len(bv)==1: # if it is a single value, convert to list of nphot
+                            bv = [bv[0]] * nphot
+                        else:
+                            assert len(bv)==nphot, f'{k}:{bk} must be a list of length {nphot} but {len(bv)} given'
+                    lcs[k][bk] = bv
 
-        _names      = lcs["names"]    # list of light curve names
-        _filters    = lcs["filters"]  # list of light curve filters
-        _wl         = lcs["wavelength_um"]  # list of light curve central wavelengths
-
-        _filtnames   = list(sorted(set(_filters),key=_filters.index))
-        nfilt       = len(set(_filters))  # number of filters
-
-        #supersampling
-        _ss_lclist  = []  # list of light curve names to supersample
-        _ss_fac     = []
-        for n,sf in zip(_names, lcs["supersampling"]):
-            if sf!='None':
-                _ss_lclist.append(n)
-                _ss_fac.append(sf)
-        
-        #clip_outlier
-        _clip_cols, _clip_lclist, _clip, _clip_width, _clip_niter  = [],[],[],[],[]
-        for n,co in zip(_names, lcs["clip_outliers"]):
-            if co != "None":
-                _clip_lclist.append(n)
-                _clip_niter.append(int(co.split("n")[1])) 
-                clip_v = float(co.split("n")[0].split("C")[1]) 
-                _clip.append(int(clip_v) if clip_v.is_integer() else clip_v)                   # outlier clip value
-                _clip_width.append(int(co.split("n")[0].split("C")[0].split("W")[1])) # windown width
-                col_nos = co.split(":")[0][1:]  # column numbers to clip
-                if col_nos == "a": col_nos = "135678"  # clip all valid columns
-                _clip_cols.append(col_nos)  # append the column numbers
-
-        _sclcol     = lcs["scale_columns"]      # list of columns to scale
-        _offset     = lcs["baseline"]["offset"]  # list of offsets for each light curve
-
-        _bases      = {}
-        for c in lcs["baseline"]:
-            if c.startswith('col'):
-                _bases[f'd{c}'] = lcs["baseline"][c]
-
-        # spline
-        _spl_lclist = []  # list of light curves with spline
-        _spl_deg    = []  # list of spline degrees
-        _spl_par    = []  # list of spline parameters
-        _spl_knot   = []  # list of spline knots    
-        for n,spl in zip(_names, lcs["spline"]):
-            if spl != "None":
-                _spl_lclist.append(n)
-                if "|" not in spl:   # 1D spline
-                    k1 = spl.split("k")[-1]
-                    _spl_knot.append((int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1)
-                    _spl_deg.append(int(spl.split("k")[0].split("d")[-1]))
-                    _spl_par.append("col" + spl.split("d")[0][1])
-                else: # 2D spline
-                    sp    = spl.split("|")  # split the diff spline configs
-                    k1,k2 = sp[0].split("k")[-1], sp[1].split("k")[-1]
-                    k_1   = (int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1
-                    k_2   = (int(k2) if float(k2).is_integer() else float(k2)) if k2 != "r" else k2
-                    _spl_knot.append( (k_1,k_2) )
-                    _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
-                    _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) ) 
-
-        #sinusoid
-        sin_lclist, trig, sin_n, sin_par, sin_Amp, sin_Per, sin_x0 = [],[],[],[],[],[],[]
-        sin = _file["photometry"]["sinusoid"]
-        if isinstance(sin["names"], str):  # if it is a string, convert to list
-            sin_lclist = sin["names"]
-            trig = sin["trig"]
-            sin_n = sin["n"]
-            sin_par = sin["par"]    
-            sin_Amp = sin["amp"]
-            sin_Per = sin["P"]
-            sin_x0 = sin["x0"]
-        elif isinstance(sin["names"], list):  
-            for i,nm in enumerate(sin["names"]):
-                sin_lclist.append(nm)
-                trig.append(sin['trig'][i])
-                sin_n.append(sin['n'][i])
-                sin_par.append(sin['par'][i])
-                sin_Amp.append(_prior_value(sin['amp'][i]))
-                sin_Per.append(_prior_value(sin["P"][i]))
-                sin_x0.append(_prior_value(sin["x0"][i]))
-
-        if len(sin_lclist)==1:
-            sin_lclist = sin_lclist[0]  if sin_lclist[0] in ["all","same","filt"] else sin_lclist
-        elif len(sin_lclist) > 1:
-            if set(sin_lclist) == set(_names):  #if all light curves have a sin term
-                sin_lclist = "all" if len(sin_lclist) > 1 else sin_lclist[0]
-
-        # ========== GP input ====================
-        gp_lclist,op, _useGPphot = [],  [], ['n']*nphot
-        gp_pars, kernels, amplitude, lengthscale, h3, h4 = [],[],[],[],[],[]
-        gp = _file["photometry"]["gp"]
-        
-        for thisgp in gp:
-            if thisgp['lc_name']=='None':
-                pass
-            else:
-                gp_lclist.append(thisgp["lc_name"])
-
-            ngp = len(thisgp["kernel"]) if isinstance(thisgp["kernel"], list) else 1
-            assert isinstance(thisgp["gp_pck"],str) and thisgp["gp_pck"] in ["ge","ce","sp", "n"], f"gp: gp_pck must be one of ['ge','ce','sp', 'n'] but {thisgp['gp_pck']} given"
-            if thisgp["lc_name"] in ["all","same"]:
-                _useGPphot = [thisgp["gp_pck"]]*nphot
-            elif thisgp["lc_name"] in _names:
-                _useGPphot[_names.index(thisgp["lc_name"])] = thisgp["gp_pck"]
-            elif thisgp["lc_name"] in _filtnames:
-                for j in np.where(np.array(_filters)==thisgp["lc_name"])[0]:
-                    _useGPphot[j] = thisgp["gp_pck"]
-            elif thisgp["lc_name"]=='None':
-                pass
-            else:
-                raise ValueError(f"gp: lc_name {thisgp['lc_name']} not found in light curve names {_names} or filters {_filtnames} and not 'all' or 'same' ")
-
-
-            if ngp ==1:  # if there is only one kernel
-                for p in ['kernel','par','h1_amp', 'h2_len_scale', 'h3_other', 'h4_period']:
-                    if isinstance(thisgp[p], list):
-                        assert len(thisgp[p]) == 1, f"if there is only one kernel, {p} must be a single value but {thisgp[p]} given"
-                        thisgp[p] = thisgp[p][0]  # convert to single value
-                    elif thisgp[p] is 'None':  # if the prior is None, set it to None
-                        thisgp[p] = None
-
-                gp_pars.append(thisgp["par"])
-                kernels.append(thisgp["kernel"])
-                amplitude.append(_prior_value(thisgp["h1_amp"]))
-                lengthscale.append(_prior_value(thisgp["h2_len_scale"]))
-                h3.append(_prior_value(thisgp["h3_other"]))
-                h4.append(_prior_value(thisgp["h4_period"]))
-                op.append("")
-
-            else:  # if there are multiple kernels
-                for p in ['h1_amp', 'h2_len_scale', 'h3_other', 'h4_period']:
-                    if not isinstance(thisgp[p], list):  # if the prior is None, set it to None
-                        thisgp[p] = [thisgp[p]] * ngp
-
-                gp_pars.append(tuple(thisgp["par"]))
-                kernels.append(tuple(thisgp["kernel"]))
-                amplitude.append( tuple([_prior_value(p) for p in thisgp["h1_amp"]] ))
-                lengthscale.append(tuple([_prior_value(p) for p in thisgp["h2_len_scale"]] ))
-                h3.append(tuple([_prior_value(p) for p in thisgp["h3_other"]] ))
-                h4.append(tuple([_prior_value(p) for p in thisgp["h4_period"]] ))
-                op.append(tuple([p for p in thisgp["operation"]]))
-
-
-        #check that the elements of _clip_cols are the same
-        if len(_clip_cols) > 1:
-            assert len(set(_clip_cols)) == 1, f"all columns to clip must be the same for all files but {_clip_cols} given"
-        if _clip_cols!=[]: 
-            _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
+        _names      = lcs["names"]                      # list of light curve names
+        _filters    = lcs.get("filters", ['V']*nphot)   # list of light curve filters
+        _wl         = lcs.get("wavelength_um", None)    # list of light curve central wavelengths
+        _filtnames  = list(sorted(set(_filters),key=_filters.index))
+        nfilt       = len(set(_filters))                # number of filters
 
         # instantiate light curve object
-        lc_obj = load_lightcurves(_names, data_filepath=fpath, filters=_filters, wl=_wl, nplanet=nplanet, verbose=verbose)
-        lc_obj.lc_baseline(_offset.copy(), **_bases,  gp=_useGPphot,verbose=False )
-        lc_obj.add_sinusoid(lc_list=sin_lclist, trig=trig, n=sin_n, par=sin_par, Amp = sin_Amp, P=sin_Per, x0=sin_x0, verbose=False)
-        lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,niter=_clip_niter, show_plot=False,verbose=False )
-        lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
-        lc_obj.supersample(lc_list=_ss_lclist, ss_factor=_ss_fac, verbose=False)
-        lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
-                            knot_spacing=_spl_knot , verbose=False)
-        if verbose: lc_obj.print("lc_baseline")
-        if gp_lclist !=[]: 
-            gp_lclist = gp_lclist[0] if gp_lclist[0] in ['same','all'] else gp_lclist
-        gp_pck = [_useGPphot[lc_obj._names.index(lc)] for lc in lc_obj._gp_lcs()]if _useGPphot!=[] else []
-        lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
-                        amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,gp_pck=gp_pck,
-                        verbose=verbose)
-        lc_obj._fit_offset = _offset
+        # assert os.path.exists(lc_fpath), f"Light curve file path {lc_fpath} does not exist"
+        lc_obj = load_lightcurves(_names, data_filepath=lc_fpath, filters=_filters, wl=_wl, nplanet=nplanet, verbose=verbose)
 
+        # baseline
+        if "baseline" in lcs and lcs["baseline"]!='None':
+            _offset = lcs["baseline"]["offset"]  # list of offsets for each light curve
+            _bases  = {}
+            for c in lcs["baseline"]:
+                if c.startswith('col'):
+                    _bases[f'd{c}'] = lcs["baseline"][c]
+            lc_obj.lc_baseline(_offset.copy(), **_bases,  gp=lc_obj._useGPphot,verbose=False )
+        else:
+            _offset = ["y"] * nphot
+            lc_obj.lc_baseline( verbose=False)
+
+        # supersampling
+        if 'supersampling' in lcs:
+            _ss_lclist  = []  # list of light curve names to supersample
+            _ss_fac     = []
+            for n,sf in zip(_names, lcs["supersampling"]):
+                if sf!='None':
+                    _ss_lclist.append(n)
+                    _ss_fac.append(sf)
+            lc_obj.supersample(lc_list=_ss_lclist, ss_factor=_ss_fac, verbose=False)
+
+        # clip_outlier
+        if 'clip_outliers' in lcs:
+            _clip_cols, _clip_lclist, _clip, _clip_width, _clip_niter  = [],[],[],[],[]
+            for n,co in zip(_names, lcs["clip_outliers"]):
+                if co != "None":
+                    _clip_lclist.append(n)
+                    _clip_niter.append(int(co.split("n")[1])) 
+                    clip_v = float(co.split("n")[0].split("C")[1]) 
+                    _clip.append(int(clip_v) if clip_v.is_integer() else clip_v)                   # outlier clip value
+                    _clip_width.append(int(co.split("n")[0].split("C")[0].split("W")[1])) # windown width
+                    col_nos = co.split(":")[0][1:]  # column numbers to clip
+                    if col_nos == "a": col_nos = "135678"  # clip all valid columns
+                    _clip_cols.append(col_nos)  # append the column numbers
+
+            # check that the elements of _clip_cols are the same
+            if len(_clip_cols) > 1:
+                assert len(set(_clip_cols)) == 1, f"all columns to clip must be the same for all files but {_clip_cols} given"
+            if _clip_cols!=[]: 
+                _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
+
+            lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,niter=_clip_niter, show_plot=False,verbose=False )
+
+        # scale columns
+        if 'scale_columns' in lcs:
+            _sclcol     = lcs["scale_columns"]      # list of config for scaling the  columns
+            lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
+
+        # spline
+        if 'spline' in lcs:
+            _spl_lclist = []  # list of light curves with spline
+            _spl_deg    = []  # list of spline degrees
+            _spl_par    = []  # list of spline parameters
+            _spl_knot   = []  # list of spline knots    
+            for n,spl in zip(_names, lcs["spline"]):
+                if spl != "None":
+                    _spl_lclist.append(n)
+                    if "|" not in spl:   # 1D spline
+                        k1 = spl.split("k")[-1]
+                        _spl_knot.append((int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1)
+                        _spl_deg.append(int(spl.split("k")[0].split("d")[-1]))
+                        _spl_par.append("col" + spl.split("d")[0][1])
+                    else: # 2D spline
+                        sp    = spl.split("|")  # split the diff spline configs
+                        k1,k2 = sp[0].split("k")[-1], sp[1].split("k")[-1]
+                        k_1   = (int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1
+                        k_2   = (int(k2) if float(k2).is_integer() else float(k2)) if k2 != "r" else k2
+                        _spl_knot.append( (k_1,k_2) )
+                        _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
+                        _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) ) 
+
+            lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
+                                knot_spacing=_spl_knot , verbose=False)
+
+        if 'apply_jitter' not in lcs:
+            lcs['apply_jitter'] = 'y'
+
+        # sinusoid
+        if 'sinusoid' in _file["photometry"]:
+            sin_lclist, trig, sin_n, sin_par, sin_Amp, sin_Per, sin_x0 = [],[],[],[],[],[],[]
+            sin = _file["photometry"]["sinusoid"]
+            if isinstance(sin["names"], str):  # if it is a string, convert to list
+                sin_lclist = sin["names"]
+                trig = sin["trig"]
+                sin_n = sin["n"]
+                sin_par = sin["par"]    
+                sin_Amp = sin["amp"]
+                sin_Per = sin["P"]
+                sin_x0 = sin["x0"]
+            elif isinstance(sin["names"], list):  
+                for i,nm in enumerate(sin["names"]):
+                    sin_lclist.append(nm)
+                    trig.append(sin['trig'][i])
+                    sin_n.append(sin['n'][i])
+                    sin_par.append(sin['par'][i])
+                    sin_Amp.append(_prior_value(sin['amp'][i]))
+                    sin_Per.append(_prior_value(sin["P"][i]))
+                    sin_x0.append(_prior_value(sin["x0"][i]))
+
+            if len(sin_lclist)==1:
+                sin_lclist = sin_lclist[0]  if sin_lclist[0] in ["all","same","filt"] else sin_lclist
+            elif len(sin_lclist) > 1:
+                if set(sin_lclist) == set(_names):  #if all light curves have a sin term
+                    sin_lclist = "all" if len(sin_lclist) > 1 else sin_lclist[0]
+
+            lc_obj.add_sinusoid(lc_list=sin_lclist, trig=trig, n=sin_n, par=sin_par, Amp = sin_Amp, P=sin_Per, x0=sin_x0, verbose=False)
+
+        # ========== GP input ====================
+        if 'gp' in _file["photometry"]:
+            gp_lclist,op, _useGPphot = [],  [], ['n']*nphot
+            gp_pars, kernels, amplitude, lengthscale, h3, h4 = [],[],[],[],[],[]
+            gp = _file["photometry"]["gp"]
+
+            for thisgp in gp:
+                if thisgp['lc_name']=='None':
+                    pass
+                else:
+                    gp_lclist.append(thisgp["lc_name"])
+
+                ngp = len(thisgp["kernel"]) if isinstance(thisgp["kernel"], list) else 1
+                assert isinstance(thisgp["gp_pck"],str) and thisgp["gp_pck"] in ["ge","ce","sp", "n"], f"gp: gp_pck must be one of ['ge','ce','sp', 'n'] but {thisgp['gp_pck']} given"
+                if thisgp["lc_name"] in ["all","same"]:
+                    _useGPphot = [thisgp["gp_pck"]]*nphot
+                elif thisgp["lc_name"] in _names:
+                    _useGPphot[_names.index(thisgp["lc_name"])] = thisgp["gp_pck"]
+                elif thisgp["lc_name"] in _filtnames:
+                    for j in np.where(np.array(_filters)==thisgp["lc_name"])[0]:
+                        _useGPphot[j] = thisgp["gp_pck"]
+                elif thisgp["lc_name"]=='None':
+                    pass
+                else:
+                    raise ValueError(f"gp: lc_name {thisgp['lc_name']} not found in light curve names {_names} or filters {_filtnames} and not 'all' or 'same' ")
+
+                if ngp ==1:  # if there is only one kernel
+                    for p in ['kernel','par','h1_amp', 'h2_len_scale', 'h3_other', 'h4_period']:
+                        if isinstance(thisgp[p], list):
+                            assert len(thisgp[p]) == 1, f"if there is only one kernel, {p} must be a single value but {thisgp[p]} given"
+                            thisgp[p] = thisgp[p][0]  # convert to single value
+                        elif thisgp[p] is 'None':  # if the prior is None, set it to None
+                            thisgp[p] = None
+
+                    gp_pars.append(thisgp["par"])
+                    kernels.append(thisgp["kernel"])
+                    amplitude.append(_prior_value(thisgp["h1_amp"]))
+                    lengthscale.append(_prior_value(thisgp["h2_len_scale"]))
+                    h3.append(_prior_value(thisgp["h3_other"]))
+                    h4.append(_prior_value(thisgp["h4_period"]))
+                    op.append("")
+
+                else:  # if there are multiple kernels
+                    for p in ['h1_amp', 'h2_len_scale', 'h3_other', 'h4_period']:
+                        if not isinstance(thisgp[p], list):  # if the prior is None, set it to None
+                            thisgp[p] = [thisgp[p]] * ngp
+
+                    gp_pars.append(tuple(thisgp["par"]))
+                    kernels.append(tuple(thisgp["kernel"]))
+                    amplitude.append( tuple([_prior_value(p) for p in thisgp["h1_amp"]] ))
+                    lengthscale.append(tuple([_prior_value(p) for p in thisgp["h2_len_scale"]] ))
+                    h3.append(tuple([_prior_value(p) for p in thisgp["h3_other"]] ))
+                    h4.append(tuple([_prior_value(p) for p in thisgp["h4_period"]] ))
+                    op.append(tuple([p for p in thisgp["operation"]]))
+
+            if gp_lclist !=[]: 
+                gp_lclist = gp_lclist[0] if gp_lclist[0] in ['same','all'] else gp_lclist
+            gp_pck = _useGPphot #[_useGPphot[lc_obj._names.index(lc)] for lc in lc_obj._gp_lcs()] if _useGPphot!=[] else []
+            lc_obj.add_GP(lc_list=gp_lclist,par=gp_pars,kernel=kernels,operation=op,
+                            amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,gp_pck=gp_pck,
+                            verbose=verbose)
+        
+        
+        lc_obj._fit_offset = _offset
+        if verbose:
+            lc_obj.print("lc_baseline")
 
         ## limb darkening
-        ldc = _file["photometry"]["limb_darkening"]
-        assert len(ldc["filters"]) == len(lc_obj._filnames), f"number of filters in limb darkening ({len(ldc['filters'])}) must be equal to number of unique light curve filters ({len(lc_obj._filnames)})"
-        
-        for i,f in enumerate(ldc["filters"]):
-            assert f in lc_obj._filnames, f"LD filter {f} not found in light curve filters {lc_obj._filnames}"
-        
-        f_indc = [list(lc_obj._filnames).index(f) for f in ldc["filters"]]
-        q1 = [_prior_value(ldc["q1"][i]) for i in f_indc]
-        q2 = [_prior_value(ldc["q2"][i]) for i in f_indc]
+        if 'limb_darkening' in _file["photometry"]:
+            ldc = _file["photometry"]["limb_darkening"]
+            assert len(ldc["filters"]) == len(lc_obj._filnames), f"number of filters in limb darkening ({len(ldc['filters'])}) must be equal to number of unique light curve filters ({len(lc_obj._filnames)})"
+
+            for i,f in enumerate(ldc["filters"]):
+                assert f in lc_obj._filnames, f"LD filter {f} not found in light curve filters {lc_obj._filnames}"
+
+            f_indc = [list(lc_obj._filnames).index(f) for f in ldc["filters"]]
+            q1 = [_prior_value(ldc["q1"][i]) for i in f_indc]
+            q2 = [_prior_value(ldc["q2"][i]) for i in f_indc]
+            
+            lc_obj.limb_darkening(q1,q2,verbose=verbose)
+
+        # phase curve
+        if 'phase_curve' in _file["photometry"]:
+            pc = _file["photometry"]["phase_curve"]
+            for k,v in pc.items():
+                if isinstance(v, (str, int, float)):
+                    v = [v] * nfilt
+                elif isinstance(v, list):
+                    if len(v)==1: # if it is a single value, convert to list of nphot
+                        v = [v[0]] * nfilt
+                    else:
+                        assert len(v)==nfilt, f'phase curve: {k} must be a equal to the number of unique filters {nfilt} but {len(v)} given'
+                pc[k] = v
+
+            for i,f in enumerate(pc["filters"]):
+                assert f in lc_obj._filnames, f"phase curve filter {f} not found in light curve filters {lc_obj._filnames}"
+
+            f_indc = [list(lc_obj._filnames).index(f) for f in pc["filters"]]
+
+            D_occ   = [_prior_value(pc["D_occ"][i])  for i in f_indc]
+            Fn      = [_prior_value(pc["Fn"][i])     for i in f_indc]
+            ph_off  = [_prior_value(pc["ph_off"][i]) for i in f_indc]
+            A_ev    = [_prior_value(pc["A_ev"][i])   for i in f_indc]
+            f1_ev   = [_prior_value(pc["f1_ev"][i])  for i in f_indc]
+            A_db    = [_prior_value(pc["A_db"][i])   for i in f_indc]
+            pc_model= [pc["pc_model"][i]             for i in f_indc]
+
+            lc_obj.phasecurve(  D_occ=D_occ, Fn=Fn, ph_off=ph_off, A_ev=A_ev, f1_ev=f1_ev, 
+                                A_db=A_db, pc_model=pc_model,verbose=verbose)
+
+            #to be passed to get_decorr. but only allows one value for now
+            #TODO allow prior per filter
+            pc_pars = dict(     D_occ   = D_occ[0]    if len(D_occ)>0    else 0, 
+                                Fn      = Fn[0]       if len(Fn)>0       else 0, 
+                                ph_off  = ph_off[0]   if len(ph_off)>0   else 0, 
+                                A_ev    = A_ev[0]     if len(A_ev)>0     else 0,
+                                f1_ev   = f1_ev[0]    if len(f1_ev)>0    else 0, 
+                                A_db    = A_db[0]     if len(A_db)>0     else 0,
+                                pc_model= pc_model[0] if len(pc_model)>0 else 0)
+        else:
+            pc_pars = {}
 
 
-        #DDFs
-        tdv = _file["photometry"]["tdv"]
-        ddfyn,ddf_pri,div_wht  = tdv["fit_ddfs"], _prior_value(tdv["drprs"]), tdv["div_white"]
-        
-        #TTVS
-        ttv = _file["photometry"]["ttv"]
-        ttvs, dt, base = ttv["fit_ttvs"], _prior_value(ttv["dt"]), ttv["baseline"]
-        per_LC_T0, incl_partial = ttv["per_LC_T0"], ttv["include_partial"]
+        # custom LC function
+        if "custom_LC_function" in _file["photometry"]:
+            cf = _file["photometry"]["custom_LC_function"]
+            func_name = cf["function"]
+            if func_name!='None':
+                # directly import function named func_name from custom_LCfunc.py
+                import custom_LCfunc
+                custom_lcfunc = getattr(custom_LCfunc, func_name)
 
-        #phase curve
-        pc = _file["photometry"]["phase_curve"]
-        for k,v in pc.items():
-            if isinstance(v, (str, int, float)):
-                v = [v] * nfilt
-            elif isinstance(v, list):
-                if len(v)==1: # if it is a single value, convert to list of nphot
-                    v = [v[0]] * nfilt
+                func_x    = cf["x"]
+                func_args = {}
+                if cf["func_pars"]!='None':
+                    for p_name, p_prior in cf["func_pars"].items():
+                        func_args[p_name] = _prior_value(p_prior)
+
+                extra_args  = cf["extra_args"] if cf["extra_args"]!='None' else {}
+                opfunc_name = cf["op_func"]
+                if opfunc_name!='None':
+                    op_func = getattr(custom_LCfunc, opfunc_name)
                 else:
-                    assert len(v)==nfilt, f'phase curve: {k} must be a equal to the number of unique filters {nfilt} but {len(v)} given'
-            pc[k] = v
+                    op_func = None
 
-        for i,f in enumerate(pc["filters"]):
-            assert f in lc_obj._filnames, f"phase curve filter {f} not found in light curve filters {lc_obj._filnames}"
-        
-        f_indc = [list(lc_obj._filnames).index(f) for f in pc["filters"]]
+                replace_LCmodel = cf["replace_LCmodel"]
+            else:   
+                custom_lcfunc,func_x,func_args,extra_args,op_func,replace_LCmodel = None,None,{},{},None,False
 
-        D_occ = [_prior_value(pc["D_occ"][i]) for i in f_indc]
-        Fn = [_prior_value(pc["Fn"][i]) for i in f_indc]
-        ph_off = [_prior_value(pc["ph_off"][i]) for i in f_indc]
-        A_ev = [_prior_value(pc["A_ev"][i]) for i in f_indc]
-        f1_ev = [_prior_value(pc["f1_ev"][i]) for i in f_indc]
-        A_db = [_prior_value(pc["A_db"][i]) for i in f_indc]
-        pc_model = [pc["pc_model"][i] for i in f_indc]
+            lc_obj.add_custom_LC_function(  func=custom_lcfunc,x=func_x,func_args=func_args,
+                                            extra_args=extra_args,op_func=op_func,replace_LCmodel=replace_LCmodel,
+                                            verbose=verbose)
 
-        #custom LC function
-        cf = _file["photometry"]["custom_LC_function"]
-        func_name = cf["function"]
-        if func_name!='None':
-            # directly import function named func_name from custom_LCfunc.py
-            import custom_LCfunc
-            custom_lcfunc = getattr(custom_LCfunc, func_name)
+        # contamination factors
+        cont_fac = 0
+        if 'contamination' in _file["photometry"]:
+            cont_fac = []
+            contam = _file["photometry"]["contamination"]
+            for k,v in contam.items():
+                if isinstance(v, (str, int, float)):
+                    v = [v] * nfilt
+                elif isinstance(v, list):
+                    if len(v)==1: # if it is a single value, convert to list of nfilt
+                        v = [v[0]] * nfilt
+                    else:
+                        assert len(v)==nfilt, f'contamination: {k} must be a equal to the number of unique filters {nfilt} but {len(v)} given'
+                contam[k] = v
 
-            func_x    = cf["x"]
-            func_args = {}
-            if cf["func_pars"]!='None':
-                for p_name, p_prior in cf["func_pars"].items():
-                    func_args[p_name] = _prior_value(p_prior)
+            for i,f in enumerate(contam["filters"]):
+                assert f in lc_obj._filnames, f"contamination filter {f} not found in LC filters {lc_obj._filnames}"
 
-            extra_args  = cf["extra_args"] if cf["extra_args"]!='None' else {}
-            opfunc_name = cf["op_func"]
-            if opfunc_name!='None':
-                op_func = getattr(custom_LCfunc, opfunc_name)
-            else: op_func = None
+            f_indc = [list(lc_obj._filnames).index(f) for f in contam["filters"]]
 
-            replace_LCmodel = cf["replace_LCmodel"]
-        else:   
-            custom_lcfunc,func_x,func_args,extra_args,op_func,replace_LCmodel = None,None,{},{},None,False
+            cont_fac = [_prior_value(contam["contam_factor"][i]) for i in f_indc]
 
-        #contamination factors
-        cont_fac = []
-        contam = _file["photometry"]["contamination"]
-        for k,v in contam.items():
-            if isinstance(v, (str, int, float)):
-                v = [v] * nfilt
-            elif isinstance(v, list):
-                if len(v)==1: # if it is a single value, convert to list of nphot
-                    v = [v[0]] * nfilt
-                else:
-                    assert len(v)==nfilt, f'contamination: {k} must be a equal to the number of unique filters {nfilt} but {len(v)} given'
-            contam[k] = v
-
-        for i,f in enumerate(contam["filters"]):
-            assert f in lc_obj._filnames, f"contamination filter {f} not found in LC filters {lc_obj._filnames}"
-
-        f_indc = [list(lc_obj._filnames).index(f) for f in contam["filters"]]
-
-        cont_fac = [_prior_value(contam["contam_factor"][i]) for i in f_indc]
+            lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
 
     else:
         lc_obj = load_lightcurves(nplanet=nplanet, verbose=False)
 
-
+    
+    
     ## RV ==========================================================
     if "radial_velocity" in _file:
-        #### auto decorrelation
-        use_decorrRV   = _file["radial_velocity"]["auto_decorr"]["get_decorr"]
-        rvdel_BIC      = _file["radial_velocity"]["auto_decorr"]["delta_bic"]
-        exclude_colsRV = _file["radial_velocity"]["auto_decorr"]["exclude_cols"]
-        exclude_parsRV = _file["radial_velocity"]["auto_decorr"]["exclude_pars"]
-        enforce_parsRV = _file["radial_velocity"]["auto_decorr"]["enforce_pars"]
-        
+
         # ========== RV input ====================
-        rvs  = _file["radial_velocity"]["rv_curves"]
+        rvs      = _file["radial_velocity"]["rv_curves"]
+        rv_fpath = rvs.get("filepath",None)                        # the path where the files are
+        rv_fpath = rv_fpath if rv_path is None else rv_path
+        RVunit   = rvs.get("rv_unit","m/s")  #default is m/s
+
+
         if isinstance(rvs["names"],str):
             rvs["names"] = [rvs["names"]]
         elif isinstance(rvs["names"], list):
             assert len(set(rvs["names"])) == len(rvs["names"]), "RV names must be given in a list and must be unique"
-        
+
         nRV = len(rvs["names"])
     else:
         nRV = 0
 
+
     if nRV > 0:
         for k,v in rvs.items():
-            if k not in ['baseline']:
+            if k != 'baseline':
                 if isinstance(v, (str, int, float)):
                     v = [v] * nRV
                 elif isinstance(v, list):
@@ -1794,140 +1848,157 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                             assert len(bv)==nRV, f'{k}:{bk} must be a list of length {nRV} but {len(bv)} given'
                     rvs[k][bk] = bv
 
-        RVnames   = rvs["names"]    # list of RV names
+        RVnames   = rvs["names"]                # list of RV names
         gammas    = [_prior_value(gam) for gam in rvs["baseline"]["gammas"]]  # list of RV gammas
-        _RVsclcol = rvs["scale_columns"]  # list of columns to scale
 
+        # instantiate the rv object
+        # assert os.path.exists(rv_fpath), f"Radial velocity file path {rv_fpath} does not exist"
+        rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,rv_unit=RVunit,lc_obj=lc_obj, verbose=verbose)
+
+        # baseline
         RVbases    = {}
         for c in rvs["baseline"]:
             if c.startswith('col'):
                 RVbases[f'd{c}'] = rvs["baseline"][c]
+        rv_obj.rv_baseline(**RVbases, gamma=gammas,gp='n',verbose=False) 
 
+        # scale columns
+        if 'scale_columns' in rvs:
+            _RVsclcol     = rvs["scale_columns"]      # list of config for scaling the RV columns
+            rv_obj.rescale_data_columns(method=_RVsclcol,verbose=False)
 
-        _spl_rvlist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
-        for n,spl in zip(RVnames, rvs["spline"]):
-            if spl != "None":
-                _spl_rvlist.append(n)
-                if "|" not in spl:   # 1D spline
-                    k1 = spl.split("k")[-1]
-                    _spl_knot.append((int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1)
-                    _spl_deg.append(int(spl.split("k")[0].split("d")[-1]))
-                    _spl_par.append("col" + spl.split("d")[0][1])
-                else: # 2D spline
-                    sp    = spl.split("|")  # split the diff spline configs
-                    k1,k2 = sp[0].split("k")[-1], sp[1].split("k")[-1]
-                    k_1   = (int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1
-                    k_2   = (int(k2) if float(k2).is_integer() else float(k2)) if k2 != "r" else k2
-                    _spl_knot.append( (k_1,k_2) )
-                    _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
-                    _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) )      
+        # spline
+        if 'spline' in rvs:
+            _spl_rvlist,_spl_deg,_spl_par, _spl_knot=[],[],[],[]
+            for n,spl in zip(RVnames, rvs["spline"]):
+                if spl != "None":
+                    _spl_rvlist.append(n)
+                    if "|" not in spl:   # 1D spline
+                        k1 = spl.split("k")[-1]
+                        _spl_knot.append((int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1)
+                        _spl_deg.append(int(spl.split("k")[0].split("d")[-1]))
+                        _spl_par.append("col" + spl.split("d")[0][1])
+                    else: # 2D spline
+                        sp    = spl.split("|")  # split the diff spline configs
+                        k1,k2 = sp[0].split("k")[-1], sp[1].split("k")[-1]
+                        k_1   = (int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1
+                        k_2   = (int(k2) if float(k2).is_integer() else float(k2)) if k2 != "r" else k2
+                        _spl_knot.append( (k_1,k_2) )
+                        _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
+                        _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) )      
 
-        # RV GP
-        gp_rvlist,op,usegpRV = [],[],['n']*nRV
-        gp_pars, kernels, amplitude, lengthscale, h3, h4, h5, err_col = [],[],[],[],[],[],[],[]
-        gp = _file["radial_velocity"]["gp"]
-        
-        for thisgp in gp:
-            if thisgp["rv_name"]=='None':
-                pass
-            else:
-                gp_rvlist.append(thisgp["rv_name"])
+            rv_obj.add_spline(rv_list=_spl_rvlist ,par=_spl_par, degree=_spl_deg,
+                                knot_spacing=_spl_knot, verbose=False)
+            
+        if 'apply_jitter' not in rvs:
+            rvs['apply_jitter'] = 'y'
 
-            ngp = len(thisgp["kernel"]) if isinstance(thisgp["kernel"], list) else 1
-            assert isinstance(thisgp["gp_pck"],str) and thisgp["gp_pck"] in ["ge","ce","sp", "n"], f"gp: gp_pck must be one of ['ge','ce','sp', 'n'] but {thisgp['gp_pck']} given"
-            if thisgp["rv_name"] in ["all","same"]:
-                usegpRV = [thisgp["gp_pck"]]*nRV
-            elif thisgp["rv_name"] in RVnames:
-                usegpRV[RVnames.index(thisgp["rv_name"])] = thisgp["gp_pck"]
-            elif thisgp['rv_name']=='None':
-                pass
-            else:
-                raise ValueError(f"gp: rv_name {thisgp['rv_name']} not found in RV names {RVnames} and not 'all' or 'same' ")
+        # RV GP ====================
+        if 'gp' in _file["radial_velocity"]:
+            gp_rvlist,op,usegpRV = [],[],['n']*nRV
+            gp_pars, kernels, amplitude, lengthscale, h3, h4, h5, err_col = [],[],[],[],[],[],[],[]
+            gp = _file["radial_velocity"]["gp"]
 
-            if ngp ==1:  # if there is only one kernel
-                for p in ['kernel','par','h1_amp', 'h2_len_scale', 'h3_other', 'h4_period','h5_der_amp', 'error_col']:
-                    if isinstance(thisgp[p], list):
-                        assert len(thisgp[p]) == 1, f"if there is only one kernel, {p} must be a single value but {thisgp[p]} given"
-                        thisgp[p] = thisgp[p][0]  # convert to single value
-                    elif thisgp[p] is 'None':  # if the prior is None, set it to None
-                        thisgp[p] = None
+            for thisgp in gp:
+                if thisgp["rv_name"]=='None':
+                    pass
+                else:
+                    gp_rvlist.append(thisgp["rv_name"])
 
-                gp_pars.append(thisgp["par"])
-                kernels.append(thisgp["kernel"])
-                amplitude.append(_prior_value(thisgp["h1_amp"]))
-                lengthscale.append(_prior_value(thisgp["h2_len_scale"]))
-                h3.append(_prior_value(thisgp["h3_other"]))
-                h4.append(_prior_value(thisgp["h4_period"]))
-                h5.append(_prior_value(thisgp["h5_der_amp"]))
-                err_col.append(thisgp["error_col"])
-                op.append("")
+                ngp = len(thisgp["kernel"]) if isinstance(thisgp["kernel"], list) else 1
+                assert isinstance(thisgp["gp_pck"],str) and thisgp["gp_pck"] in ["ge","ce","sp", "n"], f"gp: gp_pck must be one of ['ge','ce','sp', 'n'] but {thisgp['gp_pck']} given"
+                if thisgp["rv_name"] in ["all","same"]:
+                    usegpRV = [thisgp["gp_pck"]]*nRV
+                elif thisgp["rv_name"] in RVnames:
+                    usegpRV[RVnames.index(thisgp["rv_name"])] = thisgp["gp_pck"]
+                elif thisgp['rv_name']=='None':
+                    pass
+                else:
+                    raise ValueError(f"gp: rv_name {thisgp['rv_name']} not found in RV names {RVnames} and not 'all' or 'same' ")
 
-            else:  # if there are multiple kernels
-                for p in ['h1_amp', 'h2_len_scale', 'h3_other', 'h4_period', 'h5_der_amp', 'error_col']:
-                    if isinstance(thisgp[p], list):
-                        if len(thisgp[p])==1:  # if it is a single value, convert to list of ngp
-                            thisgp[p] = [thisgp[p][0]] * ngp
-                        else:
-                            assert len(thisgp[p])==ngp, f'{p} must be a list of length {ngp} but {len(thisgp[p])} given'
-                    elif not isinstance(thisgp[p], list):  # if the prior is None, set it to None
-                        thisgp[p] = [thisgp[p]] * ngp   
+                if ngp ==1:  # if there is only one kernel
+                    for p in ['kernel','par','h1_amp', 'h2_len_scale', 'h3_other', 'h4_period','h5_der_amp', 'error_col']:
+                        if isinstance(thisgp[p], list):
+                            assert len(thisgp[p]) == 1, f"if there is only one kernel, {p} must be a single value but {thisgp[p]} given"
+                            thisgp[p] = thisgp[p][0]  # convert to single value
+                        elif thisgp[p] is 'None':  # if the prior is None, set it to None
+                            thisgp[p] = None
 
-                gp_pars.append(tuple(thisgp["par"]))
-                kernels.append(tuple(thisgp["kernel"]))
-                amplitude.append( tuple([_prior_value(p) for p in thisgp["h1_amp"]] ))
-                lengthscale.append(tuple([_prior_value(p) for p in thisgp["h2_len_scale"]] ))
-                h3.append(tuple([_prior_value(p) for p in thisgp["h3_other"]] ))
-                h4.append(tuple([_prior_value(p) for p in thisgp["h4_period"]] ))
-                h5.append(tuple([_prior_value(p) for p in thisgp["h5_der_amp"]] ))
-                err_col.append(tuple([p for p in thisgp["error_col"]]))
-                op.append(tuple([p for p in thisgp["operation"]]))
+                    gp_pars.append(thisgp["par"])
+                    kernels.append(thisgp["kernel"])
+                    amplitude.append(_prior_value(thisgp["h1_amp"]))
+                    lengthscale.append(_prior_value(thisgp["h2_len_scale"]))
+                    h3.append(_prior_value(thisgp["h3_other"]))
+                    h4.append(_prior_value(thisgp["h4_period"]))
+                    h5.append(_prior_value(thisgp["h5_der_amp"]))
+                    err_col.append(thisgp["error_col"])
+                    op.append("")
 
-        
-        #custom RV 
-        #custom LC function
-        cf = _file["radial_velocity"]["custom_RV_function"]
-        func_name = cf["function"]
-        if func_name!='None':
-            # directly import function named func_name from custom_RVfunc.py
-            import custom_RVfunc
-            custom_rvfunc = getattr(custom_RVfunc, func_name)
+                else:  # if there are multiple kernels
+                    for p in ['h1_amp', 'h2_len_scale', 'h3_other', 'h4_period', 'h5_der_amp', 'error_col']:
+                        if isinstance(thisgp[p], list):
+                            if len(thisgp[p])==1:  # if it is a single value, convert to list of ngp
+                                thisgp[p] = [thisgp[p][0]] * ngp
+                            else:
+                                assert len(thisgp[p])==ngp, f'{p} must be a list of length {ngp} but {len(thisgp[p])} given'
+                        elif not isinstance(thisgp[p], list):  # if the prior is None, set it to None
+                            thisgp[p] = [thisgp[p]] * ngp   
 
-            rvfunc_x    = cf["x"]
-            rvfunc_args = {}
-            if cf["func_pars"]!='None':
-                for p_name, p_prior in cf["func_pars"].items():
-                    rvfunc_args[p_name] = _prior_value(p_prior)
+                    gp_pars.append(tuple(thisgp["par"]))
+                    kernels.append(tuple(thisgp["kernel"]))
+                    amplitude.append( tuple([_prior_value(p) for p in thisgp["h1_amp"]] ))
+                    lengthscale.append(tuple([_prior_value(p) for p in thisgp["h2_len_scale"]] ))
+                    h3.append(tuple([_prior_value(p) for p in thisgp["h3_other"]] ))
+                    h4.append(tuple([_prior_value(p) for p in thisgp["h4_period"]] ))
+                    h5.append(tuple([_prior_value(p) for p in thisgp["h5_der_amp"]] ))
+                    err_col.append(tuple([p for p in thisgp["error_col"]]))
+                    op.append(tuple([p for p in thisgp["operation"]]))
 
-            rvextra_args = cf["extra_args"] if cf["extra_args"]!='None' else {}
-            opfunc_name  = cf["op_func"]
-            if opfunc_name!='None':
-                op_rvfunc = getattr(custom_RVfunc, opfunc_name)
-            else: 
-                op_rvfunc = None
+            if gp_rvlist !=[]: 
+                gp_rvlist = gp_rvlist[0] if gp_rvlist[0] in ['same','all'] else gp_rvlist
+            gp_pck = usegpRV #[usegpRV[rv_obj._names.index(rv)] for rv in rv_obj._gp_rvs()] if usegpRV!=[] else []
+            rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
+                            amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,h5=h5, err_col=err_col,gp_pck=gp_pck,
+                            verbose=verbose)
 
-            replace_RVmodel = cf["replace_RVmodel"]
-        else:   
-            custom_rvfunc,rvfunc_x,rvfunc_args,rvextra_args,op_rvfunc,replace_RVmodel = None,None,{},{},None,False
-    
+        if verbose: 
+            rv_obj.print("rv_baseline")
 
-        rv_obj = load_rvs(RVnames,rv_fpath, nplanet=nplanet,rv_unit=RVunit,lc_obj=lc_obj, verbose=verbose)
-        rv_obj.rv_baseline(**RVbases, gamma=gammas,gp=usegpRV,verbose=False) 
-        rv_obj.rescale_data_columns(method=_RVsclcol,verbose=False)
-        rv_obj.add_spline(rv_list=_spl_rvlist ,par=_spl_par, degree=_spl_deg,
-                            knot_spacing=_spl_knot, verbose=False)
-        if verbose: rv_obj.print("rv_baseline")
-        if gp_rvlist !=[]: 
-            gp_rvlist = gp_rvlist[0] if gp_rvlist[0] in ['same','all'] else gp_rvlist
-        gp_pck = [usegpRV[rv_obj._names.index(rv)] for rv in rv_obj._gp_rvs()] if usegpRV!=[] else []
-        rv_obj.add_rvGP(rv_list=gp_rvlist,par=gp_pars,kernel=kernels,operation=op,
-                        amplitude=amplitude,lengthscale=lengthscale,h3=h3,h4=h4,h5=h5, err_col=err_col,gp_pck=gp_pck,
-                        verbose=verbose)
-        rv_obj.add_custom_RV_function(func=custom_rvfunc,x=rvfunc_x,func_args=rvfunc_args,extra_args=rvextra_args,op_func=op_rvfunc,replace_RVmodel=replace_RVmodel,verbose=verbose)
+        # custom RV function
+        if "custom_RV_function" in _file["radial_velocity"]:
+            cf = _file["radial_velocity"]["custom_RV_function"]
+            func_name = cf["function"]
+            if func_name!='None':
+                # directly import function named func_name from custom_RVfunc.py
+                import custom_RVfunc
+                custom_rvfunc = getattr(custom_RVfunc, func_name)
+
+                rvfunc_x    = cf["x"]
+                rvfunc_args = {}
+                if cf["func_pars"]!='None':
+                    for p_name, p_prior in cf["func_pars"].items():
+                        rvfunc_args[p_name] = _prior_value(p_prior)
+
+                rvextra_args = cf["extra_args"] if cf["extra_args"]!='None' else {}
+                opfunc_name  = cf["op_func"]
+                if opfunc_name!='None':
+                    op_rvfunc = getattr(custom_RVfunc, opfunc_name)
+                else: 
+                    op_rvfunc = None
+
+                replace_RVmodel = cf["replace_RVmodel"]
+            else:   
+                custom_rvfunc,rvfunc_x,rvfunc_args,rvextra_args,op_rvfunc,replace_RVmodel = None,None,{},{},None,False
+
+            rv_obj.add_custom_RV_function(func=custom_rvfunc,x=rvfunc_x,func_args=rvfunc_args,extra_args=rvextra_args,op_func=op_rvfunc,replace_RVmodel=replace_RVmodel,verbose=verbose)
 
     else:
-        rv_obj = load_rvs(nplanet=nplanet, rv_unit=RVunit, lc_obj=lc_obj, verbose=False)
+        rv_obj = load_rvs(nplanet=nplanet, lc_obj=lc_obj, verbose=False)
 
-    ## Planet parameters
+    
+    
+    ## Planet parameters ===============================
+    assert 'planet_parameters' in _file, f'planet_parameters must be defined in .yaml file'
     planet = _file["planet_parameters"]
     pl_pars = {}
 
@@ -1958,29 +2029,42 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
     if pl_pars["Duration"]==None:
         assert pl_pars["rho_star"] != None
 
-
     lc_obj.planet_parameters(**pl_pars, verbose=verbose)
-    if nphot>0:
-        lc_obj.limb_darkening(q1,q2,verbose=verbose)
-        lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
-        lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,include_partial=incl_partial,per_LC_T0=per_LC_T0,verbose=verbose,print_linear_eph=False)
-        lc_obj.phasecurve(D_occ=D_occ, Fn=Fn, ph_off=ph_off, A_ev=A_ev, f1_ev=f1_ev, A_db=A_db, pc_model=pc_model,verbose=verbose)
-        lc_obj.add_custom_LC_function(func=custom_lcfunc,x=func_x,func_args=func_args,extra_args=extra_args,op_func=op_func,replace_LCmodel=replace_LCmodel,verbose=verbose)
-        lc_obj.contamination_factors(cont_ratio=cont_fac, verbose=verbose)
-
 
     # ========== get decorrelation parameters ====================
     if nphot>0:
+        # DDFs
+        if 'tdv' in _file["photometry"]:
+            tdv = _file["photometry"]["tdv"]
+            ddfyn,ddf_pri,div_wht  = tdv["fit_ddfs"], _prior_value(tdv["drprs"]), tdv["div_white"]
+            lc_obj.transit_depth_variation(ddFs=ddfyn,dRpRs=ddf_pri, divwhite=div_wht,verbose=verbose)
+
+        # TTVS
+        if 'ttv' in _file["photometry"]:
+            ttv = _file["photometry"]["ttv"]
+            ttvs, dt, base = ttv["fit_ttvs"], _prior_value(ttv["dt"]), ttv["baseline"]
+            per_LC_T0, incl_partial = ttv["per_LC_T0"], ttv["include_partial"]
+            
+            lc_obj.transit_timing_variation(ttvs=ttvs, dt=dt, baseline_amount=base,include_partial=incl_partial,
+                                            per_LC_T0=per_LC_T0,verbose=verbose,print_linear_eph=False)
+
+
+        #### auto decorrelation
+        if "auto_decorr" in _file["photometry"]:
+            auto_decorr  = _file["photometry"]["auto_decorr"]
+            use_decorr   = auto_decorr.get("get_decorr", False)
+            del_BIC      = auto_decorr.get("delta_bic", -5)
+            exclude_cols = auto_decorr.get("exclude_cols", [])
+            exclude_pars = auto_decorr.get("exclude_pars", [])
+            enforce_pars = auto_decorr.get("enforce_pars", [])
+        else:
+            use_decorr   = False
+
         if use_decorr or init_decorr:
             if init_decorr and verbose: print("\ngetting start values for LC decorrelation parameters ...")
-            lc_obj.get_decorr(**pl_pars,q1=q1,q2=q2,
-                                D_occ=D_occ[0] if len(D_occ)>0 else 0, 
-                                Fn=Fn[0] if len(Fn)>0 else 0, 
-                                ph_off=ph_off[0] if len(ph_off)>0 else 0, 
-                                A_ev=A_ev[0] if len(A_ev)>0 else 0,
-                                f1_ev=f1_ev[0] if len(f1_ev)>0 else 0, 
-                                A_db=A_db[0] if len(A_db)>0 else 0, 
-                                pc_model = pc_model, plot_model=False,
+            lc_obj.get_decorr(**pl_pars,**pc_pars, q1=q1,q2=q2,
+                                plot_model=False,fit_offset = _offset, cont=cont_fac,
+                                ttv =  np.where(_file["photometry"].get('ttv','n')=='n', True, False).item(),
                                 setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
                                 enforce_pars=enforce_pars, exclude_pars=exclude_pars,verbose=verbose if use_decorr else False)
             if init_decorr:  #if not use_decorr, compare the  get_decorr pars to the user-defined ones and only use start values for user-defined ones
@@ -1994,6 +2078,17 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                         if v == 2: lc_obj._bases_init[j][f"B{i}"] = lc_obj._bases_init[j][f"B{i}"]
 
     if nRV > 0:
+        #### auto decorrelation
+        if "auto_decorr" in _file["radial_velocity"]:
+            RV_auto_decorr = _file["radial_velocity"]["auto_decorr"]
+            use_decorrRV   = RV_auto_decorr.get("get_decorr", False)
+            rvdel_BIC      = RV_auto_decorr.get("delta_bic", -5)
+            exclude_colsRV = RV_auto_decorr.get("exclude_cols", [])
+            exclude_parsRV = RV_auto_decorr.get("exclude_pars", [])
+            enforce_parsRV = RV_auto_decorr.get("enforce_pars", [])
+        else:
+            use_decorrRV   = False
+
         if use_decorrRV or init_decorr:
             if init_decorr and verbose: print("\ngetting start values for RV decorrelation parameters ...\n")
             rv_obj.get_decorr(  T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
@@ -2011,37 +2106,42 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                         if v >= 1: rv_obj._RVbases_init[j][f"A{i}"] = rv_obj._RVbases_init[j][f"A{i}"]
                         if v == 2: rv_obj._RVbases_init[j][f"B{i}"] = rv_obj._RVbases_init[j][f"B{i}"]
 
-    #stellar parameters
-    star     = _file["stellar_parameters"]
-    st_rad   = _prior_value(star['radius_rsun'])
-    st_mass  = _prior_value(star['mass_msun'])
-    par_in  = star['input_method']
+    
+    # stellar parameters =========================
+    if 'stellar_parameters' in _file:
+        star     = _file["stellar_parameters"]
+        st_rad   = _prior_value(star['radius_rsun'])
+        st_mass  = _prior_value(star['mass_msun'])
+        par_in   = star.get('input_method', 'Rrho')
+    else:
+        st_rad, st_mass, par_in = None, None, 'Rrho'
+
 
     # ========== fit setup ====================
     fit = _file["fit_setup"]
-    #fit setup
-    nsteps    = fit["emcee_number_steps"]
-    nchains   = fit["emcee_number_chains"]
-    ncpus     = fit["number_of_processes"]
-    nburn     = fit["emcee_burnin_length"]
-    nlive     = fit["dynesty_nlive"]
-    force_nl  = fit["force_nlive"]
-    dlogz     = fit["dynesty_dlogz"]
-    sampler   = fit["sampler"]
-    mc_move   = fit["emcee_move"]
-    dyn_samp  = fit["dynesty_nested_sampling"]
-    lsq_base  = fit['leastsq_for_basepar']
-    lcjitt    = lcs["apply_jitter"] if 'photometry' in _file else 'n'
-    rvjitt    = rvs["apply_jitter"] if 'radial_velocity' in _file else 'n'
-    lcjittlim = fit["lc_jitter_loglims"]
-    rvjittlim = fit["rv_jitter_lims"]
-    lcbaselim = fit["lc_basecoeff_lims"]
-    rvbaselim = fit["rv_basecoeff_lims"]
-    ltt       = fit["light_travel_time_correction"]
-    LC_GPndim_jitt = fit["apply_lc_gpndim_jitter"] 
-    RV_GPndim_jitt = fit["apply_lc_gpndim_jitter"]    
-    LC_GPndim_off  = fit["apply_lc_gpndim_offset"]
-    RV_GPndim_off  = fit["apply_lc_gpndim_offset"]
+    # fit setup
+    nsteps          = fit.get("emcee_number_steps",1000)
+    nchains         = fit.get("emcee_number_chains",64)
+    ncpus           = fit.get("number_of_processes",1)
+    nburn           = fit.get("emcee_burnin_length",500)
+    nlive           = fit.get("dynesty_nlive",500)
+    force_nl        = fit.get("force_nlive",False)
+    dlogz           = fit.get("dynesty_dlogz",0.1)
+    sampler         = fit.get("sampler", "emcee")
+    mc_move         = fit.get("emcee_move", "stretch")
+    dyn_samp        = fit.get("dynesty_nested_sampling", 'static')
+    lsq_base        = fit.get("leastsq_for_basepar", 'n')
+    lcjitt          = lcs.get("apply_jitter", 'n') if 'photometry' in _file else 'n'
+    rvjitt          = rvs.get("apply_jitter", 'n') if 'radial_velocity' in _file else 'n'
+    lcjittlim       = fit.get("lc_jitter_loglims",'auto')
+    rvjittlim       = fit.get("rv_jitter_lims",'auto')
+    lcbaselim       = fit.get("lc_basecoeff_lims",'auto')
+    rvbaselim       = fit.get("rv_basecoeff_lims",'auto')
+    ltt             = fit.get("light_travel_time_correction",'n')
+    LC_GPndim_jitt  = fit.get("apply_lc_gpndim_jitter", 'y')
+    RV_GPndim_jitt  = fit.get("apply_lc_gpndim_jitter", 'y')
+    LC_GPndim_off   = fit.get("apply_lc_gpndim_offset", 'y')
+    RV_GPndim_off   = fit.get("apply_lc_gpndim_offset", 'y')
 
     fit_obj = fit_setup(R_st = st_rad, M_st = st_mass, par_input=par_in,
                         apply_LCjitter=lcjitt, apply_RVjitter=rvjitt,
@@ -2051,12 +2151,11 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                         apply_LC_GPndim_jitter=LC_GPndim_jitt, apply_RV_GPndim_jitter=RV_GPndim_jitt,
                         apply_LC_GPndim_offset=LC_GPndim_off, apply_RV_GPndim_offset=RV_GPndim_off,
                         verbose=verbose)
-    
+
     fit_obj.sampling(sampler=sampler,n_cpus=ncpus, emcee_move=mc_move,
                     n_chains=nchains, n_burn   = nburn, n_steps  = nsteps, 
                     n_live=nlive, force_nlive=force_nl, nested_sampling=dyn_samp,
                     dyn_dlogz=dlogz,verbose=verbose )
-
 
     if return_fit:
         from .fit_data import run_fit
@@ -2084,7 +2183,7 @@ def convert_numpy_to_native(obj):
         return tuple(convert_numpy_to_native(item) for item in obj)
     else:
         return obj
-    
+
 
 def format_yaml(data, indent_size=2):
     """Create aligned YAML with proper spacing and formatting rules"""

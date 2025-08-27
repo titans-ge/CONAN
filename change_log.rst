@@ -1,5 +1,5 @@
 
-9-Aug-2025: version 3.3.12
+27-Aug-2025: version 3.3.12
 ~~~~~~~~~~~~~
 * renamed Transit_Model and RadialVelocity_Model to Planet_LC_Model and Planet_RV_Model respectively
 * added exclude+pars argument in get_decorr() to exclude specific parameters from the decorrelation model
@@ -8,7 +8,7 @@
 * can now get K2 data from MAST using CONAN.get_files.get_K2_data
 * implemented multiseries (multidimensional) GP fitting for RVs using spleaf
 * expanded george multidimensional GP fitting which was not working for more than 2 dimensions
-* more robust and scalable alternative for config file. config file can now be saved and loaded as yaml file.
+* more robust and scalable alternative for .dat config file. config file can now be saved and loaded as yaml file.
 
 27-May-2025: version 3.3.11
 ~~~~~~~~~~~~~

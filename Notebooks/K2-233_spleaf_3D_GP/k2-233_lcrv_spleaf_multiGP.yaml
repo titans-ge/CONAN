@@ -1,38 +1,30 @@
 # ========================================== CONAN YAML Configuration ==========================================
-# This is a template YAML configuration file for CONAN v3.3.12
+# This is a YAML configuration file for CONAN v3.3.12
 # PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
 
 general:
-  lc_filepath: Notebooks/K2-233_spleaf_3D_GP/data/
-  rv_filepath: Notebooks/K2-233_spleaf_3D_GP/data/
-  n_planet   : 3
-  rv_unit    : m/s
+  n_planet: 3
 
 photometry:
-  auto_decorr:
-    get_decorr  : False
-    delta_bic   : -5
-    exclude_cols: []
-    exclude_pars: []
-    enforce_pars: []
   light_curves:
+    filepath     : Notebooks/K2-233_spleaf_3D_GP/data/
     names        : [K2-233_C15_detrended_cut.dat]
-    filters      : [V]
-    wavelength_um: [0.6]
-    supersampling: [30]
-    clip_outliers: [None]
-    scale_columns: [None]
-    spline       : [None]
-    apply_jitter : [y]
+    filters      : V
+    wavelength_um: 0.6
+    supersampling: 30
+    clip_outliers: None
+    scale_columns: None
+    spline       : None
+    apply_jitter : y
     baseline:
-      offset: [y]
-      col0  : [0]
-      col3  : [0]
-      col4  : [0]
-      col5  : [0]
-      col6  : [0]
-      col7  : [0]
-      col8  : [0]
+      offset: y
+      col0  : 0
+      col3  : 0
+      col4  : 0
+      col5  : 0
+      col6  : 0
+      col7  : 0
+      col8  : 0
   sinusoid:
     names: []
     trig : []
@@ -84,25 +76,27 @@ photometry:
   contamination:
     filters      : [V]
     contam_factor: ['F(0)']
-
-radial_velocity:
   auto_decorr:
     get_decorr  : False
     delta_bic   : -5
     exclude_cols: []
     exclude_pars: []
     enforce_pars: []
+
+radial_velocity:
   rv_curves:
+    filepath     : Notebooks/K2-233_spleaf_3D_GP/data/
+    rv_unit      : m/s
     names        : [k2_233rv.dat]
-    scale_columns: [None]
-    spline       : [None]
-    apply_jitter : [y]
+    scale_columns: None
+    spline       : None
+    apply_jitter : y
     baseline:
       gammas: ['U(-9700,-9650,-9600)']
-      col0  : [0]
-      col3  : [0]
-      col4  : [0]
-      col5  : [0]
+      col0  : 0
+      col3  : 0
+      col4  : 0
+      col5  : 0
   gp:
     - rv_name     : k2_233rv.dat
       kernel      : [qp, qp, qp]
@@ -122,6 +116,12 @@ radial_velocity:
     extra_args     : None
     op_func        : None
     replace_RVmodel: False
+  auto_decorr:
+    get_decorr  : False
+    delta_bic   : -5
+    exclude_cols: []
+    exclude_pars: []
+    enforce_pars: []
 
 planet_parameters:
   rho_star    : 'N(3.17,0.07)'

@@ -1,3 +1,13 @@
+(doc:datconf)=
+
+# text config file
+
+The **.dat** file is the legacy config file of `CONAN`, and is still maintained for backwards compatibility since it reflects the visual outputs from the python interface functions.
+
+A sample of the **.dat** config file is given below:
+
+
+```cmake
 # ========================================== CONAN configuration file v3.3.12 ======================================== 
 #      *********** KEYS *****************************************************************************************
 #      PRIORS: *Fix-F(val), *Norm-N(mu,std), *Uni-U(min,start,max), *TruncNorm–(min,max,mu,std), *LogUni-LU(min,start,max)
@@ -107,3 +117,6 @@
 	apply_RV_GPndim_jitter(y/n)               n 
 	apply_LC_GPndim_offset(y/n)               n 
 	apply_RV_GPndim_offset(y/n)               n 
+
+
+```

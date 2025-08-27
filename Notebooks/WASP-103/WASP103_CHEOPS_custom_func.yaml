@@ -1,38 +1,30 @@
 # ========================================== CONAN YAML Configuration ==========================================
-# This is a template YAML configuration file for CONAN v3.3.12
+# This is a YAML configuration file for CONAN v3.3.12
 # PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
 
 general:
-  lc_filepath: Notebooks/george_2D_GP/data/
-  rv_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/george_2D_GP/
-  n_planet   : 1
-  rv_unit    : km/s
+  n_planet: 1
 
 photometry:
-  auto_decorr:
-    get_decorr  : False
-    delta_bic   : -5
-    exclude_cols: []
-    exclude_pars: []
-    enforce_pars: []
   light_curves:
+    filepath     : Notebooks/WASP-103/data/
     names        : [WASP-103_000905.dat]
-    filters      : [CH]
-    wavelength_um: [0.6]
-    supersampling: [None]
-    clip_outliers: [c16:W15C4n1]
-    scale_columns: [med_sub]
-    spline       : [None]
-    apply_jitter : [y]
+    filters      : CH
+    wavelength_um: 0.6
+    supersampling: None
+    clip_outliers: c1:W15C4n1
+    scale_columns: med_sub
+    spline       : None
+    apply_jitter : y
     baseline:
-      offset: [n]
-      col0  : [0]
-      col3  : [0]
-      col4  : [0]
-      col5  : [0]
-      col6  : [0]
-      col7  : [0]
-      col8  : [0]
+      offset: y
+      col0  : 1
+      col3  : 0
+      col4  : 0
+      col5  : 0
+      col6  : 0
+      col7  : 0
+      col8  : 0
   sinusoid:
     names: []
     trig : []
@@ -42,15 +34,15 @@ photometry:
     amp  : []
     x0   : []
   gp:
-    - lc_name     : all
-      kernel      : [mat32, mat32]
-      par         : [col5, col8]
-      h1_amp      : ['U(1,200,1000)', 'U(1,200,1000)']
-      h2_len_scale: ['U(0.1,10,50)', 'U(0.01,0.5,1.5)']
-      h3_other    : [None, None]
-      h4_period   : [None, None]
-      operation   : ['+']
-      gp_pck      : ge
+    - lc_name     : None
+      kernel      : None
+      par         : None
+      h1_amp      : None
+      h2_len_scale: None
+      h3_other    : None
+      h4_period   : None
+      op          : 
+      gp_pck      : n
   limb_darkening:
     filters: [CH]
     q1     : ['N(0.4287,0.0666)']
@@ -75,28 +67,30 @@ photometry:
     A_db    : ['F(0)']
     pc_model: [cosine]
   custom_LC_function:
-    function       : None
-    x              : None
-    func_pars      : None
-    extra_args     : None
-    op_func        : None
+    function       : fourier_model
+    x              : col5
+    func_pars      : {S1: 'U(-700,0,700)', C1: 'U(-700,0,700)', S2: 'U(-700,0,700)', C2: 'U(-700,0,700)', S3: 'U(-700,0,700)', C3: 'U(-700,0,700)'}
+    extra_args     : {unit: ppm}
+    op_func        : op_func
     replace_LCmodel: False
   contamination:
     filters      : [CH]
     contam_factor: ['F(0)']
-
-radial_velocity:
   auto_decorr:
     get_decorr  : False
     delta_bic   : -5
     exclude_cols: []
     exclude_pars: []
     enforce_pars: []
+
+radial_velocity:
   rv_curves:
+    filepath     : /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-103/
+    rv_unit      : km/s
     names        : []
     scale_columns: []
     spline       : []
-    apply_jitter : [y]
+    apply_jitter : y
     baseline:
       gammas: []
       col0  : []
@@ -122,6 +116,12 @@ radial_velocity:
     extra_args     : None
     op_func        : None
     replace_RVmodel: False
+  auto_decorr:
+    get_decorr  : False
+    delta_bic   : -5
+    exclude_cols: []
+    exclude_pars: []
+    enforce_pars: []
 
 planet_parameters:
   rho_star    : None

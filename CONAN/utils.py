@@ -473,8 +473,27 @@ def bin_data(t,f,err=None,statistic="mean",bins=20):
 
 def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=2.):
     """
-    # split t into chunks with gaps larger than gap_threshold*bin_size
-    # then bin each chunk separately
+    split t into chunks with gaps larger than gap_threshold*bin_size
+    then bin each chunk separately
+
+    Parameters
+    ----------
+    t : array-like
+        Time stamps.
+    f : array-like
+        Fluxes.
+    e : array-like, optional
+        Errors on the fluxes.
+    binsize : float, optional
+        Size of the bins.
+    gap_threshold : float, optional
+        Threshold for identifying gaps.
+
+    Returns
+    -------
+    (t_binned, f_binned, e_binned) if e is not None else (t_binned, f_binned)
+    
+
     """
     if binsize==0 or binsize<=np.median(np.diff(t)):  # no binning, if binsize is zero or less than the median time difference
         return (t,f) if e is None else (t,f,e)
@@ -490,14 +509,19 @@ def bin_data_with_gaps(t,f,e=None, binsize=0.0104, gap_threshold=2.):
         t_binned, f_binned, e_binned = [],[],[]
         
         for tc,fc,ec in zip(t_chunks,f_chunks,e_chunks):
-            if np.ptp(tc) < binsize: nbin = 1 #continue
-            else: nbin = int(np.ptp(tc)/binsize)
-            if e is not None: t_bin, f_bin, e_bin = bin_data(tc,fc,ec,statistic="mean",bins=nbin)
-            else: t_bin, f_bin = bin_data(tc,fc,statistic="mean",bins=nbin)
+            if np.ptp(tc) < binsize: 
+                nbin = 1 #continue
+            else: 
+                nbin = int(np.ptp(tc)/binsize)
+            if e is not None: 
+                t_bin, f_bin, e_bin = bin_data(tc,fc,ec,statistic="mean",bins=nbin)
+            else: 
+                t_bin, f_bin = bin_data(tc,fc,statistic="mean",bins=nbin)
 
             t_binned = np.concatenate((t_binned, t_bin))
             f_binned = np.concatenate((f_binned, f_bin))
-            if e is not None: e_binned = np.concatenate((e_binned, e_bin))
+            if e is not None: 
+                e_binned = np.concatenate((e_binned, e_bin))
 
         return (t_binned, f_binned, e_binned) if e is not None else (t_binned, f_binned)
 

@@ -1,4 +1,4 @@
-# ========================================== CONAN configuration file v3.3.11 ======================================== 
+# ========================================== CONAN configuration file v3.3.12 ======================================== 
 #      *********** KEYS *****************************************************************************************
 #      PRIORS: *Fix-F(val), *Norm-N(mu,std), *Uni-U(min,start,max), *TruncNorm–(min,max,mu,std), *LogUni-LU(min,start,max)
 #      Ssmp         : supersampling - x{factor} e.g. x30 to create 30 subexposures per point
@@ -7,8 +7,8 @@
 #      spline       : c{column_no}:d{degree}K{knot_spacing} e.g. c0:d3K2 
 #      ***********************************************************************************************************
 # -----------------------------------------------------------------------------------------------------------------------
-	LC_filepath: ../data/
-	RV_filepath: ../data/
+	LC_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
+	RV_filepath: /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
 	n_planet: 1
 # -----------------------------------------PHOTOMETRY--------------------------------------------------------------------
 	LC_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for LCs with delta_BIC=-5
@@ -21,7 +21,7 @@
 # ============ Sinusoidal signals: Amp*trig(2𝜋/P*(x-x0)) - trig=sin or cos or both added==========================
 	name/filt       trig     n_harmonics  x     Amp[ppm]            P                   x0                
 # ============ Photometry GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) =========
-	name/filt       kern  par    h1:[Amp_ppm]       h2:[len_scale1]    h3:[Q,η,α,b]       h4:[P]       
+	name/filt       kern  par    h1:[Amp]           h2:[len_scale1]    h3:[Q,η,C,α,b]     h4:[P]       
 	WASP-127_S9.dat mat32 col0   LU(20,400,4000)    LU(0.007,0.4,5)    None               None        
 # -----------------------------------------RADIAL VELOCITY---------------------------------------------------------------
 	RV_auto_decorr: False   | delta_BIC: -5  # automatically determine baseline function for the RVs
@@ -32,7 +32,7 @@
 	rv1.dat km/s   med_sub |   2    1    1    0|   0 n  None            | N(-9.229240663524008,0.1)
 	rv2.dat km/s   med_sub |   0    0    0    0|   0 n  None            | N(-9.210554832958305,0.1)
 # ============ RV GP properties (start newline with name of * or + to Xply or add a 2nd gp to last file) =======
-	name    kern  par    h1:[Amp_ppm]       h2:[len_scale]     h3:[Q,η,C,α,b]     h4:[P]      
+	name    kern  par    h1:[Amp_ppm]       h2:[len_scale]     h3:[Q,η,C,α,b]     h4:[P]       | h5:[Der_Amp_ppm] ErrCol
 # -----------------------------------------------------------------------------------------------------------------------
 # ============ Planet parameters (Transit and RV) setup ========================================================== 
 	name                       fit 	prior                              	note
@@ -61,14 +61,14 @@
 	T   F(0)               None               None         F(0)            F(0)          F(0)            cosine  
 # ============ Custom LC function (read from custom_LCfunc.py file)================================================
 	function        : None                                    	#custom function/class to combine with/replace LCmodel
-	x               : None                                    	#independent variable [time, phase_angle]
+	x               : None                                    	#independent variable [time, phase_angle, col3-8]
 	func_pars       : None                                    	#param names&priors e.g. A:U(0,1,2),P:N(2,1)
 	extra_args      : None                                    	#extra args to func as a dict e.g ld_law:quad
 	op_func         : None                                    	#function to combine the LC and custom models
 	replace_LCmodel : False                                   	#if the custom function replaces the LC model
 # ============ Custom RV function (read from custom_RVfunc.py file)================================================
 	function        : None                                    	#custom function/class to combine with/replace RVmodel
-	x               : None                                    	#independent variable [time, true_anomaly]
+	x               : None                                    	#independent variable [time, true_anomaly,col3-5]
 	func_pars       : None                                    	#param names&priors e.g. A:U(0,1,2),P:N(2,1)
 	extra_args      : None                                    	#extra args to func as a dict
 	op_func         : None                                    	#function to combine the RV and custom models
@@ -102,4 +102,8 @@
 	RVjitter_lims(auto/[lo,hi])               auto 
 	LCbasecoeff_lims(auto/[lo,hi])            auto 
 	RVbasecoeff_lims(auto/[lo,hi])            auto 
-	Light_Travel_Time_correction(y/n)         n
+	Light_Travel_Time_correction(y/n)         n 
+	apply_LC_GPndim_jitter(y/n)               n 
+	apply_RV_GPndim_jitter(y/n)               n 
+	apply_LC_GPndim_offset(y/n)               n 
+	apply_RV_GPndim_offset(y/n)               n 

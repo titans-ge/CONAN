@@ -9,15 +9,15 @@ authors:
   - name: Babatunde Akinsanmi
     orcid: 0000-0001-6519-1598
     corresponding: true # (This is how to denote the corresponding author)
-    equal-contrib: true
+    # equal-contrib: true
     affiliation: 1 # (Multiple affiliations must be quoted)
   - name: Monika Lendl
     orcid: 0000-0001-9699-1459
-    equal-contrib: true # (This is how you can denote equal contributions between multiple authors)
+    # equal-contrib: true # (This is how you can denote equal contributions between multiple authors)
     affiliation: 1
   - name: Andreas Krenn
     orcid: 0000-0003-3615-4725
-    affiliation: 3
+    affiliation: 2
 affiliations:
  - name: Observatoire astronomique de l’Université de Genève, chemin Pegasi 51, 1290 Versoix, Switzerland
    index: 1
@@ -33,7 +33,7 @@ bibliography: paper.bib
 ---
 # Summary
 
-`CONAN` (COde for exoplaNet ANalysis) is an open-source Python package to perform comprehensive analyses of exoplanetary systems. It provides a unified Bayesian framework to  simultaneously analyze diverse exoplanet datasets to derive global system parameters. `CONAN` allows to consistently model photometric transit light curves, occultations, phase curves, and radial velocity measurements, while detrending each dataset with any combination of parametric, sinusoidal, Gaussian Processes, and spline models.
+`CONAN` (COde for exoplaNet ANalysis) is an open-source Python package to perform comprehensive analyses of exoplanetary systems. It provides a unified Bayesian framework to simultaneously analyze diverse exoplanet datasets to derive global system parameters. `CONAN` allows to consistently model photometric transit light curves, occultations, phase curves, and radial velocity measurements, while detrending each dataset with any combination of parametric, sinusoidal, Gaussian Processes, and spline models.
 
 
 # Statement of need
@@ -74,6 +74,6 @@ The full documentation can be accessed at [https://conan-exoplanet.readthedocs.i
 
 # Acknowledgements
 
-We would like to thank Angelica Psaridi, Hritam Chakraborty, Dominique Petit dit de la Roche, and Adrien Deline for their help in testing `CONAN` for several use cases. `CONAN` makes use of several publicly available packages such as `emcee` [@emcee], `dynesty` [@dynesty], `Astropy` [@astropy], `celerite` [@celerite], `spleaf` [@spleaf], `lightkurve` [@lightkurve], `numpy` [@numpy], `ldtk` [@ldtk]. We thank the developers of these packages for their work.  
+We would like to thank Angelica Psaridi, Hritam Chakraborty, Dominique Petit dit de la Roche, and Adrien Deline for their help in testing `CONAN` for several use cases. BA and ML acknowledge the support of the Swiss National Science Foundation under grant number PCEFP2_194576. `CONAN` makes use of several publicly available packages such as `emcee` [@emcee], `dynesty` [@dynesty], `Astropy` [@astropy], `celerite` [@celerite], `spleaf` [@spleaf], `lightkurve` [@lightkurve], `numpy` [@numpy], `ldtk` [@ldtk]. We thank the developers of these packages for their work.  
 
 # References

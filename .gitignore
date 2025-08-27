@@ -195,8 +195,9 @@ cython_debug/
 # docs/tutorial/
 
 example/
-
+jats/
 
 #ignore notebook result folders
 result_*
+*_pdf.sh
 

@@ -1,21 +1,13 @@
 # ========================================== CONAN YAML Configuration ==========================================
-# This is a template YAML configuration file for CONAN v3.3.12
+# This is a YAML configuration file for CONAN v3.3.12
 # PRIORS: Fix-'F(val)', Norm-'N(mu,std)', Uni-'U(min,start,max)', TruncNorm–'TN(min,max,mu,std)', LogUni-'LU(min,start,max)'
 
 general:
-  lc_filepath: Notebooks/WASP-127/data/
-  rv_filepath: Notebooks/WASP-127/data/
-  n_planet   : 1
-  rv_unit    : km/s
+  n_planet: 1
 
 photometry:
-  auto_decorr:
-    get_decorr  : False
-    delta_bic   : -5
-    exclude_cols: []
-    exclude_pars: []
-    enforce_pars: []
   light_curves:
+    filepath     : Notebooks/WASP-127/data/
     names        : []
     filters      : []
     wavelength_um: []
@@ -23,7 +15,7 @@ photometry:
     clip_outliers: []
     scale_columns: []
     spline       : []
-    apply_jitter : [y]
+    apply_jitter : y
     baseline:
       offset: []
       col0  : []
@@ -84,25 +76,27 @@ photometry:
   contamination:
     filters      : []
     contam_factor: []
-
-radial_velocity:
   auto_decorr:
     get_decorr  : False
     delta_bic   : -5
     exclude_cols: []
     exclude_pars: []
     enforce_pars: []
+
+radial_velocity:
   rv_curves:
+    filepath     : Notebooks/WASP-127/data/
+    rv_unit      : km/s
     names        : [rv1.dat, rv2.dat]
-    scale_columns: [med_sub, med_sub]
-    spline       : [None, None]
-    apply_jitter : [y, y]
+    scale_columns: med_sub
+    spline       : None
+    apply_jitter : y
     baseline:
       gammas: ['N(-9.233510019201367,0.1)', 'N(-9.210554832955161,0.1)']
       col0  : [2, 0]
-      col3  : [0, 0]
-      col4  : [0, 0]
-      col5  : [0, 0]
+      col3  : 0
+      col4  : 0
+      col5  : 0
   gp:
     - rv_name     : None
       kernel      : None
@@ -122,6 +116,12 @@ radial_velocity:
     extra_args     : None
     op_func        : None
     replace_RVmodel: False
+  auto_decorr:
+    get_decorr  : False
+    delta_bic   : -5
+    exclude_cols: []
+    exclude_pars: []
+    enforce_pars: []
 
 planet_parameters:
   rho_star    : 'F(0)'
