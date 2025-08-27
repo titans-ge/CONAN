@@ -1656,7 +1656,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                             assert len(thisgp[p]) == 1, f"if there is only one kernel, {p} must be a single value but {thisgp[p]} given"
                             thisgp[p] = thisgp[p][0]  # convert to single value
                         elif thisgp[p] == 'None':  # if the prior is None, set it to None
-                            thisgp[p] = None
+                            pass
 
                     gp_pars.append(thisgp["par"])
                     kernels.append(thisgp["kernel"])
@@ -1922,7 +1922,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                             assert len(thisgp[p]) == 1, f"if there is only one kernel, {p} must be a single value but {thisgp[p]} given"
                             thisgp[p] = thisgp[p][0]  # convert to single value
                         elif thisgp[p] == 'None':  # if the prior is None, set it to None
-                            thisgp[p] = None
+                            pass
 
                     gp_pars.append(thisgp["par"])
                     kernels.append(thisgp["kernel"])
