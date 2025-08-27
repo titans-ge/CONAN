@@ -7,7 +7,7 @@ general:
 
 photometry:
   light_curves:
-    filepath     : /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
+    filepath     : Notebooks/WASP-127/data/
     names        : [lc6bjd.dat, WASP-127_S9.dat]
     filters      : [R, T]
     wavelength_um: [0.6, 0.8]
@@ -85,7 +85,7 @@ photometry:
 
 radial_velocity:
   rv_curves:
-    filepath     : /Users/tunde/Library/CloudStorage/OneDrive-unige.ch/mygit/CONAN/Notebooks/WASP-127/WASP127_LC_RV/../data/
+    filepath     : Notebooks/WASP-127/data/
     rv_unit      : km/s
     names        : [rv1.dat, rv2.dat]
     scale_columns: med_sub
