@@ -1322,7 +1322,7 @@ class load_lightcurves:
                     gp_conv = gp_params_convert()   #class containing functions to convert gp amplitude and lengthscale to the required values for the different kernels 
                     for i in range(geepee.ngp):
                         gpkern = geepee.kern[i]
-                        if geepee.pck == "ce":
+                        if geepee.pck in  ["ce","sp"]:
                             kernels.append(gp_kernels[gpkern](*[-1]*npars_gp[gpkern])) #dummy initialization
                         elif geepee.pck == "ge":
                             kernels.append(-1*gp_kernels[gpkern](*[-1]*(npars_gp[gpkern]-1))) #dummy initialization
@@ -1418,7 +1418,7 @@ class load_lightcurves:
                 if show_steps: print(f"{'Param':7s} : {'BIC':18s} N_pars \n---------------------------")
 
                 del_BIC = -np.inf  #initialize del_BIC to -inf to start the while loop
-                while del_BIC < delta_BIC:
+                while del_BIC < delta_BIC and all_par!=[]:
                     if show_steps: print(f"{'Best':7s} : {best_bic:<18.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
                     pars_bic = {}
                     for p in all_par:
@@ -3339,7 +3339,7 @@ class load_lightcurves:
         for par in DA.keys():      #D_occ, Fn, ph_off,A_ev,f1_ev, A_db
             for i,f in enumerate(self._filnames):    
                 v = DA[par][i]
-                self._PC_dict[par][f] = _param_obj.from_tuple(v,step=1,func_call="phasecurve():")
+                self._PC_dict[par][f] = _param_obj.from_tuple(v,step=None,func_call="phasecurve():")
 
         if verbose: _print_output(self,"phasecurve")
 
