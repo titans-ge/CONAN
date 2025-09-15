@@ -34,6 +34,90 @@ import multiprocessing as mp
 # mp.set_start_method('fork')
 __all__ = ["run_fit"]
 
+def create_new_backend(original_backend, new_filename, last_niter,operation="slice", array_prepend=None):
+    """
+    Create a new HDFBackend by slicing the chain/log_prob/blobs from an original backend.
+
+    Parameters
+    ----------
+    original_backend : emcee.backends.HDFBackend
+        The original backend to slice.
+    new_filename : str
+        Filename for the new backend.
+    last_niter : int
+        If last_niter is not None, the new backend will only contain the last_niter iterations.
+
+    Returns
+    -------
+    new_backend : emcee.backends.HDFBackend
+        The new backend with sliced data.
+    """
+    import h5py
+    from emcee.backends.hdf import HDFBackend
+
+    # Open original backend and get attributes
+    with h5py.File(original_backend.filename, "r") as f:
+        iterations  = original_backend.iteration
+        g           = f[original_backend.name]
+        nwalkers    = g.attrs["nwalkers"]
+        ndim        = g.attrs["ndim"]
+        has_blobs   = g.attrs.get("has_blobs", False)
+        chain       = deepcopy(g["chain"][:iterations, :, :])
+        log_prob    = deepcopy(g["log_prob"][:iterations, :])
+
+        if has_blobs and "blobs" in g:
+            blobs = g["blobs"][:iterations, :]
+        else:
+            blobs = None
+
+        if operation == 'slice':
+            # Slice the data
+            chain_mod    = chain[-last_niter:, :, :]
+            log_prob_mod = log_prob[-last_niter:, :]
+            if blobs is not None:
+                blobs_mod = blobs[-last_niter:, :]
+            else:
+                blobs_mod = None
+        elif operation == 'prepend':
+            #prepend the data
+            array_prepend = np.transpose(array_prepend, (1, 0, 2)) #transpose to match (nsteps, nwalkers, ndim)
+            chain_mod     = np.concatenate((array_prepend, chain), axis=0)
+            log_prob_mod  = np.concatenate((array_prepend[:,:,0], log_prob), axis=0)
+            if blobs is not None:
+                blobs_mod = np.concatenate((array_prepend, blobs), axis=0)
+            else:
+                blobs_mod = None
+
+    f.close()
+
+    # Create new backend and reset
+    new_backend = HDFBackend(new_filename)
+    new_backend.reset(nwalkers, ndim)
+
+    # Resize datasets in new backend
+    nsteps = chain_mod.shape[0]
+    with h5py.File(new_backend.filename, "a") as f:
+        g = f[new_backend.name]
+        g["chain"].resize((nsteps, nwalkers, ndim))
+        g["log_prob"].resize((nsteps, nwalkers))
+        g.attrs["iteration"]    = nsteps
+        g["chain"][...]         = chain_mod
+        g["log_prob"][...]      = log_prob_mod
+        if blobs_mod is not None:
+            dt = np.dtype((blobs_mod.dtype, blobs_mod.shape[2:]))
+            if "blobs" not in g:
+                g.create_dataset(
+                    "blobs",
+                    blobs_mod.shape,
+                    maxshape=(None, nwalkers),
+                    dtype=dt,
+                )
+            g["blobs"].resize(blobs_mod.shape)
+            g["blobs"][...] = blobs_mod
+            g.attrs["has_blobs"] = True
+
+    return new_backend
+
 def prior_transform(u,prior_dst,prior_names):
     """  
     function to transform the unit cube,u, to the prior space.
@@ -107,7 +191,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         if True, save burn-in chains to file, default is True.
     dyn_kwargs : dict;
         other parameters sent to the dynesty.NestedSampler() or dynesty.DynamicNestedSampler() 
-        function. e.g dyn_kwargs=dict(sample='rwalk',bounds='multi')
+        function. e.g dyn_kwargs=dict(sample='rwalk',bound='multi')
     run_kwargs : dict;
         other parameters sent to emcee's run_mcmc() function or dynesty's run_nested() function.
         e.g., for emcee: run_kwargs=dict(thin_by=1, tune=True, skip_initial_state_check=False)
@@ -292,6 +376,9 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             #now remove Eccentricty and omega from the dictionary 
             _ = [CP[f"pl{n}"].pop(key) for key in ["Eccentricity", "omega"]]
         else:
+            CP[f"pl{n}"]["sesin(w)"] = CP[f"pl{n}"]["sesinw"]
+            CP[f"pl{n}"]["secos(w)"] = CP[f"pl{n}"]["secosw"]
+            _ = [CP[f"pl{n}"].pop(key) for key in ["sesinw", "secosw"]]
             #sesinw
             if CP[f"pl{n}"]["sesin(w)"].step_size != 0.: njumpRV=njumpRV+1
             if (CP[f"pl{n}"]["sesin(w)"].to_fit == 'n' and CP[f"pl{n}"]["sesin(w)"].prior == 'p'):
@@ -916,8 +1003,8 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         #   LC_jit                                       (nphot)
         #   Rv_gamma, RV_jit                              (2*nRVs)         
         #   baseline                                       22, ...]
-        #    = 1+7*npl+nttv+nddf+nocc*7+2*n_filt+nphot+ncustom +2*nRV + 22*nphot
-        #    each lightcurve has 22 possible baseline jump parameters, starting with index  1+7*npl+nttv+nddf+nocc*7+2*n_filt+nphot+ncustom +2*nRV
+        #    = 1+7*npl+nttv+nddf+nocc*7+2*n_filt+nphot+ncustom +2*nRV + ncustomRV + 22*nphot
+        #    each lightcurve has 22 possible baseline jump parameters, starting with index  1+7*npl+nttv+nddf+nocc*7+2*n_filt+nphot+ncustom +2*nRV + ncustomRV
 
         # pargp_all = np.vstack((t, col3_in, col4_in, col5_in, col6_in, col7_in, col8_in)).T  # the matrix with all the possible inputs to the GPs
 
@@ -1654,15 +1741,18 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                     "rv_gp_colerr_names": rv_gp_colerr_names,"rv_pargps": rv_pargps,"rv_gpkerns": rv_gpkerns,"sameRVgp": sameRVgp,"fit_sampler": fit_sampler, "shared_params":shared_params }
     pickle.dump(indparams, open(out_folder+"/.par_config.pkl","wb"))
 
-    if verbose: print('\nGenerating initial model(s) ...\n---------------------------',end=" ")
-    debug_t1 = time.time()
-    mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],indparams,make_outfile=True,verbose=False,debug=debug,out_folder=out_folder)
-    if verbose: print(f'[{(time.time() - debug_t1):.2f} secs]')
-    
-    if verbose: print('\nPlotting initial model(s) ...\n---------------------------',end=" ")
-    debug_t2 = time.time()
-    fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
-    print(f'[{(time.time() - debug_t2):.2f} secs]')
+    if resume_sampling and os.path.exists(f'{out_folder}/init/'):
+        print("Skipping Generation of initial model(s)")
+    else:
+        if verbose: print('\nGenerating initial model(s) ...\n---------------------------',end=" ")
+        debug_t1 = time.time()
+        mval, merr,T0_init,per_init,Dur_init = logprob_multi(initial[jumping],indparams,make_outfile=True,verbose=False,debug=debug,out_folder=out_folder)
+        if verbose: print(f'[{(time.time() - debug_t1):.2f} secs]')
+        
+        if verbose: print('\nPlotting initial model(s) ...\n---------------------------',end=" ")
+        debug_t2 = time.time()
+        fit_plots(nttv, nphot, nRV, filters, LCnames, RVnames, out_folder,'/init/init_',RVunit,initial[jumping],T0_init,per_init,Dur_init)
+        print(f'[{(time.time() - debug_t2):.2f} secs]')
 
     #sampling setup
     print("\nFit setup\n----------")
@@ -1710,25 +1800,139 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         else: 
             moves = emcee.moves.StretchMove()
         
+        backend = emcee.backends.HDFBackend(f'{out_folder}/emcee.h5')
+        niter   = backend.iteration if os.path.exists(f'{out_folder}/emcee.h5') else 0
+
+        if os.path.exists(f'{out_folder}/chains_dict.pkl') and not resume_sampling:
+            print("\nSkipping burn-in and production. Loading chains from disk")
+            result     = load_result(out_folder,verbose=False)
+            #try burnin chain plot
+            try:
+                matplotlib.use('Agg')
+                for i in range(nplot):
+                    fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
+                    fig      = result.plot_burnin_chains(fit_pars)
+                    fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
+                print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
+                matplotlib.use(__default_backend__)
+            except: 
+                pass
+
+            posterior  = result.flat_posterior
+            chains     = np.stack([v for k,v in result._chains.items()],axis=2)
+            try:    
+                bp = result.params.max
+            except: 
+                bp = np.median(posterior,axis=0)   #use mode in scipy.stats
+            try: 
+                evidence = result.evidence
+            except: 
+                evidence = None
         
-        if not os.path.exists(f'{out_folder}/chains_dict.pkl'):   #if chain files doesnt already exist, start sampling
-            backend = emcee.backends.HDFBackend(f'{out_folder}/emcee.h5')
+        else: #if chain files doesnt already exist, start sampling, if it does resume sampling
             
             if resume_sampling and os.path.exists(f'{out_folder}/emcee.h5'):
-                niter = backend.iteration
-                print(f"\nResuming emcee sampling from checkpoint file (at iteration: {niter})")
-                sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
-                                                moves=moves, backend=backend)
-                pos, prob, state = sampler.run_mcmc(None, nsteps-niter, progress=progress, **run_kwargs)
+                if os.path.exists(f'{out_folder}/burnin_chains_dict.pkl'):  #if burn-in chain file exists, previous burn finished, check length
+                    burnin_chains_dict  = pickle.load(open(f'{out_folder}/burnin_chains_dict.pkl','rb'))
+                    burnin_chains       = np.stack([v for k,v in burnin_chains_dict.items()],axis=2) #shape (nwalkers, nburn, ndim)
+                    nburn_exist         = burnin_chains.shape[1]
+
+                    if burnin > nburn_exist:        # requested burn longer than existing burn 
+                        burn_rem = burnin - nburn_exist
+
+                        if niter >= burn_rem:  # take remaining burn from backend file and continue to production
+                            print(f"completing burn-in from {nburn_exist} steps to reach {burnin}, then continuing to production")
+                            bkend_chains = backend.get_chain()  #shape (nsteps, nwalkers, ndim)
+                            for ch in range(burnin_chains.shape[2]):
+                                burnin_chains_dict[jnames[ch]] = np.append(burnin_chains_dict[jnames[ch]],bkend_chains[:burn_rem,:,ch].T,axis=-1)
+                            niter -= burn_rem  #remaining niter are production
+                            backend = create_new_backend(backend, backend.filename, niter) #modify backend to only contain production
+                        else:  #add all niter to burn and continue burn-in
+                            burn_rem -= niter
+                            print(f"continuing burn-in for additional {burn_rem} steps to reach {burnin}")
+                            sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
+                                                            moves=moves, backend=backend)
+                            pos, prob, _ = sampler.run_mcmc(None, burn_rem, progress=progress, **run_kwargs)
+                            chains       = sampler.get_chain()
+                            for ch in range(burnin_chains.shape[2]):
+                                burnin_chains_dict[jnames[ch]] = np.append(burnin_chains_dict[jnames[ch]],chains[:,:,ch].T,axis=-1) #add to existing burnin chain
+                            niter = 0 #no iterations in production
+                            sampler.reset()
+                            
+                    elif nburn_exist > burnin: 
+                        print(f"existing burn-in longer than current requested {burnin} steps, adding remainder to production")
+                        burn_rem = 0 # niter are all production
+                        for ch in range(burnin_chains.shape[2]):
+                            burnin_chains_dict[jnames[ch]] = burnin_chains[:,:burnin,ch] #trim to requested burnin
+                        backend = create_new_backend(backend, backend.filename, burnin, 'prepend', burnin_chains[:,burnin:,:])
+                        niter = nburn_exist - burnin  #remaining niter are production
+                    else:
+                        print(f"burn-in already completed for {nburn_exist} steps")
+                        burn_rem = 0 #niter are all production
+
+                else: #no burn-in chain file exists, continue burn-in from backend file
+                    nburn_exist = niter #all niter are burn-in
+                    burn_rem    = burnin - nburn_exist
+                    if burn_rem > 0: 
+                        print(f"continuing burn-in from {nburn_exist} steps to reach {burnin}")
+                        sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
+                                                        moves=moves, backend=backend)
+                        pos, prob, _ = sampler.run_mcmc(None, burn_rem, progress=progress, **run_kwargs)
+                        burnin_chains = sampler.chain
+                        burnin_chains_dict =  {}
+                        for ch in range(burnin_chains.shape[2]):
+                            burnin_chains_dict[jnames[ch]] = burnin_chains[:,:,ch]
+                        niter = 0 #no iterations in production
+                        sampler.reset()
+                    else:
+                        print(f"existing burn-in longer than current requested {burnin} steps, remaining {nburn_exist - burnin} steps passed to production")
+                        burn_rem = 0 # niter are all production
+                        burnin_chains_dict =  {}
+                        burnin_chains = np.transpose(backend.get_chain(),(1,0,2))  #make it ( nwalkers, nsteps, ndim)
+                        for ch in range(burnin_chains.shape[2]):
+                            burnin_chains_dict[jnames[ch]] = burnin_chains[:,:burnin,ch]
+
+                        niter = nburn_exist - burnin  #remaining niter are production
+                        backend = create_new_backend(backend, backend.filename, niter) #new backend with only last niter steps
+
+                if (os.path.exists(f'{out_folder}/burnin_chains_dict.pkl') and nburn_exist!=burnin) or  not os.path.exists(f'{out_folder}/burnin_chains_dict.pkl'):
+                    pickle.dump(burnin_chains_dict,open(out_folder+"/"+"burnin_chains_dict.pkl","wb"))  
+                    print("burn-in chain written to disk")
+
+                    matplotlib.use('Agg')
+                    burn_result = load_result(out_folder, verbose=False)
+                    for i in range(nplot):
+                        fit_pars = list(burn_result._par_names)[i*nplotpars:(i+1)*nplotpars]
+                        fig      = burn_result.plot_burnin_chains(fit_pars)
+                        fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
+                    print(f"saved {nplot} burn-in chain plot(s) as {out_folder}/burnin_chains_*.png")
+                    matplotlib.use(__default_backend__)
+                    
+                    
+                if niter > 0: 
+                    sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
+                                                    moves=moves, backend=backend)
+                    if nsteps-niter > 0:
+                        print(f"\nResuming emcee production sampling from checkpoint file (at iteration: {niter})")
+                        pos, prob, state = sampler.run_mcmc(None, nsteps-niter,skip_initial_state_check=True, progress=progress, **run_kwargs)
+                    else:
+                        print(f"\nProduction sampling already completed for {niter} steps. No further sampling needed.")
+                        pos, prob = sampler.get_chain()[-1,:,:], sampler.get_log_prob()[-1,:]
+                else:
+                    print(f"\nRunning production for {nsteps} steps ...")
+                    sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
+                                                    moves=moves, backend=backend)
+                    pos, prob, state = sampler.run_mcmc(pos, nsteps,skip_initial_state_check=True, progress=progress, **run_kwargs ) 
                 print(f"Final iteration: {sampler.iteration}")
+
             else:
                 backend.reset(nchains, ndim)
                 sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
                                                 moves=moves, backend=backend)
-                print("\nRunning first burn-in...")
+                print("\nRunning zeroth burn-in (20 steps)...")
                 p0, lp, _ = sampler.run_mcmc(p0, 20, progress=progress, **run_kwargs)
 
-                print("Running second burn-in...")
+                print("Running first burn-in...")
                 p0 = p0[np.argmax(lp)] + steps[jumping] * np.random.randn(nchains, ndim) # this can create problems!
                 sampler.reset()
                 pos, prob, state = sampler.run_mcmc(p0, burnin, progress=progress, **run_kwargs)
@@ -1768,28 +1972,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             
             result = load_result(out_folder,verbose=False)
 
-        else:
-            print("\nSkipping burn-in and production. Loading chains from disk")
-            result     = load_result(out_folder,verbose=False)
-            #try burnin chain plot
-            try:
-                matplotlib.use('Agg')
-                for i in range(nplot):
-                    fit_pars = list(result._par_names)[i*nplotpars:(i+1)*nplotpars]
-                    fig      = result.plot_burnin_chains(fit_pars)
-                    fig.savefig(out_folder+f"/burnin_chains_{i}.png", bbox_inches="tight")
-                print(f"saved {nplot} burn-in chain plots as {out_folder}/burnin_chains_*.png")
-                matplotlib.use(__default_backend__)
-            except: pass
 
-            posterior  = result.flat_posterior
-            chains     = np.stack([v for k,v in result._chains.items()],axis=2)
-            try: bp    = result.params.max
-            except: bp = np.median(posterior,axis=0)
-            try: 
-                evidence    = result.evidence
-            except: 
-                evidence = None
 
         GRvals = grtest_emcee(chains)
         gr_print(jnames,GRvals,out_folder)

@@ -5575,16 +5575,21 @@ class load_result:
             print("chains are not available for dynesty sampler")
             return
         assert pars is None or isinstance(pars, list) or pars == "all", f'pars must be None, "all", or list of relevant parameters.'
-        if pars is None or pars == "all": pars = [p for p in self._par_names]
+        
+        if pars is None or pars == "all": 
+            pars = [p for p in self._par_names]
         for p in pars:
             assert p in self._par_names, f'`{p}` is not one of the parameter labels in the mcmc run.'
         
         ndim = len(pars)
         if not force_plot: assert ndim < 21, f'number of parameter chain to plot should be <=20 for clarity. Use force_plot = True to continue anyways.'
 
-        if figsize is None: figsize = (12,6+int(ndim/2))
+        if figsize is None: 
+            figsize = (12,6+int(ndim/2))
+        
         fig, axes = plt.subplots(ndim, sharex=True, figsize=figsize)
-        if ndim == 1: axes = np.array([axes])
+        if ndim == 1: 
+            axes = np.array([axes])
             
         if thin > 1 and discard > 0:
             axes[0].set_title(f"Burn-in\nDiscarded first {discard} steps & thinned by {thin}", fontsize=14)
