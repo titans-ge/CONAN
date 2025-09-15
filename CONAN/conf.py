@@ -31,7 +31,7 @@ def new_getfile(object, _old_getfile=inspect.getfile):
 
 def fit_configfile(config_file = "input_config.dat", out_folder = "output", 
                     init_decorr=False, rerun_result=True, resume_sampling=False, 
-                    lc_path=None, rv_path=None, verbose=False):
+                    lc_path=None, rv_path=None, shared_params={},verbose=False):
     """
     Run CONAN fit from configuration file. 
     This loads the config file and creates the required objects (lc_obj, rv_obj, fit_obj) to perform the fit.
@@ -53,6 +53,8 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
         path to light curve files. If None, the path in the config file is used.
     rv_path: str;
         path to radial velocity files. If None, the path in the config file is used.
+    shared_params: dict;
+        dictionary of parameters to be shared
     verbose: bool;
         show print statements
 
@@ -65,12 +67,12 @@ def fit_configfile(config_file = "input_config.dat", out_folder = "output",
 
     lc_obj, rv_obj, fit_obj = load_configfile(config_file, init_decorr=init_decorr, 
                                                 lc_path=lc_path, rv_path=rv_path, verbose=verbose)
-    result = run_fit(lc_obj, rv_obj, fit_obj,out_folder=out_folder,
+    result = run_fit(lc_obj, rv_obj, fit_obj,out_folder=out_folder, shared_params=shared_params,
                         rerun_result=rerun_result,resume_sampling=resume_sampling,verbose=verbose)
     return result
 
 
-def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbose=True):
+def rerun_result(result_folder,  out_folder = None, resume_sampling=False, shared_params={}, verbose=True):
     """
     rerun the fit using config_save.dat file in a previous result folder. 
     This can be to regenerate plot or continue sampling with same setup.
@@ -83,6 +85,8 @@ def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbo
         path to folder where output files will be saved. If None, the output files are saved in the result_folder.
     resume_sampling: bool;
         resume sampling from last saved position
+    shared_params: dict;
+        dictionary of parameters to be shared
     verbose: bool;
         show print statements
 
@@ -98,11 +102,11 @@ def rerun_result(result_folder,  out_folder = None, resume_sampling=False, verbo
     if out_folder is None: out_folder = result_folder
     try:
         result = fit_configfile(config_file = result_folder+"/config_save.dat", out_folder = out_folder, 
-                                rerun_result=True, resume_sampling=resume_sampling, verbose=verbose)
+                                rerun_result=True, resume_sampling=resume_sampling, shared_params=shared_params, verbose=verbose)
     except Exception as e:
         print(f"Error occurred while rerunning result with config_save.dat: {e}")
         result = fit_configfile(config_file = result_folder+"/config_save.yaml", out_folder = out_folder, 
-                                rerun_result=True, resume_sampling=resume_sampling, verbose=verbose)
+                                rerun_result=True, resume_sampling=resume_sampling, shared_params=shared_params, verbose=verbose)
 
     return result
 
