@@ -121,8 +121,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
     if debug:
         _ = [print(f"{k}:{v}") for k,v in zip(pnames_all[jumping], params_all[jumping])]
 
-    ncustom = custom_LCfunc.npars if custom_LCfunc!=None else 0# number of custom function parameters
-    nsin    = sum([v for v in sine_conf.npars.values()]) if sine_conf.flag else 0
+    ncustom    = custom_LCfunc.npars if custom_LCfunc!=None else 0# number of custom function parameters
+    ncustomRV  = custom_RVfunc.npars if custom_RVfunc!=None else 0 # number of custom RV function parameters
+    nsin       = sum([v for v in sine_conf.npars.values()]) if sine_conf.flag else 0
     # sin_st  = 1+7*npl +nttv+ nddf+nocc*7 + nfilt*2 + nphot + ncustom    #starting index of sinuoid parameters
 
     time_all, flux_all, err_all, full_mod_all, base_para_all, base_sine_all, base_spl_all, base_gp_all, base_total_all, transit_all, det_flux_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
@@ -382,7 +383,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
             matplotlib.use(__default_backend__)
 
         # compute baseline model (w/ or w/o spline)
-        bfstart = 1 + 7*npl + nttv + nddf +nocc*7 +2*nfilt + nphot + ncustom + nsin + nRV*2+ j*22  # index in params of the first baseline param of this light curve
+        bfstart = 1 + 7*npl + nttv + nddf +nocc*7 +2*nfilt + nphot + ncustom + nsin + nRV*2+ ncustomRV + j*22  # index in params of the first baseline param of this light curve
         blind   = np.asarray(list(range(bfstart,bfstart+22))) # the indices of the baseline params of this light curve
         basesin = np.zeros(22)
         
