@@ -8,6 +8,7 @@ from astropy.table import Table
 from astropy.units import UnitsWarning
 from astroquery.mast import Observations
 from .utils import rho_to_tdur, robust_std
+from .utils import decontaminate as flux_decontam
 from uncertainties import ufloat
 import warnings
 
@@ -71,7 +72,7 @@ class get_TESS_data(object):
         print(lk.search_lightcurve(self.planet_name,author=self.author,sector=self.sectors,
                                     exptime=self.exptime, mission="TESS"))
         
-    def download(self,sectors=None,author=None,exptime=None, select_flux="pdcsap_flux",quality_bitmask="default"):
+    def download(self,sectors=None,author=None,exptime=None, select_flux="pdcsap_flux", decontaminate=False, quality_bitmask="default"):
         """  
         Download TESS light curves from MAST using the lightkurve package
 
@@ -83,6 +84,10 @@ class get_TESS_data(object):
             Author of the light curve. Default is "SPOC".
         exptime : float
             Exposure time of the light curve.
+        select_flux : str
+            Flux to select from the light curve. One of ["pdcsap_flux","sap_flux"]. Default is "pdcsap_flux".
+        decontaminate : bool
+            Decontaminate the light curve using the contamination fraction. Only applies when select_flux is not "pdcsap_flux". Default is False.
         quality_bitmask : str
             Quality bitmask to use for the lightkurve package. options are ["none","default","hard","hardest"]. Default is "default".
         """
@@ -112,6 +117,12 @@ class get_TESS_data(object):
             ftarget        = self.lc[s].hdu[1].header["CROWDSAP"]
             self.contam[s] = fcontam/ftarget
 
+            if decontaminate:
+                self.lc[s]["flux"]     = flux_decontam(self.lc[s]["flux"], self.contam[s])
+                print(f"decontaminated sector {s} light curve using contamination fraction of {self.contam[s]:.3f}")
+            # elif decontaminate and select_flux=='pdcsap_flux':
+            #     print("Warning: pdcsap_flux is already decontaminated. Setting decontaminate=False")
+                
         if hasattr(self,"_ok_mask"): del self._ok_mask
         self.data_splitted = False
         
@@ -314,8 +325,9 @@ class get_Kepler_data(object):
         self.quarters = quarters if quarters!=None else [int(q[-2:]) for q in search_res.mission]
         self.quarters = list(np.unique(self.quarters))
         self.exptime = exptime
-        
-    def download(self,quarters=None,exptime=None, select_flux="pdcsap_flux", merge_same_quarter=True,quality_bitmask="default"):
+
+    def download(self,quarters=None,exptime=None, select_flux="pdcsap_flux", merge_same_quarter=True,
+                        decontaminate=False, quality_bitmask="default"):
         """  
         Download Keplerlight curves from MAST using the lightkurve package
 
@@ -329,6 +341,8 @@ class get_Kepler_data(object):
             Flux to select from the light curve. One of ["pdcsap_flux","sap_flux"]. Default is "pdcsap_flux".
         merge_same_quarter : bool
             Merge light curves from the same quarter. Default is True.
+        decontaminate : bool
+            Decontaminate the light curve using the contamination fraction. Only applies when select_flux is not "pdcsap_flux". Default is False.
         quality_bitmask : str
             Quality bitmask to use for the lightkurve package. options are ["none","default","hard","hardest"]. Default is "default".
         """
@@ -342,9 +356,17 @@ class get_Kepler_data(object):
             if merge_same_quarter:
                 self.lc[s] = lk.search_lightcurve(self.planet_name,author="Kepler",quarter=s,exptime=self.exptime
                                                     ).download_all(quality_bitmask=quality_bitmask
-                                                                    ).stitch(lambda x: x.select_flux(select_flux).normalize())
-                self.contam[s] =  1 - self.lc[s].hdu[1].header["CROWDSAP"]
+                                                        ).stitch(lambda x: x.select_flux(select_flux).remove_nans().normalize())
                 print(f"downloaded lightcurve for quarter {s}")
+
+                fcontam        = 1 - self.lc[s].hdu[1].header["CROWDSAP"]
+                ftarget        = self.lc[s].hdu[1].header["CROWDSAP"]
+                self.contam[s] =  fcontam/ftarget
+                if decontaminate:
+                    self.lc[s]["flux"]     = flux_decontam(self.lc[s]["flux"], self.contam[s])
+                    print(f"\tdecontaminated quarter {s} flux using contamination fraction of {self.contam[s]:.3f}")
+                # elif decontaminate and select_flux=='pdcsap_flux':
+                #     print("Warning: pdcsap_flux is already decontaminated. Setting decontaminate=False")
 
             else:
                 temp_data = lk.search_lightcurve(self.planet_name,author="Kepler",quarter=s,exptime=self.exptime
@@ -354,14 +376,18 @@ class get_Kepler_data(object):
                     new_s = round(new_s+0.1,1)
                     self.lc[new_s] = lc.select_flux(select_flux).normalize()
                     self.quarters += [new_s]
-                    self.contam[new_s] = 1 - self.lc[new_s].hdu[1].header["CROWDSAP"]
+                    self.contam[new_s] = 1/self.lc[new_s].hdu[1].header["CROWDSAP"] - 1
+                    if decontaminate and select_flux!='pdcsap_flux':
+                        self.lc[new_s]["flux"]     = flux_decontam(self.lc[new_s]["flux"], self.contam[new_s])
+                        print(f"decontaminated quarter {new_s} light curve using contamination fraction of {self.contam[new_s]:.3f}")
+                    elif decontaminate and select_flux=='pdcsap_flux':
+                        print("Warning: pdcsap_flux is already decontaminated. Setting decontaminate=False")
 
                 self.quarters.remove(s)
                 print(f"downloaded lightcurve for quarter {s}, split into {len(temp_data)} part(s)")
 
         if hasattr(self,"_ok_mask"): del self._ok_mask
         self.data_splitted = False
-        
 
     def discard_ramp(self,length=0.25, gap_size=1, start=True, end=True):
         """
@@ -392,17 +418,19 @@ class get_Kepler_data(object):
             tt = self.lc[s].time.value
             gap = np.diff(tt) 
             gap = np.insert(gap,0,0)   #insert diff of 0 at the beginning
-            
+
             gap_bool = gap > gap_size
             print(f"quarter {s}: {sum(gap_bool)} gap(s)>{gap_size}d detected",end="; ")
             chunk_start_ind = np.append(0, np.where(gap_bool)[0])
             chunk_end_ind   = np.append(np.where(gap_bool)[0]-1, len(tt)-1)
 
-            #mask points that are length days from chunk_start_ind
+            # mask points that are length days from chunk_start_ind
             start_mask, end_mask = [], []
             for st_ind,end_ind in zip(chunk_start_ind, chunk_end_ind):
-                if start: start_mask.append((tt >= tt[st_ind]) & (tt < tt[st_ind]+length[i]))
-                if end: end_mask.append((tt <= tt[end_ind]) & (tt > tt[end_ind]-length[i]))
+                if start: 
+                    start_mask.append((tt >= tt[st_ind]) & (tt < tt[st_ind]+length[i]))
+                if end: 
+                    end_mask.append((tt <= tt[end_ind]) & (tt > tt[end_ind]-length[i]))
             try:
                 start_mask = np.logical_or(*start_mask) if start else np.array([False]*len(tt))
                 end_mask   = np.logical_or(*end_mask) if end else np.array([False]*len(tt))
@@ -412,7 +440,7 @@ class get_Kepler_data(object):
                 print(f"discarded {sum(self._nok_mask)} points")
             except:
                 print("could not discard points")
-        #TODO: discards ramp only when one gap is detected. fix
+        # TODO: discards ramp only when one gap is detected. fix to allow more than one gap
 
     def scatter(self):
         """
@@ -447,7 +475,7 @@ class get_Kepler_data(object):
         curr_quarter = self.quarters.copy()
         for s in curr_quarter:
             t = self.lc[s].time.value
-    
+
             if gap_size is not None:
                 self._find_gaps(t,gap_size)
                 if show_plot:
@@ -456,7 +484,7 @@ class get_Kepler_data(object):
                 nsplit = len(self.gap_ind)-1
                 for i in range(len(self.gap_ind)-1):
                     self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= t[self.gap_ind[i]]) & (t < t[self.gap_ind[i+1]])]
-            
+
             if split_times is not None:
                 split_times = np.array([0] +split_times +[t[-1]])
                 if show_plot:
@@ -465,18 +493,17 @@ class get_Kepler_data(object):
                 nsplit = len(split_times)-1
                 for i in range(len(split_times)-1):
                     self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= split_times[i]) & (t < split_times[i+1])]
-            
+
             if split_times is None and gap_size is None:
                 raise ValueError("either gap_size or split_time must be given")
-            
+
             remove_quarters.append(s)
             self.quarters += [f"{s}_{i+1}" for i in range(nsplit)]
-        
+
         print(f"quarter {s} data splitted into {nsplit} chunks: {list(self.quarters)}")
-        #remove quarters that have been split        
+        # remove quarters that have been split
         _ = [self.quarters.pop(self.quarters.index(s)) for s in remove_quarters]
         self.data_splitted = True
-        
 
     def _find_gaps(self,t,gap_size):
         """
@@ -489,7 +516,6 @@ class get_Kepler_data(object):
         # self.gap_ind = np.append(0,self.gap_ind)
         # self.gap_ind = np.append(self.gap_ind, len(t)-1)
 
-    
     def save_CONAN_lcfile(self,bjd_ref = 2450000, folder="data", out_filename=None):
         """
         Save Kepler light curves as a CONAN light curve file.
@@ -1178,8 +1204,6 @@ class get_JWST_data(object):
         plt.xlabel("Time")
         plt.ylabel("Flux")
         plt.show()
-
-
 
 
 def get_EULER_data(FITS_filepath, out_folder=".", planet_name=None):
