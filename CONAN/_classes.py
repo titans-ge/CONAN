@@ -1203,7 +1203,7 @@ class load_lightcurves:
             # sesinw, secosw = 0, 0  #set to zero if not given
         if Eccentricity is not None and omega is not None:
             om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
-            if np.iterable(Eccentricity) and np.iterable(om_rad):
+            if isinstance(Eccentricity, list) and isinstance(om_rad, list):
                 sesinw, secosw = [], []
                 for ec,om in zip(Eccentricity, om_rad):
                     ssw, scw = ecc_om_par(ec, om, conv_2_obj=True, return_tuple=True)
@@ -3493,7 +3493,7 @@ class load_lightcurves:
                         DA[f"step{par[-1]}"][i] = 0.1*DA[f"sig_lo{par[-1]}"][i]
                         DA[f"prior_str{par[-1]}"][i] = f"N({d[0]:.4f},{d[1]:.4f})"
 
-                    if len(d) == 3:  #uniform prior
+                    elif len(d) == 3:  #uniform prior
                         assert d[0]<=d[1]<=d[2],f'limb_darkening(): uniform prior be (lo_lim, start_val, uplim) where lo_lim <= start_val <= uplim but {d} given.'
                         assert (d[0]>=0  and d[2]<=1),f'limb_darkening(): uniform prior must be (lo_lim, val, uplim) where lo_lim>=0 and uplim<=1 but {d} given.'
                         DA[par][i] = d[1]
@@ -3503,7 +3503,7 @@ class load_lightcurves:
                         DA[f"step{par[-1]}"][i] = min(0.001, np.ptp([d[0],d[2]]))
                         DA[f"prior_str{par[-1]}"][i] = f"U({d[0]:.4f},{d[1]:.4f},{d[2]:.4f})"
 
-                    if len(d) == 4 and d[-1]=="LU":  #loguniform prior
+                    elif len(d) == 4 and d[-1]=="LU":  #loguniform prior
                         assert d[0]<=d[1]<=d[2],f'limb_darkening(): uniform prior be (lo_lim, start_val, uplim) where lo_lim <= start_val <= uplim but {d} given.'
                         assert (d[0]>=0  and d[2]<=1),f'limb_darkening(): uniform prior must be (lo_lim, val, uplim) where lo_lim>=0 and uplim<=1 but {d} given.'
                         DA[par][i] = d[1]
@@ -3513,7 +3513,7 @@ class load_lightcurves:
                         DA[f"step{par[-1]}"][i] = min(0.001, np.ptp([d[0],d[2]]))
                         DA[f"prior_str{par[-1]}"][i] = f"LU({d[0]:.4f},{d[1]:.4f},{d[2]:.4f})"
 
-                    if len(d) == 4:  #trunc norm prior
+                    elif len(d) == 4 and d[-1]!="LU":  #trunc norm prior
                         assert d[0]<=d[2]<=d[1],f'limb_darkening(): truncated normal must be (min,max,mu, sigma) where min < mu < max  but {d} given.'
                         assert (d[0]>=0  and d[1]<=1),f'limb_darkening(): truncated normal must be (min,max,mu, sigma) where min>=0 and max<=1'
                         DA[par][i] = d[2]
@@ -3522,6 +3522,9 @@ class load_lightcurves:
                         DA[f"sig_lo{par[-1]}"][i] = DA[f"sig_hi{par[-1]}"][i] = d[3]
                         DA[f"step{par[-1]}"][i] = 0.1*DA[f"sig_lo{par[-1]}"][i]
                         DA[f"prior_str{par[-1]}"][i] = f"TN({d[0]:.4f},{d[1]:.4f},{d[2]:.4f},{d[3]:.4f})"
+
+                    else:
+                        _raise(ValueError, f"limb_darkening(): {par} tuple must be of length 2 (for normal prior), 3 (for uniform prior) or 4 (for truncated normal prior) but {d} is given.")
 
         DA["priors"] = [0]*nfilt
         for i in range(nfilt):
@@ -3694,7 +3697,7 @@ class load_lightcurves:
         if col_labels is None:
             col_labels = ("time", "flux") if plot_cols[:2] == (0,1) else (f"column[{plot_cols[0]}]",f"column[{plot_cols[1]}]")
         
-        if hasattr(self, '_tmodel'):
+        if hasattr(self, '_tmodel') and show_decorr_model:
             lbl     = phase_plot if phase_plot>1 else ""
             tr_pars = self._tmodel[-1].params
 
@@ -6013,11 +6016,12 @@ class load_result:
         if data=="lc":
             res_obj = load_lightcurves( input_lc = resid_data, 
                                         filters  = self._ind_para["filters"],
-                                        nplanet  = self._nplanet)
+                                        nplanet  = self._nplanet,
+                                        verbose  = False)
             if hasattr(self, "_ind_para") and self._ind_para["custom_LCfunc"].func is not None:
                 res_obj._custom_LCfunc = self._ind_para["custom_LCfunc"]
         elif  data=="rv":
-            res_obj = load_rvs(input_rv = resid_data, nplanet=self._nplanet)
+            res_obj = load_rvs(input_rv = resid_data, nplanet=self._nplanet,verbose=False)
             if hasattr(self, "_ind_para") and self._ind_para["custom_RVfunc"].func is not None:
                 res_obj._custom_RVfunc = self._ind_para["custom_RVfunc"]
 

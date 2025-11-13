@@ -99,15 +99,16 @@ radial_velocity:
       col5  : 0
   gp:
     - rv_name     : k2_233rv.dat
-      kernel      : [qp, qp, qp]
-      par         : [col1, col3, col4]
-      h1_amp      : ['U(0,4,100)', 'U(0,1,100)', 'U(-100,0,100)']
-      h2_len_scale: ['U(1,10,500)', None, None]
-      h3_other    : ['U(0.1,0.5,5)', None, None]
-      h4_period   : ['U(8,10,12)', None, None]
-      h5_der_amp  : ['U(-100,0,100)', 'F(0)', 'U(-100,0,100)']
-      error_col   : [col2, col2, col2]
-      operation   : ['+', '+']
+              #     #RV               #FWHM         #BIS
+      kernel      : [qp,              qp,           qp              ]
+      par         : [col1,            col3,         col4            ]
+      h1_amp      : ['U(0,4,100)',    'U(0,1,100)', 'U(-100,0,100)' ]
+      h2_len_scale: ['U(1,10,500)',   None,         None            ]
+      h3_other    : ['U(0.1,0.5,5)',  None,         None            ]
+      h4_period   : ['U(8,10,12)',    None,         None            ]
+      h5_der_amp  : ['U(-100,0,100)', 'F(0)',      'U(-100,0,100)'  ]
+      error_col   : [col2,            col2,         col2            ]
+      operation   : [                 '+',          '+'             ]
       gp_pck      : sp
   custom_RV_function:
     function       : None

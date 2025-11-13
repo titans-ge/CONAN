@@ -1635,6 +1635,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
     for sp in shared_params:
         assert sp in pnames_all, f"Shared parameter '{sp}' not found in parameter names"
         assert isinstance(shared_params[sp], list), f"Shared parameter '{sp}' should be given as a list of parameter names."
+        assert sp not in shared_params[sp], f"Shared parameter '{sp}' cannot share from itself."
         for s_recip in shared_params[sp]:
             assert s_recip in pnames_all, f"Shared parameter '{s_recip}' not found in parameter names"
             initial[pnames_all == s_recip] = np.nan#f"->{sp}"#initial[pnames_all == sp] . #specify that it takes its value from a shared parameter
@@ -1849,7 +1850,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
                             backend = create_new_backend(backend, backend.filename, niter) #modify backend to only contain production
                         else:  #add all niter to burn and continue burn-in
                             burn_rem -= niter
-                            print(f"continuing burn-in for additional {burn_rem} steps to reach {burnin}")
+                            print(f"existing production chain {niter} added to burn; continuing burn-in for additional {burn_rem} steps to reach {burnin}")
                             sampler = emcee.EnsembleSampler(nchains, ndim, logprob_multi, args=(indparams,),pool=pool, 
                                                             moves=moves, backend=backend)
                             pos, prob, _ = sampler.run_mcmc(None, burn_rem, progress=progress, **run_kwargs)

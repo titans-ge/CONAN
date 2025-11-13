@@ -1,6 +1,6 @@
-#works for normal installation but not for editable installation unless 
+# works for normal installation but not for editable installation unless
 import os
-from  numpy.distutils.core import setup, Extension
+from setuptools import setup
 # os.system("f2py -c -m occultquad occultquad.f")
 # os.system("f2py -c -m occultnl occultnl.f")
 
@@ -8,13 +8,18 @@ from  numpy.distutils.core import setup, Extension
 no_fortran = os.getenv('NO_FORTRAN', 'False').lower() in ('true', '1', 't')  
 
 if no_fortran:
-      print("Skipping compilation of fortran code, python equivalent of transit model will be used")
-      ext_modules = []
+    print("=== Skipping compilation of fortran code, python equivalent of transit model will be used ===")
+    ext_modules = []
 else:
-      print("Compiling fortran code")     
-      extOccultnl = Extension('CONAN.occultnl', sources=['CONAN/occultnl.f'])
-      extOccultquad = Extension('CONAN.occultquad', sources=['CONAN/occultquad.f'])
-      ext_modules = [extOccultnl, extOccultquad]
+    print("=== Compiling fortran code ===")
+    try:
+        from numpy.distutils.core import setup, Extension
+        extOccultnl = Extension("CONAN.occultnl", sources=["CONAN/occultnl.f"])
+        extOccultquad = Extension("CONAN.occultquad", sources=["CONAN/occultquad.f"])
+        ext_modules = [extOccultnl, extOccultquad]
+    except ImportError:
+        print("=== NumPy distutils not available, using NO_FORTRAN mode ===")
+        ext_modules = []
 
 
 setup(
@@ -24,11 +29,11 @@ setup(
       ext_modules=ext_modules,
       )
 
-#copy command line script to home directory
+# copy command line script to home directory
 print("\ncopying command line script to home directory")
 os.system("cp conan_cmd_fit.py ~/conan_fit.py")
 
-#add function in .zshrc/.bashrc to call conan_fit.py from anywhere
+# add function in .zshrc/.bashrc to call conan_fit.py from anywhere
 if os.path.exists(os.path.expanduser("~/.zshrc")):
       if os.system("grep -q 'function conanfit()' ~/.zshrc"):  #check if function already exists
             print("adding conanfit function to ~/.zshrc")
@@ -36,7 +41,7 @@ if os.path.exists(os.path.expanduser("~/.zshrc")):
             os.system("source ~/.zshrc")
       else:
             print("conanfit function already exists in ~/.zshrc")
-      
+
 
 if os.path.exists(os.path.expanduser("~/.bashrc")):
       if os.system("grep -q 'function conanfit()' ~/.bashrc"): #check if function already exists
