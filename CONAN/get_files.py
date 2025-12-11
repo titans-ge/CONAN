@@ -98,10 +98,14 @@ class get_TESS_data(object):
 
         if isinstance(self.sectors,int): 
             self.sectors = [self.sectors]
+        if isinstance(self.author,str):
+            self.author = [self.author]*len(self.sectors)
+        if isinstance(self.exptime,(int,float,type(None))):
+            self.exptime = [self.exptime]*len(self.sectors)
 
-        for s in self.sectors:
-            self.lc[s] = lk.search_lightcurve(self.planet_name,author=self.author,sector=s,
-                                                exptime=self.exptime).download(quality_bitmask=quality_bitmask)
+        for i,s in enumerate(self.sectors):
+            self.lc[s] = lk.search_lightcurve(self.planet_name,author=self.author[i],sector=s,
+                                                exptime=self.exptime[i]).download(quality_bitmask=quality_bitmask)
             try:
                 self.lc[s] = self.lc[s].select_flux(select_flux)
             except:
@@ -262,7 +266,8 @@ class get_TESS_data(object):
         Parameters
         ----------
         bjd_ref : float
-            BJD reference time to use for the light curve file.
+            BJD reference time to use for the light curve file. Default is 2450000. 
+            Note that TESS time is in BJD-2457000. so the saved time is (TESS time + 2457000 - bjd_ref)  
         folder : str
             Folder to save the light curve file in.
         out_filename : str
@@ -917,8 +922,8 @@ class get_CHEOPS_data(object):
                                             "obs_total_exptime", "data_arch_rev",'status_published']))
 
     def download(self, file_keys="all", aperture="DEFAULT", force_download=False, get_metadata=True,
-                    decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,
-                    outlier_clip=4, outlier_window_width=11,outlier_clip_niter=1, kwargs=None,verbose=True):
+                    decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,outlier_clip=4, 
+                    outlier_window_width=11,outlier_clip_niter=1, normalize=True,kwargs=None,verbose=True):
         """   
         Download CHEOPS light curves from the cheops database using the dace_query package
 
@@ -944,12 +949,15 @@ class get_CHEOPS_data(object):
             Window width to use for clipping outliers. Default is 11.
         outlier_clip_niter : int
             Number of iterations to clip outliers. Default is 1.
+        normalize : bool
+            Normalize the light curve flux. Default is True.
         kwargs : dict
             Additional keyword arguments to the `get_lightcurve()` function of pycheops.Dataset. e.g
             kwargs = dict(saa_max=0, temp_max=0, earth_max=1, moon_max=0, sun_max=0, cr_max=2)
         verbose : bool
             Verbose output. Default is True.
         """
+        #TODO allow to get unnormalized flux
         
         if isinstance(file_keys,str):
             if file_keys=="all": 
@@ -977,15 +985,20 @@ class get_CHEOPS_data(object):
             if verbose: print(f"downloaded lightcurve with file key: {file_key}, aperture: {aperture[i]}")
             
             #remove points with high background
-            d.lc["bg"] = d.lc["bg"]*d.flux_median
+            d.lc["bg"] = d.lc["bg"]
             mask  = d.lc["bg"] > bg_MAD_reject*np.nanmedian(d.lc["bg"])
-            if verbose: print(f'    BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"]):.2f}]', end="->")
-            _,_,_ = d.mask_data(mask, verbose=verbose)
+            if verbose: print(f'    BG rejection [>3*med_BG: {bg_MAD_reject*np.nanmedian(d.lc["bg"]*d.flux_median):.2f}]', end="->")
+            if sum(mask)>0: _,_,_ = d.mask_data(mask, verbose=verbose)
 
             #iterative sigma clipping
             for _ in range(outlier_clip_niter): 
                 t_,f_,e_ = d.clip_outliers(outlier_clip,outlier_window_width, verbose=verbose)
             
+            if not normalize:
+                d.lc["flux"]      = d.lc["flux"] * d.flux_median
+                d.lc["flux_err"]  = d.lc["flux_err"] * d.flux_median
+                if verbose:
+                    print("Flux is unnormalized")
             print("\n")
             self.lc.append(d)
 

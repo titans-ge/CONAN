@@ -111,7 +111,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                 planet_mod        = fit_mod[i].planet_mod        if obj._obj_type=="lc_obj" else fit_mod[i].planet_mod-fit_mod[i].gamma
                 planet_mod_smooth = fit_mod[i].planet_mod_smooth if obj._obj_type=="lc_obj" else fit_mod[i].planet_mod_smooth-fit_mod[i].gamma
                 
-                if plot_cols[0]==0 and binsize!=0: 
+                if plot_cols[0]==0 and binsize>=2*np.median(np.diff(p1[p1_srt])): #binsize!=0: 
                     ax_main.plot(p1[p1_srt],dt_flux[p1_srt], "C0.", ms=4, alpha=0.6)
                     if p3 is not None: 
                         t_bin,y_bin,e_bin = bin_data_with_gaps(p1[p1_srt],dt_flux[p1_srt],p3[p1_srt],binsize=binsize)
@@ -135,7 +135,7 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
                 else:
                     p1_srt = np.arange(len(p1))
 
-                if plot_cols[0]==0 and binsize!=0: 
+                if plot_cols[0]==0 and binsize>=2*np.median(np.diff(p1[p1_srt])): #binsize>2*cadence #binsize!=0: 
                     ax_main.plot(p1[p1_srt],p2[p1_srt],"C0.",ms=4,alpha=0.6)      #data
                     if p3 is not None: 
                         t_bin,y_bin,e_bin = bin_data_with_gaps(p1[p1_srt],p2[p1_srt],p3[p1_srt],binsize=binsize)
@@ -160,13 +160,13 @@ def _plot_data(obj, plot_cols, col_labels, nrow_ncols=None, figsize=None, fit_or
         
             ax_res = fig.add_subplot(inner_grid[1], sharex=ax_main)
             ax_res.axhline(0, color='gray', linestyle='--', linewidth=0.8)
-            if plot_cols[0]==0 and binsize!=0: 
-                rms = np.std(fit_mod[i].residual)*1e6 if obj._obj_type=="lc_obj" else np.std(fit_mod[i].residual)
+            rms = np.std(fit_mod[i].residual)*1e6 if obj._obj_type=="lc_obj" else np.std(fit_mod[i].residual)
+            if plot_cols[0]==0 and binsize>=2*np.median(np.diff(p1[p1_srt])): #binsize!=0: 
                 ax_res.plot(p1,fit_mod[i].residual,".",ms=3,c="gray",alpha=0.3, label=f"{rms:.2f}ppm" if obj._obj_type=="lc_obj" else f"{rms:.2f}")
                 t_bin,res_bin = bin_data_with_gaps(p1[p1_srt],fit_mod[i].residual[p1_srt],binsize=binsize)
                 ax_res.errorbar(t_bin,res_bin, fmt="o",ms=5, color="k", capsize=2, zorder=3)
             else:
-                ax_res.plot(p1,fit_mod[i].residual,".",ms=5,c="gray")
+                ax_res.plot(p1,fit_mod[i].residual,".",ms=5,c="gray", label=f"{rms:.2f}ppm" if obj._obj_type=="lc_obj" else f"{rms:.2f}")
 
             # Set consistent residual limits
             max_res = np.max(np.abs(fit_mod[i].residual)) * 1.2
@@ -2737,8 +2737,8 @@ class load_lightcurves:
         - uniform prior given as tuple of length 3, (min, start, max) e.g. RpRs = (0,0.1,0.2). \n
         
         if tuple of length 3 is specified for rho_star or Duration, the user can specify whether to use 
-        uniform or loguniform. loguniform maybe be preferred for rho_star and Duration priors 
-        (see https://iopscience.iop.org/article/10.3847/1538-3881/ac7f2f)
+        uniform or loguniform. loguniform maybe be preferred for rho_star and Duration priors when 
+        the prior range spans different orders of magnitude. (see https://iopscience.iop.org/article/10.3847/1538-3881/ac7f2f)
 
         Users can choose the between Eccentricity-omega or sesinw-secosw parameterization. Note that
         Eccentricity-omega is still converted to sesinw-secosw for efficient sampling. 

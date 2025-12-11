@@ -343,6 +343,8 @@ class Planet_LC_Model:
                         atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta)
                     elif pc_model=="lambert":
                         atm    = lambertian_atm_variation(ph_angle, Fp, Fn, self.delta)
+                    elif pc_model=="cos+lamb":
+                        atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta) + lambertian_atm_variation(ph_angle, Fp, 0, 0) #TODO fix implementation
                     else:
                         raise ValueError(f"Unknown phase curve model: {pc_model}. Use 'cosine' or 'lambert'")
 

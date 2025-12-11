@@ -924,7 +924,7 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
     lc_obj = load_lightcurves(_names, data_filepath=fpath, filters=_filters, wl=_wl, nplanet=nplanet, verbose=verbose)
     lc_obj.lc_baseline(_offset.copy(), *np.array(_bases).T, sin=_bsin, grp_id=None, gp=_useGPphot,verbose=False )
     lc_obj.add_sinusoid(lc_list=sin_lclist, trig=trig, n=sin_n, par=sin_par, Amp = sin_Amp, P=sin_Per, x0=sin_x0, verbose=False)
-    lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,niter=_clip_niter, show_plot=False,verbose=False )
+    lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,niter=_clip_niter, show_plot=False,verbose=True )
     lc_obj.rescale_data_columns(method=_sclcol,verbose=False)
     lc_obj.supersample(lc_list=_ss_lclist, ss_factor=_ss_fac, verbose=False)
     lc_obj.add_spline(lc_list=_spl_lclist ,par=_spl_par , degree=_spl_deg,
@@ -1562,7 +1562,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
             if _clip_cols!=[]: 
                 _clip_cols = [f"col{c}" for c in _clip_cols[0]]  #convert to list of col{c} format
 
-            lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,niter=_clip_niter, show_plot=False,verbose=False )
+            lc_obj.clip_outliers(lc_list=_clip_lclist , clip=_clip, width=_clip_width,select_column=_clip_cols,niter=_clip_niter, show_plot=False,verbose=True )
 
         # scale columns
         if 'scale_columns' in lcs:

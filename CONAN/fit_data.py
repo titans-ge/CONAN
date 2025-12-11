@@ -6,6 +6,7 @@ import dill as pickle
 import emcee, dynesty
 from dynesty.utils import resample_equal
 import time
+import warnings
 
 from .basecoeff_setup import *
 from .models import *
@@ -960,6 +961,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         indices   = np.where(lind == i)
         indlist.append(indices)
         
+        if fit_offset[i]=='n':
+            if not (useSpline_lc[LCnames[i]].use or useGPphot[i] in ['ge','ce','sp']):
+                warnings.warn(f"fit_offset='n' for lc{i}, spline or GP should be setup to account for lack of offset.", UserWarning)
+
         #baseline parameters
         # first, also allocate spots in the params array for the BL coefficients, but set them all to 0/1 and the stepsize to 0
         offset, dcol0, dcol3, dcol4, dcol5, dcol6, dcol7, dcol8, dsin, dCNM, nbc, pr_str = basecoeff(bases[i],useSpline_lc[LCnames[i]],bases_init[i],lcbases_lims[i],fit_offset[i])  # the baseline coefficients for this lightcurve; each is a 2D array
@@ -969,7 +974,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         # if the least-square fitting for the baseline is turned on (baseLSQ = 'y'), then set the stepsize of the jump parameter to 0
         if (baseLSQ == "y"):
             abvar=np.concatenate(([offset[1,:],dcol0[1,:],dcol3[1,:],dcol4[1,:],dcol5[1,:],dcol6[1,:],dcol7[1,:],dcol8[1,:],dsin[1,:],dCNM[1,:]]))
-            abind=np.where(abvar!=0.)
+            abind=np.where(abvar!=0.) # get indices of the baseline parameters that are set to jump in lsq fit
             bvars.append(abind)
             offset[1,:]=dcol0[1,:]=dcol3[1,:]=dcol4[1,:]=dcol5[1,:]=dcol6[1,:]=dcol7[1,:]=dcol8[1,:]=dsin[1,:]=dCNM[1,:]=0      # the step sizes are set to 0 so that they are not interpreted as MCMC JUMP parameters
 
