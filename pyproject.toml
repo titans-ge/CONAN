@@ -26,7 +26,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "chainconsumer==1.1.2",
+    "chainconsumer",
     "scipy",
     "pandas",
     "lmfit",
@@ -44,7 +44,7 @@ dependencies = [
     "ldtk ==1.7.0",
     "tqdm",
     "spleaf",
-    "numba",
+    "numba==0.61.2",
     "h5py",
     "PyYAML>=6.0"
 ]

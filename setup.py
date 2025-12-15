@@ -1,8 +1,6 @@
 # works for normal installation but not for editable installation unless
 import os
 from setuptools import setup
-# os.system("f2py -c -m occultquad occultquad.f")
-# os.system("f2py -c -m occultnl occultnl.f")
 
 # # Check if the NO_FORTRAN environment variable is set
 no_fortran = os.getenv('NO_FORTRAN', 'False').lower() in ('true', '1', 't')  

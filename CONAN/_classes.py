@@ -1202,7 +1202,8 @@ class load_lightcurves:
             Eccentricity, omega = 0, 90
             # sesinw, secosw = 0, 0  #set to zero if not given
         if Eccentricity is not None and omega is not None:
-            om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else np.deg2rad(omega)
+            om_rad = tuple(np.deg2rad(omega)) if isinstance(omega,tuple) else list(np.deg2rad(omega)) if np.iterable(omega) else np.deg2rad(omega)
+            
             if isinstance(Eccentricity, list) and isinstance(om_rad, list):
                 sesinw, secosw = [], []
                 for ec,om in zip(Eccentricity, om_rad):

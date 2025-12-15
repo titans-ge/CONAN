@@ -5,6 +5,9 @@ from CONAN.utils import (rho_to_aR, convert_LD, Tdur_to_aR, inclination,sesinw_s
                             rho_to_tdur, get_orbital_elements, get_Tconjunctions,convert_rho)
 from CONAN.models import Planet_LC_Model
 import matplotlib.pyplot as plt
+import os
+
+os.environ['NO_FORTRAN'] = 'True'
 
 rho_star = 1.5
 T0       = 1880
@@ -20,65 +23,6 @@ Fn       = None
 delta    = None
 A_ev     = 0
 A_db     = 0
-
-
-# def ktransit_mod(t, rho_star,dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
-#                     secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1):
-#         import ktransit
-#         import numpy as np
-#         from CONAN.utils import sesinw_secosw_to_ecc_omega
-
-#         u1 = 2*np.sqrt(q1)*q2
-#         u2 = np.sqrt(q1)*(1-2*q2)
-#         ecc, ome = sesinw_secosw_to_ecc_omega(sesinw,secosw)
-#         esinw = ecc*np.sin(ome)
-#         ecosw = ecc*np.cos(ome)
-
-#         M = ktransit.LCModel()
-#         M.add_star(
-#                 rho=rho_star, # mean stellar density in cgs units
-#                 ld1=u1,
-#                 ld2=u2, 
-#                 ld3=0.0,
-#                 ld4=0.0, 
-#                 dil=0.0,
-#                 zpt=01.0, 
-#                 veloffset=0 # new keyword, the radial velocity zero-point offset in m/s   
-#                 )
-
-#         M.add_planet(
-#                         T0=T0, # a transit mid-time 
-#                         period=per, # an orbital period in days
-#                         impact=b, # an impact parameter
-#                         rprs=RpRs, # planet stellar radius ratio
-#                         ecosw=ecosw, 
-#                         esinw=esinw,
-#                         occ=occ, # a secondary eclipse depth in ppm
-#                         rvamp=0.) # radial velocity semi-amplitude in m/s
-        
-#         M.add_data(
-#                 time=t,   
-#                 itime=np.zeros_like(t)+0.021
-#                 )
-#         return M.transitmodel
-
-# def ellc_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
-#                     secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1):
-#     import ellc
-#     sb     = occ*1e-6/RpRs**2
-#     u1,u2  = convert_LD(q1,q2,"q2u")
-#     ecc, w = sesinw_secosw_to_ecc_omega(sesinw, secosw,angle_unit="degrees")
-
-#     if rho_star != None:
-#         aR   = rho_to_aR(rho_star,per,ecc,w)                     #semi-major axis (in units of stellar radii)
-#     else:
-#         aR   = Tdur_to_aR(dur, b, RpRs, per,ecc,w)                     #semi-major axis (in units of stellar radii)
-
-#     ellc_flux = ellc.lc(time, t_zero=T0, period=per, radius_1=1/aR, radius_2=RpRs/aR, 
-#                         incl=inclination(b, aR,ecc,w) , sbratio=sb,
-#                         f_c=secosw, f_s=sesinw,ld_1="quad", ldc_1=[u1,u2], 
-#                         )
-#     return ellc_flux
 
 def batman_transit(time, rho_star=None, dur=None, T0=None, RpRs=None, b=None, per=None, sesinw=0, 
                     secosw=0, q1=0, q2=0, occ=0, Fn=None, delta=None, A_ev=0, A_db=0,npl=1, get_mod=False):

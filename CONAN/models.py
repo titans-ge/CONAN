@@ -2,7 +2,7 @@
 #    it returns model values for ONE transit light curve
 #      (will need to be called several times for several light curves)
 
-import inspect,sys
+import inspect,sys,os
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats
@@ -12,14 +12,20 @@ from types import SimpleNamespace
 from numpy import (array, size, argmin, abs, diag, log, median,  where, zeros, exp, pi, double)
 from george.modeling import Model
 
-try:
-    from .occultquad import *  # import the fortran code for faster computation
-except ImportError:
-    print("Could not import occultquad. Using python equivalent (~30X slower)")
-    from .occultquad_pya import OccultQuadPy
 
-    OQ = OccultQuadPy()
-    occultquad = OQ.occultquad
+if os.getenv('NO_FORTRAN', 'False').lower() in ('true', '1', 't'):
+    print("=== Using python equivalent of transit model (NO_FORTRAN mode) ===")
+    from CONAN.occultquad_numba import occultquad_numba as occultquad
+else:
+    try:
+        from .occultquad import occultquad  # import the fortran code for faster computation
+        print("=== Using Fortran occultquad for transit model ===")
+    except ImportError:
+        print("Could not import Fortran occultquad. Using python/numba equivalent")
+        from CONAN.occultquad_numba import occultquad_numba as occultquad
+        # from .occultquad_pya import OccultQuadPy
+        # OQ = OccultQuadPy()
+        # occultquad = OQ.occultquad
 
 from .utils import (rho_to_aR, Tdur_to_aR, cosine_atm_variation, lambertian_atm_variation,
                     ellipsoidal_variation_signal, doppler_boosting_signal, transit_depth,
@@ -204,6 +210,8 @@ class Planet_LC_Model:
         self.cst_pars = cst_pars
 
         self.parameter_names = ['rho_star','dur', 'T0', 'RpRs', 'b', 'per', 'sesinw', 'secosw', 'ddf', 'q1', 'q2', 'occ', 'Fn','delta', 'A_ev', 'f1_ev', 'A_db','cst_pars','npl']
+        # if os.getenv('NO_FORTRAN', 'False').lower() in ('true', '1', 't'):
+        #     print("=== Using python equivalent of transit model (NO_FORTRAN mode) ===")
 
     def get_value(self, tarr, ss=None,grprs=0, vcont=0, Rstar=None, model_phasevar=False, custom_LCfunc=None, pc_model="cosine", approx_EA=False):
         """ 
@@ -342,7 +350,7 @@ class Planet_LC_Model:
                     if pc_model=="cosine":
                         atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta)
                     elif pc_model=="lambert":
-                        atm    = lambertian_atm_variation(ph_angle, Fp, Fn, self.delta)
+                        atm    = lambertian_atm_variation(ph_angle, Fp, Fn, self.delta,inc_rad)
                     elif pc_model=="cos+lamb":
                         atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta) + lambertian_atm_variation(ph_angle, Fp, 0, 0) #TODO fix implementation
                     else:
