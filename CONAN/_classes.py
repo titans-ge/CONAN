@@ -3751,6 +3751,8 @@ class load_rvs:
         unit of the rv data. Must be one of ["m/s","km/s"]. Default is "km/s".
     lc_obj : object;
         lightcurve object to link the parameters with the rv object. if None, it uses the already defined light curve object or creates a new empty one.
+    sort : bool;
+        if True, sorts the rvs based on the median time. Default is False.
     show_guide : bool;
         print output to guide the user. Default is False.
 
@@ -3787,7 +3789,7 @@ class load_rvs:
     >>> rv_obj = load_rvs(file_list=["rv1.dat","rv2.dat"], data_filepath="/path/to/data/", rv_unit="km/s")
     """
     def __init__(self, file_list=None, data_filepath=None, input_rv=None, nplanet=1, rv_unit="km/s",
-                    lc_obj=None, verbose=True, show_guide =False):
+                    lc_obj=None, sort=False, verbose=True, show_guide =False):
         self._obj_type = "rv_obj"
         self._nplanet  = nplanet
         self._fpath    = os.getcwd()+"/" if data_filepath is None else data_filepath
@@ -3850,7 +3852,13 @@ class load_rvs:
             err_sqdiff = self._rms_estimate[-1]**2 - np.mean(fdata[:,2]**2)      # (rms^2 - mean(err^2)
             self._jitt_estimate.append( np.sqrt(err_sqdiff) if err_sqdiff > 0 else 0 )   # √(rms^2 - mean(err^2)) is a good estimate of the required jitter to add quadratically
             
-
+        if sort:  #sort rvs based on median time
+            mid_t = [np.median(rv["col0"]) for rv in self._input_rv.values()]
+            srt   = np.argsort(mid_t)
+            _nms  = [self._names[s] for s in srt]
+            self.__init__(file_list=_nms, data_filepath=self._fpath,nplanet=self._nplanet,rv_unit=self._RVunit,
+                            lc_obj=self._lcobj , verbose=verbose,show_guide=show_guide)
+            print("RVs have been re-sorted based on median time.")
 
         #list to hold initial baseline model coefficients for each rv
         self._RVbases_init = [dict( A0=0, B0=0, A3=0, B3=0, A4=0, B4=0, A5=0, B5=0, 

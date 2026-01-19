@@ -117,15 +117,19 @@ class get_TESS_data(object):
             print(f"downloaded lightcurve for sector {s}")
 
             #crowdsap is the ratio of target flux to total flux in the aperture. contamination fraction is fcontam/ftarget
-            fcontam        = 1 - self.lc[s].hdu[1].header["CROWDSAP"]
-            ftarget        = self.lc[s].hdu[1].header["CROWDSAP"]
-            self.contam[s] = fcontam/ftarget
+            try:
+                fcontam        = 1 - self.lc[s].hdu[1].header["CROWDSAP"]
+                ftarget        = self.lc[s].hdu[1].header["CROWDSAP"]
+                self.contam[s] = fcontam/ftarget
 
-            if decontaminate:
-                self.lc[s]["flux"]     = flux_decontam(self.lc[s]["flux"], self.contam[s])
-                print(f"decontaminated sector {s} light curve using contamination fraction of {self.contam[s]:.3f}")
-            # elif decontaminate and select_flux=='pdcsap_flux':
-            #     print("Warning: pdcsap_flux is already decontaminated. Setting decontaminate=False")
+                if decontaminate:
+                    self.lc[s]["flux"]     = flux_decontam(self.lc[s]["flux"], self.contam[s])
+                    print(f"decontaminated sector {s} light curve using contamination fraction of {self.contam[s]:.3f}")
+                # elif decontaminate and select_flux=='pdcsap_flux':
+                #     print("Warning: pdcsap_flux is already decontaminated. Setting decontaminate=False")
+            except:
+                print(f"could not retrieve contamination fraction for sector {s}")
+                self.contam[s] = np.nan
                 
         if hasattr(self,"_ok_mask"): del self._ok_mask
         self.data_splitted = False
