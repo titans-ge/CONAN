@@ -898,7 +898,7 @@ class load_lightcurves:
                 warnings.warn(f"load_lightcurves(): input file {f} has more than 9 columns, only the first 9 columns will be used.", UserWarning)
             elif ncol < 9:
                 # if verbose: print(f"writing ones to the missing columns of file: {f}")
-                new_cols = np.ones((nrow,9-ncol))
+                new_cols = np.zeros((nrow,9-ncol))
                 fdata = np.hstack((fdata,new_cols))
 
             #remove nan rows from fdata and print number of removed rows
@@ -1662,9 +1662,11 @@ class load_lightcurves:
         lc_list: list of string, None, 'all';
             list of lightcurve filenames on which to mask points. Default is 'all' which masks all lightcurves in the object.
         condition: str, list of str, None;
-            The condition is a string that can be evaluated as a python boolean expression based on any column of the lc e.g. "lc['col1']>1.0002" will mask points where flux is greater than 1.0002.
-            The condition can be a combination of columns and logical operators e.g. "lc['col1']>1.0002 and lc['col0']<lc['col0'][10]" will mask points where flux is greater than 1.0002 and time is less than the 10th time point.
-            Default is None which does nothing.
+            The condition is a string that can be evaluated as a python boolean expression based on any column of the lc 
+            e.g. "lc['col1']>1.0002" will mask points where flux is greater than 1.0002.
+            The condition can be a combination of columns and logical operators e.g. 
+            "(lc['col1']>1.0002) & (lc['col0']<lc['col0'][10])" will mask points where flux is 
+            greater than 1.0002 and time is less than the 10th time point. Default is None which does nothing.
         show_plot: bool;
             set True to plot the data and show masked points.
         verbose: bool;
@@ -1711,7 +1713,7 @@ class load_lightcurves:
                 ax[i].plot(lc["col0"][mask],lc["col1"][mask], '.r', ms=5,label="masked")
                 ax[i].legend()
 
-            if verbose and (not show_plot): print(f"Masked {np.sum(~mask)} points in {file}")
+            if verbose and (not show_plot): print(f"Masked {np.sum(mask)} points in {file}")
             self._input_lc[file] = {k:lc[k][~mask] for k in lc.keys()}
         
         self._masked_points = True
