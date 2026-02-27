@@ -6,7 +6,7 @@ requires = ["setuptools==68.2.2", "wheel"]
 
 [project]
 name = "conan-exoplanet"
-version = "3.3.13dev"
+version = "3.3.13"
 authors = [
     {name = "Babatunde Akinsanmi", email = "tunde.akinsanmi@unige.ch"},
     {name = "Monika Lendl", email = "monika.lendl@unige.ch"}
