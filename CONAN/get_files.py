@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from astropy.io import fits
-from astropy.table import Table
+from astropy.table import Table, vstack
 from astropy.units import UnitsWarning
 from astroquery.mast import Observations
 from .utils import rho_to_tdur, robust_std
@@ -102,15 +102,19 @@ class get_TESS_data(object):
             self.author = [self.author]*len(self.sectors)
         if isinstance(self.exptime,(int,float,type(None))):
             self.exptime = [self.exptime]*len(self.sectors)
+        if isinstance(select_flux,str):
+            select_flux = [select_flux]*len(self.sectors)
 
         for i,s in enumerate(self.sectors):
             self.lc[s] = lk.search_lightcurve(self.planet_name,author=self.author[i],sector=s,
                                                 exptime=self.exptime[i]).download(quality_bitmask=quality_bitmask)
-            try:
-                self.lc[s] = self.lc[s].select_flux(select_flux)
-            except:
-                print(f"{select_flux} is not available. Using 'sap_flux' instead. other options include ['kspsap_flux','det_flux'] ")
-                self.lc[s] = self.lc[s].select_flux("sap_flux")
+            
+            avail_flux = [k for k in self.lc[s].keys() if k.endswith("_flux")]
+            if select_flux[i] in avail_flux:
+                self.lc[s] = self.lc[s].select_flux(select_flux[i])
+            else:
+                print(f"{select_flux[i]} is not available. Using default {self.lc[s].flux_origin} instead. other options are: {avail_flux}")
+                # self.lc[s] = self.lc[s].select_flux(self.lc[s].flux_origin)
                 
 
             self.lc[s]= self.lc[s].remove_nans().normalize()
@@ -130,7 +134,7 @@ class get_TESS_data(object):
             except:
                 print(f"could not retrieve contamination fraction for sector {s}")
                 self.contam[s] = np.nan
-                
+
         if hasattr(self,"_ok_mask"): del self._ok_mask
         self.data_splitted = False
         
@@ -185,6 +189,44 @@ class get_TESS_data(object):
             except:
                 print("could not discard points")
 
+    def mask_points(self, time_ranges={}, flux_ranges={}, verbose=True ):
+        """
+        Mask out points in the light curve based on given time ranges and/or flux ranges.
+        Parameters
+        ----------
+        time_ranges : dict
+            Dictionary of time ranges to mask for each sector. keys are sector numbers and values are list of tuples of (start_time, end_time). Default is empty dict.
+            e.g. time_ranges={19:[(200, 300),(1234,1250)]} will mask points from sector 19 between time 200-300 and 1234-1250.
+        flux_ranges : dict
+            Dictionary of flux ranges to mask for each sector. keys are sector numbers and values are list of tuples of (min_flux, max_flux). Default is empty dict.
+            e.g. flux_ranges={21:[(0,0.98), (1.001,1.2)]} will mask points from sector 21 with flux between 0-0.98 and 1.001-1.2.
+        verbose : bool
+            If True, print information about masked points. Default is True.
+        
+        Examples
+        --------
+        >>> # mask points from sector 19 using time_ranges and from sector 21 using flux ranges
+        >>> df.mask_points(time_ranges={19:[(200, 300),(1234,1250)]}, flux_ranges={21:[(0,0.98), (1.001,1.2)]})
+
+        """
+        if time_ranges != {}:
+            for i,s in enumerate(self.sectors):
+                if s in time_ranges:
+                    assert isinstance(time_ranges[s], list) and len(time_ranges[s])>0, f'time_ranges[{s}] must be a list containing tuples of (start_time, end_time)'
+                    for range in time_ranges[s]:
+                        assert isinstance(range, tuple) and len(range)==2 and range[1] > range[0], f'ranges in time_ranges[{s}] must be tuples of (start_time, end_time) but {range} given.'
+                        tmask       = (self.lc[s].time.value > range[0]) & (self.lc[s].time.value < range[1])
+                        self.lc[s]  = self.lc[s][~tmask]
+                        if verbose: print(f"Points between {range} have been masked out")
+        if flux_ranges != {}:
+            for i,s in enumerate(self.sectors):
+                if s in flux_ranges:
+                    assert isinstance(flux_ranges[s], list) and len(flux_ranges[s])>0, f'flux_ranges[{s}] must be a list containing tuples of (min_flux, max_flux)'
+                    for range in flux_ranges[s]:
+                        assert isinstance(range, tuple) and len(range)==2 and range[1] > range[0], f'ranges in flux_ranges[{s}] must be tuples of (min_flux, max_flux) but {range} given.'
+                        fmask       = (self.lc[s].flux.value > range[0]) & (self.lc[s].flux.value < range[1])
+                        self.lc[s]  = self.lc[s][~fmask]
+                        if verbose: print(f"Points with flux between {range} have been masked out")
 
     def scatter(self):
         """
@@ -287,7 +329,7 @@ class get_TESS_data(object):
             except AttributeError:
                 t, f, e = self.lc[s]["time"].value, self.lc[s]["flux"].value, self.lc[s]["flux_err"].value
             t = t + 2457000 - bjd_ref
-            file = f"{folder}/{self.planet_name}_S{s}.dat" if out_filename is None else f"{folder}/{out_filename}"
+            file = f"{folder}/{self.planet_name}_S{s}.dat" if out_filename is None else f"{folder}/{out_filename}_S{s}.dat"
             np.savetxt(file, np.stack((t,f,e),axis=1),fmt='%.8f',
                         header=f'time-{bjd_ref} {"flux":10s} {"flux_err":10s}')
             print(f"saved file as: {file}")
@@ -927,7 +969,7 @@ class get_CHEOPS_data(object):
 
     def download(self, file_keys="all", aperture="DEFAULT", force_download=False, get_metadata=True,
                     decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,outlier_clip=4, 
-                    outlier_window_width=11,outlier_clip_niter=1, normalize=True,kwargs=None,verbose=True):
+                    outlier_window_width=11,outlier_clip_niter=1, normalize=True, merge_lcs=False,kwargs=None,verbose=True):
         """   
         Download CHEOPS light curves from the cheops database using the dace_query package
 
@@ -954,14 +996,16 @@ class get_CHEOPS_data(object):
         outlier_clip_niter : int
             Number of iterations to clip outliers. Default is 1.
         normalize : bool
-            Normalize the light curve flux. Default is True.
+            Normalize the light curve flux. Default is True.   
+        merge_lcs : bool
+            Merge light curves from different visits into a single light curve. The resulting light curve is normalized to the
+            median of the first lightcurve if `normalize` is True. Default is False.
         kwargs : dict
             Additional keyword arguments to the `get_lightcurve()` function of pycheops.Dataset. e.g
             kwargs = dict(saa_max=0, temp_max=0, earth_max=1, moon_max=0, sun_max=0, cr_max=2)
         verbose : bool
             Verbose output. Default is True.
         """
-        #TODO allow to get unnormalized flux
         
         if isinstance(file_keys,str):
             if file_keys=="all": 
@@ -998,13 +1042,39 @@ class get_CHEOPS_data(object):
             for _ in range(outlier_clip_niter): 
                 t_,f_,e_ = d.clip_outliers(outlier_clip,outlier_window_width, verbose=verbose)
             
-            if not normalize:
-                d.lc["flux"]      = d.lc["flux"] * d.flux_median
-                d.lc["flux_err"]  = d.lc["flux_err"] * d.flux_median
-                if verbose:
-                    print("Flux is unnormalized")
+            if not merge_lcs:
+                if not normalize:
+                    for k in ["flux","flux_err","bg","smear","contam"]:
+                        d.lc[k] = d.lc[k] * d.flux_median
+                    if verbose:
+                        print("Flux is unnormalized")
             print("\n")
             self.lc.append(d)
+            
+        if merge_lcs:
+            merged_lc = {}
+            for k,v in self.lc[0].lc.items():
+                for i in range(1, len(self.lc)):
+                    if isinstance(v, np.ndarray):
+                        vi = self.lc[i].lc[k]
+                        if k == "time":
+                            vi = vi + self.lc[i].bjd_ref - self.lc[0].bjd_ref
+                        if k in ["flux","flux_err","bg","smear","contam"]:
+                            if normalize:
+                                vi = vi * self.lc[i].flux_median / self.lc[0].flux_median
+                            else:
+                                v, vi = v * self.lc[0].flux_median, vi * self.lc[0].flux_median
+                        v  = np.concatenate((v, vi))
+                    elif isinstance(v, Table):
+                        vi = self.lc[i].lc[k]
+                        v  = vstack([v, vi])
+                    else:
+                        v = v
+                merged_lc[k] = v
+            self.lc[0].lc = merged_lc
+            self.lc = self.lc[0:1]
+            if verbose: 
+                print("=== All light curves merged ===")
 
     def mask_data(self, condition=None, verbose=False):
         """
@@ -1074,8 +1144,9 @@ class get_CHEOPS_data(object):
             BJD reference time to use for the light curve file.
         folder : str
             Folder to save the light curve file in.
-        out_filename : str
-            Name of the output file. Default is None in which case the file will be named as "{planet_name}_TG{file_key}.dat"
+        out_filename : str,None
+            Name of the output file. Default is None in which case the file will be named as "{planet_name}_{TG_file_key_no}.dat"
+            if f
         rescale_data : bool
             Rescale the data to between 0 and 1. Default is True.
         columns : list of str
@@ -1103,14 +1174,14 @@ class get_CHEOPS_data(object):
                     data_out[f"col{i}"] = rescale_r(d.lc[columns[i]]) if rescale_data else d.lc[columns[i]]
                 elif columns[i] == "roll_angle":
                     data_out[f"col{i}"] = self._resort_roll(d.lc[columns[i]]) if rescale_data else d.lc[columns[i]]
-                # elif columns[i] in ["bg","contam","smear"]:
-                #     data_out[f"col{i}"] = rescale(d.lc[columns[i]]) if rescale_data else d.lc[columns[i]]
+                elif columns[i] in ["bg","contam","smear"]:
+                    data_out[f"col{i}"] = rescale(d.lc[columns[i]]) if rescale_data else d.lc[columns[i]]
                 else:
                     data_out[f"col{i}"] = d.lc[columns[i]]
 
             lc_ = np.stack([data_out[f"col{i}"] for i in range(len(columns))], axis=1)
             
-            fkey = d.file_key.split("TG")[-1].split("_V")[0]
+            fkey = d.file_key.split("PR")[1][2:].split("_V")[0]     #d.file_key.split("TG")[-1].split("_V")[0]
             prefix = d.target.replace(" ","")
             file = folder+"/"+prefix+"_"+fkey+".dat" if out_filename is None else f"{folder}/{out_filename}"
             header=f'{columns[0]}'
