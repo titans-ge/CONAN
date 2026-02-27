@@ -1248,7 +1248,7 @@ def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
 	Fn : float
 		night side flux
 	delta_deg : float
-		hotspot offset in degrees.
+		hotspot offset in degrees. Positive values indicate eastward offset (peak before secondary eclipse).
 	cosine_order: float/int;
 		order of the cosine function. Default is 1
 		
