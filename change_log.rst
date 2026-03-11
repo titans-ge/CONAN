@@ -1,3 +1,17 @@
+11-Mar-2026: version 3.3.13
+~~~~~~~~~~~~~~
+* numba acceleration for the occultquad transit model (significant speed-up)
+* improved binning function
+* allow resuming emcee sampling at any stage of a previous sampling run
+* included shared_params in rerun_result function
+* allow to decontaminate TESS and Kepler data based on CROWSAP keyword
+* corrected indices of customRV parameters
+* fixed spleaf GP omission in get_decorr; fixed bug when decorr parameter list is empty; fixed step size for f1ev with emcee sampler
+* sorting option for RVs
+* get_TESS_data: improved flux selection and added mask_points method for masking data based on time and flux ranges
+* fix load_lightcurves to use zeros for missing columns when column is absent in the input file
+* fixed ValueError when calling np.where on empty GPindex/rvGPindex (0d array) when no GPs are configured
+* CI: updated GitHub Actions to Node.js 24 (setup-python@v5, FORCE_JAVASCRIPT_ACTIONS_TO_NODE24); added macOS and Windows wheel builds
 
 27-Aug-2025: version 3.3.12
 ~~~~~~~~~~~~~

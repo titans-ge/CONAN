@@ -19,8 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10",]
-        os: [ubuntu-latest] #[ubuntu-latest, windows-latest, macos-13, macos-14] #
+        python-version: ["3.10","3.11","3.12","3.13"] 
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14] #
 
     steps:
       - uses: actions/checkout@v4
@@ -34,8 +34,8 @@ jobs:
         env:
           # Skip 32-bit builds, musllinux builds, and disable building PyPy wheels on all platforms
           CIBW_SKIP: "*-manylinux_i686 *musllinux* pp*"
-          # Limit the build to only Python 3.10 and 3.11
-          CIBW_BUILD: "cp310-* cp311-*"
+          # Limit the build to only Python 3.10, 3.11, 3.12, and 3.13
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
 
       - uses: actions/upload-artifact@v4
         with:

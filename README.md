@@ -80,7 +80,7 @@ Note that a folder 'src' is created where the CONAN source files are downloaded 
 
 ---
 
-If having troubles compiling the fortran code used for the transit model, set `NO_FORTRAN=True` in terminal before pip installing. This uses a python implementation of the fortran code (which is ~30X slower)
+If having troubles compiling the fortran code used for the transit model, set `NO_FORTRAN=True` in terminal before pip installing. This uses a python with numba implementation of the fortran code (it is just as fast)
 
 ```
 export NO_FORTRAN=True
@@ -119,6 +119,23 @@ Fitting from a config file can be launched within `python` or from the `command 
 If you find `CONAN` useful in your research, please reference the GitHub
 repository. The first implementations of CONAN have been descibed in a few papers, kindly cite them using the following BibTeX entries:
 ```
+@ARTICLE{2025arXiv250820196A,
+       author = {{Akinsanmi}, Babatunde and {Lendl}, Monika and {Krenn}, Andreas},
+        title = "{CONAN: A Python package for modeling lightcurve and radial velocity data of exoplanetary systems}",
+      journal = {arXiv e-prints},
+     keywords = {Instrumentation and Methods for Astrophysics, Earth and Planetary Astrophysics},
+         year = 2025,
+        month = aug,
+          eid = {arXiv:2508.20196},
+        pages = {arXiv:2508.20196},
+          doi = {10.48550/arXiv.2508.20196},
+archivePrefix = {arXiv},
+       eprint = {2508.20196},
+ primaryClass = {astro-ph.IM},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2025arXiv250820196A},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+
 @ARTICLE{2017A&A...606A..18L,
         author = {{Lendl}, M. and {Cubillos}, P.~E. and 
                     {Hagelberg}, J. and 
@@ -165,6 +182,5 @@ archivePrefix = {arXiv},
        adsurl = {https://ui.adsabs.harvard.edu/abs/2020MNRAS.492.1761L},
       adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
-
 
 ```
