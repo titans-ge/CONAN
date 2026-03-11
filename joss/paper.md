@@ -69,8 +69,6 @@ Detecting and characterizing exoplanets, planets orbiting stars other than our S
 
 There are similar tools to `CONAN` for performing joint fit to exoplanet data, each with its own strengths and limitations. Some of these include `Juliet`[@juliet], PyOrbit [@pyorbit], `exoplanet`[@exoplanet], `Pyaneti`[@pyaneti], `ExoFAST`[@exofast]. One of the main strengths of `CONAN` compared to these tools is its capability to fit a wider variety of planetary signals. None of these publicly available tools can model full-orbit phasecurves of exoplanets using different phase functions. Notably, `CONAN` allows the user to define the custom model they would like to use in fitting the data, opening up practically unlimited use cases for `CONAN`. Additionally, `CONAN`'s capability to automatically select the best cotrending basis vectors for a dataset makes it especially well-suited to modeling extensive sets of ground-based observations, substantially reducing manual model selection effort.
 
-The full documentation can be accessed at [https://conan-exoplanet.readthedocs.io](https://conan-exoplanet.readthedocs.io/en/latest/)
-
 # Software design
 
 `CONAN` is designed with modularity, extensibility, and computational efficiency as core principles. The software architecture comprises several interconnected components that enable flexible analysis of exoplanet data while maintaining ease of use. The package follows an object-oriented design centered around three primary data container classes: `lc_obj` for photometric data, `rv_obj` for radial velocity data, and `fit_obj` for managing analysis configurations and parameters. These classes provide a unified interface for handling heterogeneous datasets from multiple instruments while preserving metadata and allowing custom preprocessing. Users interact with the package primarily through high-level functions (`load_lightcurves`, `load_rvs`, `fit_setup`, `run_fit`) that abstract the underlying complexity while permitting fine-grained control when needed. The modeling framework is divided into distinct, composable components. This modular design allows users to enable or disable specific physical effects based on their data characteristics, or to supply custom model functions that seamlessly integrate with the existing framework.
@@ -79,6 +77,7 @@ Computational efficiency is achieved through strategic use of compiled extension
 
 `CONAN` supports two complementary workflows: an interactive Python API for exploratory analysis and scripting, and a configuration-file-based interface (supporting both YAML and custom .dat formats) for reproducible batch processing. The configuration system allows complete specification of data sources, model components, priors, and sampling parameters, enabling analyses to be launched via command-line or Python with minimal code. Automatic data acquisition from archives (TESS, CHEOPS, Kepler, K2, NASA Exoplanet Archive) and built-in visualization capabilities reduce the overhead of common tasks. 
 
+The full documentation can be accessed at [https://conan-exoplanet.readthedocs.io](https://conan-exoplanet.readthedocs.io/en/latest/)
 
 # Research impact statement
 
@@ -86,7 +85,7 @@ Computational efficiency is achieved through strategic use of compiled extension
 
 # AI usage disclosure
 
-No generative AI was used in the development of this software, or the writing of this manuscript.
+In the development of this software, generative AI was used for menial tasks, such as commenting or formating, but not in the writing of this manuscript.
 
 # Acknowledgements
 
