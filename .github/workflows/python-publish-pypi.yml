@@ -8,22 +8,14 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # required for Trusted Publishing (OIDC)
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build_wheels_sdist:
+  build:
     name: Build wheel and sdist
     runs-on: ubuntu-latest
-    # # cibuildwheel is only needed for packages with compiled (C/Fortran) extensions
-    # runs-on: ${{ matrix.os }}
-    # strategy:
-    #   fail-fast: false
-    #   matrix:
-    #     python-version: ["3.10","3.11","3.12","3.13"]
-    #     os: [ubuntu-latest, windows-latest, macos-13, macos-14]
 
     steps:
       - uses: actions/checkout@v4
@@ -31,20 +23,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          # python-version: ${{ matrix.python-version }}  # required for cibuildwheel, but not needed for python -m build
-
-      # cibuildwheel is only needed for packages with compiled (C/Fortran) extensions
-      # CONAN generates a pure Python wheel, so we use python -m build instead
-      # - name: Build wheels
-      #   uses: pypa/cibuildwheel@v3.4.0
-      #   env:
-      #     CIBW_SKIP: "*-manylinux_i686 *musllinux* pp*"
-      #     CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
-
-      # - uses: actions/upload-artifact@v4
-      #   with:
-      #     name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
-      #     path: ./wheelhouse/*.whl
 
       - name: Build wheel and sdist
         run: |
@@ -53,16 +31,13 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist #cibw-sdist
-          path: dist/ #dist/*.tar.gz
+          name: dist
+          path: dist/
 
   upload_pypi:
     name: Upload to PyPI
     runs-on: ubuntu-latest
-    needs:
-      - build_wheels_sdist
-    permissions:
-      id-token: write
+    needs: build
     environment:
       name: deploy-to-pypi
       url: https://pypi.org/p/conan-exoplanet
@@ -71,13 +46,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: dist
-          # pattern: cibw-*
           path: dist
-          # merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
-          repository-url: https://test.pypi.org/legacy/  # remove this line to publish to real PyPI
-          # user: __token__
-          # password: ${{ secrets.PYPI_API_TOKEN }}  # not needed with Trusted Publishing
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
