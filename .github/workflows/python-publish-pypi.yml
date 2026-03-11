@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write  # required for Trusted Publishing (OIDC)
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -60,8 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_wheels_sdist
-    permissions:
-      id-token: write  # required for Trusted Publishing (OIDC)
     environment:
       name: deploy-to-pypi
       url: https://pypi.org/p/conan-exoplanet
@@ -77,5 +76,6 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/  # remove this line to publish to real PyPI
           # user: __token__
           # password: ${{ secrets.PYPI_API_TOKEN }}  # not needed with Trusted Publishing
