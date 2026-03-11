@@ -1573,7 +1573,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             temp=np.concatenate((np.asarray(temp),blind[lcstep]),axis=0)
 
         #and also add the GPparams
-        gind = np.where(GPindex==i)
+        gind = np.where(np.asarray(GPindex)==i)
         gindl = list(gind[0]+len(params))
         gind = gind[0]+len(params)
 
@@ -1620,7 +1620,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
             temp=np.concatenate((np.asarray(temp),blind[rvstep]),axis=0)
 
         #and also add the rv GPparams
-        rvgind = np.where(rvGPindex==i)
+        rvgind = np.where(np.asarray(rvGPindex)==i)
         rvgindl = list(rvgind[0]+len(params)+len(GPparams))
         rvgind = rvgind[0]+len(params)+len(GPparams)
 
