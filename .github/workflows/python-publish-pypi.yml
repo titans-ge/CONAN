@@ -29,6 +29,17 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build
 
+      - name: Normalize sdist filename for PyPI
+        run: |
+          if [ -f "dist/conan-exoplanet-${{ github.ref_name }}.tar.gz" ]; then
+            mv "dist/conan-exoplanet-${{ github.ref_name }}.tar.gz" "dist/conan_exoplanet-${{ github.ref_name }}.tar.gz"
+          else
+            for f in dist/conan-exoplanet-*.tar.gz; do
+              [ -e "$f" ] || continue
+              mv "$f" "${f/dist\/conan-exoplanet-/dist\/conan_exoplanet-}"
+            done
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
