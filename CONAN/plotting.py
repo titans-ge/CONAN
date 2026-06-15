@@ -156,7 +156,10 @@ def fit_plots(nttv, nphot, nRV, filters,names,RVnames,out_folder,prefix="/",RVun
         ax[0].errorbar(pbin, flux_bins, yerr=error_bins, fmt='o', c='midnightblue', ms=5, capsize=2, zorder=3, label=f"{int(binsize*24*60)}-min bins")
         ax[0].plot(np.concatenate(phsm_filter)[srt_sm], np.concatenate(lcsm_filter)[srt_sm], "-r", zorder=5, lw=3,
                     label='Best-fit')
-        ax[0].set_yticklabels([round(v) for v in (ax[0].get_yticks()-1)*1e6])
+        # Fix matplotlib warning by setting ticks before labels
+        yticks = ax[0].get_yticks()
+        ax[0].set_yticks(yticks)
+        ax[0].set_yticklabels([round(v) for v in (yticks-1)*1e6])
         ax[0].legend()
 
 
