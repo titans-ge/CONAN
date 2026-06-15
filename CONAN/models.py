@@ -310,8 +310,11 @@ class Planet_LC_Model:
                 ph_transit  = np.where((y >= 0))
                 npo_transit = len(z[ph_transit])
 
-                mm0[ph_transit],_ = occultquad(z[ph_transit],u1,u2,abs(RR),npo_transit)   # mm0 is the transit model
-
+                if abs(RR)!=0:
+                    mm0[ph_transit],_ = occultquad(z[ph_transit],u1,u2,abs(RR),npo_transit)   # mm0 is the transit model
+                else:
+                    mm0[ph_transit] = 1
+                    
                 if RR < 0: 
                     mm0[ph_transit] = 1-mm0[ph_transit]+1   #allow negative depths
 
@@ -338,8 +341,8 @@ class Planet_LC_Model:
 
                 # phase angle
                 ph_angle = orb_pars.phase_angle #TA_lc + (ome-np.pi/2)   
-                ellps    = ellipsoidal_variation_signal(ph_angle, A_ev, self.f1_ev, inc_rad)
-                dopp     = doppler_boosting_signal(ph_angle, A_db)
+                ellps    = ellipsoidal_variation_signal(ph_angle, A_ev, self.f1_ev, inc_rad, ecc, ome_rad)
+                dopp     = doppler_boosting_signal(ph_angle, A_db, ecc, ome_rad)
 
                 if model_phasevar: 
                     # sepate the transit and occultation models and add the atmospheric variation
@@ -350,9 +353,9 @@ class Planet_LC_Model:
                     if pc_model=="cosine":
                         atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta)
                     elif pc_model=="lambert":
-                        atm    = lambertian_atm_variation(ph_angle, Fp, Fn, self.delta,inc_rad)
+                        atm    = lambertian_atm_variation(ph_angle, Fp, Fn, self.delta,inc_rad, ecc, ome_rad)
                     elif pc_model=="cos+lamb":
-                        atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta) + lambertian_atm_variation(ph_angle, Fp, 0, 0) #TODO fix implementation
+                        atm    = cosine_atm_variation(ph_angle, Fp, Fn, self.delta,ecc, ome_rad) + lambertian_atm_variation(ph_angle, Fp, 0, 0,inc_rad,ecc, ome_rad) #TODO fix implementation
                     else:
                         raise ValueError(f"Unknown phase curve model: {pc_model}. Use 'cosine' or 'lambert'")
 
@@ -413,36 +416,120 @@ def spline_fit(data,res,useSpline, return_splfunc=False):
     spl : array-like
         the spline fit to the data
     """
+    from scipy.interpolate import BSpline
+
     knots_loc,s_par,dim = useSpline.knots_loc, useSpline.par,useSpline.dim
+    jumps_loc = getattr(useSpline, 'jumps_loc', None)
+    has_jumps = jumps_loc is not None and len(jumps_loc) > 0
+
     if dim==1:
 
         x      = np.copy(data[s_par])
-        srt    = np.argsort(x)   
+        srt    = np.argsort(x)
         xs, ys = x[srt], res[srt]
         err    = np.copy(data["col2"])[srt]
+        W      = 1.0 / err
 
-        if len(knots_loc)==1 and knots_loc[0]==x[-1]:    # a single knot at the end of the timeseries, use simple np.polyfit
-            spl = np.polyval (np.polyfit(xs,ys,deg=useSpline.deg,w=1/err), x)
+        if has_jumps:
+            # --- simultaneous fit: spline basis (or constant) + Heaviside columns ---
+            assert s_par == "col0", f"Jump fitting is only implemented for the first column (time), but got s_par={s_par}"
+            k       = useSpline.deg
+            t_jumps = np.asarray(jumps_loc)
+            D_jump  = (xs[:,None] >= t_jumps[None,:]).astype(float) # design matrix for the jumps (one column per jump, with Heaviside step function)    
+
+            if knots_loc is None or (len(knots_loc)==1 and knots_loc[0]==x[-1]):
+                # jump only (or polyfit + jump): constant baseline + Heavisides
+                D_spl   = np.ones((len(xs), 1)) if knots_loc is None \
+                                    else np.vander(xs, k+1, increasing=True)
+                D_spl_x = np.ones((len(x),  1)) if knots_loc is None \
+                                    else np.vander(x,  k+1, increasing=True)
+            else:
+                # spline + jump: B-spline basis + Heavisides
+                t_int   = knots_loc[(knots_loc > xs[0]) & (knots_loc < xs[-1])]
+                t_aug   = np.r_[(xs[0],)*(k+1), t_int, (xs[-1],)*(k+1)]
+                D_spl   = BSpline.design_matrix(xs, t_aug, k).toarray()
+                D_spl_x = BSpline.design_matrix(x,  t_aug, k).toarray()
+
+            n_spl  = D_spl.shape[1]
+            D      = np.hstack([D_spl, D_jump])
+            coeffs, _, _, _ = np.linalg.lstsq(D * W[:,None], ys * W, rcond=None)
+            spl    = (D_spl_x @ coeffs[:n_spl]
+                        + (x[:,None] >= t_jumps[None,:]).astype(float) @ coeffs[n_spl:])
+
         else:
-            try:
-                splfunc = LSQUnivariateSpline(xs, ys, knots_loc, w=1/err, k=useSpline.deg, ext="const")
-            except:
-                splfunc = LSQUnivariateSpline(xs, ys, knots_loc, w=1/err, k=useSpline.deg, ext="const",
-                                                bbox=[xs[0]-min(np.diff(xs)), xs[-1]+min(np.diff(xs))])
-            spl     = splfunc(x)     #evaluate the spline at the original x values
-    
+            # --- spline only: unchanged paths ---
+            if len(knots_loc)==1 and knots_loc[0]==x[-1]:    # a single knot at the end of the timeseries, use simple np.polyfit
+                spl = np.polyval(np.polyfit(xs, ys, deg=useSpline.deg, w=1/err), x)
+            else:
+                try:
+                    splfunc = LSQUnivariateSpline(xs, ys, knots_loc, w=1/err, k=useSpline.deg, ext="const")
+                except:
+                    splfunc = LSQUnivariateSpline(xs, ys, knots_loc, w=1/err, k=useSpline.deg, ext="const",
+                                                    bbox=[xs[0]-min(np.diff(xs)), xs[-1]+min(np.diff(xs))])
+                spl = splfunc(x)
+
     if dim==2:
         x1 = np.copy(data[s_par[0]])
         x2 = np.copy(data[s_par[1]])
         ys = res
 
+        if has_jumps:
+            # simultaneous: remove jumps from residuals, fit 2D spline, add jumps back
+            # (LSQBivariateSpline has no design-matrix API so two-pass is used here)
+            assert s_par[0] == "col0", f"Jump fitting for 2D splines is only implemented for jumps in the first axis (time), but got s_par={s_par}"
+            _, step_coeffs = jump_fit(data, res, SimpleNamespace(par=s_par[0], jump_times=jumps_loc), return_coeffs=True)
+            t_jumps = np.asarray(jumps_loc)
+            steps   = (x1[:,None] >= t_jumps[None,:]).astype(float) @ step_coeffs # jump model evaluated at x1 values
+            ys      = ys - steps
+
         splfunc = LSQBivariateSpline(x1, x2, ys, knots_loc[0], knots_loc[1], w=1/data["col2"], kx=useSpline.deg[0], ky=useSpline.deg[1])
-        spl = splfunc(x1,x2,grid=False)     #evaluate the spline at the original x values
+        spl     = splfunc(x1, x2, grid=False)
+
+        if has_jumps:
+            spl = spl + steps
 
     return (spl,splfunc) if return_splfunc else spl
 
 
-def basefuncLC(coeff, LCdata,res,useSpline):
+def jump_fit(data, res, useJump, return_coeffs=False):
+    """
+    Fit Heaviside step offsets at given jump timestamps.
+
+    Parameters
+    ----------
+    data : dict
+        data for this lc/rv (must contain useJump.par and "col2" for errors)
+    res : array-like
+        for lc: residuals after dividing flux by (transit model * para_baseline), centered around 1
+        for rv: residuals after subtracting rv model and para_baseline, centered around 0
+    useJump : SimpleNamespace
+        .par        : column key for the jump axis, e.g. "col0" for time
+        .jump_times : list of timestamps where flux/rv jumps occur
+    return_coeffs : bool
+        if True, also return the fitted jump amplitudes
+
+    Returns
+    -------
+    jmp : array-like
+        the Heaviside fit evaluated at every data point
+    coeffs : array-like, optional
+        fitted jump amplitudes (one per entry in jump_times), returned when return_coeffs=True
+    """
+    x       = np.copy(data[useJump.par])
+    err     = np.copy(data["col2"])
+    W       = 1.0 / err
+    t_jumps = np.asarray(useJump.jump_times)
+
+    # constant baseline column + one Heaviside per jump
+    A      = np.hstack([np.ones((len(x), 1)),
+                        (x[:, None] >= t_jumps[None, :]).astype(float)])
+    coeffs, _, _, _ = np.linalg.lstsq(A * W[:, None], res * W, rcond=None)
+    jmp    = A @ coeffs
+
+    return (jmp, coeffs[1:]) if return_coeffs else jmp
+
+
+def basefuncLC(coeff, LCdata, res, useSpline):
     """
     Calculate the baseline function without the transit model
 
@@ -477,7 +564,7 @@ def basefuncLC(coeff, LCdata,res,useSpline):
     if isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to ones
         spl = np.ones_like(ts)
     else:
-        spl = spline_fit(LCdata,res/bfunc,useSpline)
+        spl = spline_fit(LCdata, res/bfunc, useSpline)
     return bfunc, spl
 
 def para_minfunc(icoeff, ivars, mm, LCdata):
@@ -667,5 +754,5 @@ def basefuncRV(coeff, RVdata, res, useSpline):
     if isinstance(res,int) or useSpline.use==False: #if not computing baseline set spline to zeros
         spl = np.zeros_like(ts)
     else:
-        spl = spline_fit(RVdata,res-bfunc,useSpline)
-    return bfunc,spl    
+        spl = spline_fit(RVdata, res - bfunc, useSpline)
+    return bfunc, spl
