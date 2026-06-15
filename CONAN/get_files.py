@@ -1,8 +1,9 @@
 # %%
 import numpy as np
-import os
+import os, re
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
 from astropy.io import fits
 from astropy.table import Table, vstack
 from astropy.units import UnitsWarning
@@ -11,6 +12,8 @@ from .utils import rho_to_tdur, robust_std
 from .utils import decontaminate as flux_decontam
 from uncertainties import ufloat
 import warnings
+from ._classes import __default_backend__
+matplotlib.use(__default_backend__)
 
 
 try:
@@ -68,9 +71,14 @@ class get_TESS_data(object):
         self.author  = author
         self.sectors = sectors
         self.exptime = exptime
-
-        print(lk.search_lightcurve(self.planet_name,author=self.author,sector=self.sectors,
-                                    exptime=self.exptime, mission="TESS"))
+        self.search_result = lk.search_lightcurve(self.planet_name,author=self.author,sector=self.sectors,
+                                    exptime=self.exptime, mission="TESS")
+        # extract sector number from the search result
+        if self.sectors is None:
+            self.sectors = []
+            for sect in self.search_result.mission:
+                self.sectors.append(int(re.search(r'\d+', sect).group(0)))
+        print(self.search_result)
         
     def download(self,sectors=None,author=None,exptime=None, select_flux="pdcsap_flux", decontaminate=False, quality_bitmask="default"):
         """  
@@ -91,7 +99,7 @@ class get_TESS_data(object):
         quality_bitmask : str
             Quality bitmask to use for the lightkurve package. options are ["none","default","hard","hardest"]. Default is "default".
         """
-        if sectors is not None: self.sectors = sectors
+        self.sectors = sectors if sectors is not None else self.sectors
         if author  is not None: self.author  = author
         if exptime is not None: self.exptime = exptime
         # assert select_flux in ["pdcsap_flux","sap_flux"], "select_flux must be either 'pdcsap_flux' or 'sap_flux'"
@@ -118,7 +126,7 @@ class get_TESS_data(object):
                 
 
             self.lc[s]= self.lc[s].remove_nans().normalize()
-            print(f"downloaded lightcurve for sector {s}")
+            print(f"downloaded {self.author[i]} lightcurve for sector {s}")
 
             #crowdsap is the ratio of target flux to total flux in the aperture. contamination fraction is fcontam/ftarget
             try:
@@ -236,7 +244,7 @@ class get_TESS_data(object):
         for s in self.sectors:
             ax = self.lc[s].scatter()
             ax.set_title(f"sector {s}")
-
+        matplotlib.use(__default_backend__)
     def split_data(self, gap_size=None, split_times=None, show_plot=True):
         """
         Split the light curves into sections based on (1)gaps in the data, (2)given time intervals (3)given split time(s).
@@ -269,7 +277,7 @@ class get_TESS_data(object):
                     [ax.axvline(t[i], color='r', linestyle='--') for i in self.gap_ind[1:-1]]
                 nsplit = len(self.gap_ind)-1
                 for i in range(len(self.gap_ind)-1):
-                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= t[self.gap_ind[i]]) & (t < t[self.gap_ind[i+1]])]
+                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t > t[self.gap_ind[i]]) & (t <= t[self.gap_ind[i+1]])]
             
             if split_times is not None:
                 split_times = np.array([0] +split_times +[t[-1]])
@@ -278,17 +286,18 @@ class get_TESS_data(object):
                     [ax.axvline(ti, color='r', linestyle='--') for ti in split_times[1:-1]]
                 nsplit = len(split_times)-1
                 for i in range(len(split_times)-1):
-                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t >= split_times[i]) & (t < split_times[i+1])]
+                    self.lc[f"{s}_{i+1}"] = self.lc[s][(t > split_times[i]) & (t <= split_times[i+1])]
             
             if split_times is None and gap_size is None:
                 raise ValueError("either gap_size or split_time must be given")
             
             remove_sectors.append(s)
-            self.sectors += [f"{s}_{i+1}" for i in range(nsplit)]
+            s_splits = [f"{s}_{i+1}" for i in range(nsplit)]
+            print(f"Sector {s} data splitted into {nsplit} chunks: {s_splits}")
+            self.sectors += s_splits
         
         #remove sectors that have been split        
         _ = [self.sectors.pop(self.sectors.index(s)) for s in remove_sectors]
-        print(f"Sector {s} data splitted into {nsplit} chunks: {list(self.sectors)}")
 
         self.data_splitted = True
         
@@ -549,9 +558,10 @@ class get_Kepler_data(object):
                 raise ValueError("either gap_size or split_time must be given")
 
             remove_quarters.append(s)
-            self.quarters += [f"{s}_{i+1}" for i in range(nsplit)]
+            q_splits = [f"{s}_{i+1}" for i in range(nsplit)]
+            self.quarters += q_splits
+            print(f"quarter {s} data splitted into {nsplit} chunks: {q_splits}")
 
-        print(f"quarter {s} data splitted into {nsplit} chunks: {list(self.quarters)}")
         # remove quarters that have been split
         _ = [self.quarters.pop(self.quarters.index(s)) for s in remove_quarters]
         self.data_splitted = True
@@ -790,9 +800,10 @@ class get_K2_data(object):
                 raise ValueError("either gap_size or split_time must be given")
             
             remove_campaigns.append(s)
-            self.campaigns += [f"{s}_{i+1}" for i in range(nsplit)]
-        
-        print(f"campaign {s} data splitted into {nsplit} chunks: {list(self.campaigns)}")
+            c_splits = [f"{s}_{i+1}" for i in range(nsplit)]
+            self.campaigns += c_splits
+            print(f"campaign {s} data splitted into {nsplit} chunks: {c_splits}")
+            
         #remove campaigns that have been split        
         _ = [self.campaigns.pop(self.campaigns.index(s)) for s in remove_campaigns]
         self.data_splitted = True
@@ -971,7 +982,7 @@ class get_CHEOPS_data(object):
                     decontaminate=True, reject_highpoints=True, bg_MAD_reject=3,outlier_clip=4, 
                     outlier_window_width=11,outlier_clip_niter=1, normalize=True, merge_lcs=False,kwargs=None,verbose=True):
         """   
-        Download CHEOPS light curves from the cheops database using the dace_query package
+        Download CHEOPS DRP light curves from the cheops database using the dace_query package
 
         Parameters
         ----------

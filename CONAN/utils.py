@@ -3,6 +3,8 @@ import astropy.constants as c
 import astropy.units as u
 from types import SimpleNamespace
 import matplotlib.pyplot as plt
+import uncertainties
+UFloat = uncertainties.core.Variable
 from uncertainties import ufloat
 from uncertainties import unumpy as unp
 from uncertainties.core import AffineScalarFunc
@@ -1231,13 +1233,14 @@ def sinusoid(x, A=0, x0= None, P=None, n=1,trig="sin"):
 	return sinus
 
 
-def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
+def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0):
 	"""
 	Calculate the phase curve of a planet approximated by a cosine function from Fmin to Fmax
 	The equation is given as F = Fmin + (Fmax-Fmin)/2*(1-cos(phi + delta)). The semi-amplitude of the atmospheric phase variation  is (Fmax-Fmin)/2,
 	phi is the phase angle of the planet (true anomaly+omega-pi/2) in radians, and delta is the hotspot offset (in radians).
 	Fday and Fnight are obtained as the value of F at phi=pi and 0 respectively.
 
+	F(ϕ)=Fn + ((Fd-Fn)/2cosδ)[cosδ - cos(ϕ+δ)]
 
 	Parameters
 	-----------
@@ -1249,8 +1252,6 @@ def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
 		night side flux
 	delta_deg : float
 		hotspot offset in degrees. Positive values indicate eastward offset (peak before secondary eclipse).
-	cosine_order: float/int;
-		order of the cosine function. Default is 1
 		
 	Returns
 	--------
@@ -1261,14 +1262,14 @@ def cosine_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,cosine_order=1):
 	res.delta  = np.deg2rad(delta_deg)      # hotspot offset in radians
 	res.delta_phase = res.delta/(2*np.pi)   # in phase units
 	
-	res.Aatm   = (Fd - Fn)/(2*np.cos(res.delta)**cosine_order)
+	res.Aatm   = (Fd - Fn)/(2*np.cos(res.delta))
 
-	res.Fmin   = Fd - res.Aatm*(1-np.cos(np.pi+res.delta)**cosine_order)
-	res.pc     = res.Fmin + res.Aatm*(1-np.cos(phi+res.delta)**cosine_order)
+	res.Fmin   = Fn - res.Aatm*(1-np.cos(res.delta))
+	res.pc     = res.Fmin + res.Aatm*(1-np.cos(phi+res.delta))
 	res.Fmax   = 2*res.Aatm + res.Fmin
 	return res 
 
-def CA_08_PCmodel(phi, Fd, C1, D1, C2, D2):
+def CA_08_PCmodel(phi, Fd, C1, D1, C2, D2,cos_convert=False):
 	"""
 	Calculate the phase curve of a planet using the Cowan & Agol 2008 model. 
 	See also https://iopscience.iop.org/article/10.3847/1538-3881/ae0e52/meta
@@ -1291,6 +1292,8 @@ def CA_08_PCmodel(phi, Fd, C1, D1, C2, D2):
 		second cosine coefficient
 	D2 : float
 		second sine coefficient
+	cos_convert : bool, optional
+		If True, convert the coefficients to the equivalent cosine model parameters (Fn, Fd, delta1, A2, delta2). Default is False.
 
 	Returns
 	--------
@@ -1299,24 +1302,25 @@ def CA_08_PCmodel(phi, Fd, C1, D1, C2, D2):
 		
 	Example
 	-------
-	>>> from utils import CA_08_PCmodel
+	>>> from CONAN.utils import CA_08_PCmodel
 	>>> import numpy as np
+	>>> import matplotlib.pyplot as plt
 	>>> phases = np.linspace(-0.25, 0.75, 10000)
 	>>> phi = 2 * np.pi * phases
 	>>> Fn, Fd = 50e-6, 400e-6
+	>>> delta = 10
 	>>> C1 = (Fd - Fn)/2
-	>>> D1, C2, D2 = -139e-6, 46e-6, -15e-6  #D1 somehow influences the phase shift. find an expression for it
-	>>> res = CA_08_PCmodel(phi, Fd, C1, D1, C2, D2)
+	>>> D1 = -C1 * np.tan(np.radians(delta)) 
+	>>> C2, D2 = 0, 0  
 
 	>>> from CONAN.utils import cosine_atm_variation
-	>>> pc = CA_08_PCmodel(phi, Fd, C1, D1, C2, D2)
+	>>> pc = CA_08_PCmodel(phi, Fd, C1, D1, C2, D2).pc
 	>>> cos = cosine_atm_variation(phi, Fd, Fn,delta).pc
 	>>> plt.figure()
 	>>> plt.plot(phases, pc)
-	>>> plt.plot(phases, cos)
+	>>> plt.plot(phases, cos,"--")
 	>>> plt.axvline(0.5, color='k', ls='--')
-	>>> # plt.axvline(0.5 - np.radians(delta) / (2 * np.pi))
-	>>> plt.axhline(Fd-2*C1, color='k', ls='--')
+	>>> plt.axhline(Fn, color='k', ls='--')
 	>>> plt.axvline(0)
 
 	"""
@@ -1325,9 +1329,129 @@ def CA_08_PCmodel(phi, Fd, C1, D1, C2, D2):
 	res.pc      = Fd + C1*(np.cos(theta) - 1) + D1*np.sin(theta) + C2*(np.cos(2*theta) - 1) + D2*np.sin(2*theta)
 	res.Fmin    = min(res.pc)
 	res.Fmax    = max(res.pc)
-	res.Aatm    = (res.Fmax - res.Fmin)/2
-	# res.delta   = 
-	res.Fn      = Fd - 2*C1   
+	res.Aatm    = C1
+	res.Fn      = Fd - 2*C1 - 2*C2   
+
+	if cos_convert:
+		delta     = -np.arctan2(D1, C1)
+		A2        = np.sqrt(C2**2 + D2**2)
+		delta2    = -np.arctan2(D2, -C2) if (C2 != 0 or D2 != 0) else 0.0
+		Fn        = Fd - 2*C1
+		Fd        = Fd 
+		res.cos_eqiv = dict(Fd=Fd, Fn=Fn, delta_deg=np.degrees(delta),
+                			A2=A2, delta2_deg=np.degrees(delta2))
+
+	return res
+
+def cosine_atm_extended(phi, Fd=0, Fn=0, delta_deg=0,
+                        A2=0.0, delta2_deg=0, CA08_convert=False):
+	"""
+	Extended atmospheric phase curve with first and second harmonics:
+
+		F(phi) = Fmin1 + A1*(1 - cos(phi + delta))
+						+ A2*(1 - cos(2*phi + delta2))
+		
+		F(ϕ)=Fn + (Fd-Fn/2cosδ)[cosδ - cos(ϕ+δ)] + A2[cosδ2-cos(2ϕ+δ2)]
+
+	Fd and Fn are the TOTAL observed fluxes at occultation (phi=pi)
+	and transit (phi=0) respectively — exactly as in the original
+	single-cosine model. A1 is derived from them after subtracting
+	the second harmonic's contribution at those two events.
+
+	Since cos(2*0 + delta2) = cos(2*pi + delta2) = cos(delta2), the
+	second harmonic contributes the SAME offset at both phi=0 and phi=pi:
+
+		A2*(1 - np.cos(delta2))
+
+	so the first harmonic must account for:
+
+		Fd_1st = Fd - A2*(1 - np.cos(delta2))
+		Fn_1st = Fn - A2*(1 - np.cos(delta2))
+
+	and A1 is then computed exactly as in the original model:
+
+		A1 = (Fd_1st - Fn_1st) / (2 * np.cos(delta))
+			= (Fd - Fn) / (2 * np.cos(delta))     <- unchanged by A2!
+
+	This means the day-night contrast Fd - Fn and the offset delta are
+	completely decoupled from A2 and delta2. A2 only affects the shape
+	of the curve between transit and occultation.
+
+	Parameters
+	----------
+	phi : array-like
+		Phase angle in radians (phi = 2*pi*phase circular, or
+		f + omega - pi/2 for eccentric orbit).
+	Fd : float
+		Total observed flux at occultation (phi = pi).
+	Fn : float
+		Total observed flux at transit (phi = 0).
+	delta_deg : float
+		Hotspot offset in degrees. Positive = eastward (peak before eclipse).
+	A2 : float
+		Amplitude of the second harmonic (default 0 → original model). Physically, A2 >= 0.
+		Conversion from harmonic coefficients: A2 = sqrt(C2^2 + D2^2).
+	delta2_deg : float
+		Phase offset of the second harmonic in degrees.
+		Conversion from harmonic coefficients: delta2 = -arctan(D2/C2).
+	CA08_convert : bool, optional
+		If True, also return the equivalent Cowan & Agol 2008 model parameters
+		(C1, D1, C2, D2) that would produce the same phase curve. Default is False.
+	
+	Returns
+	-------
+	res : SimpleNamespace
+		delta       : first harmonic offset (radians)
+		delta2      : second harmonic offset (radians)
+		delta_phase : first harmonic offset in phase units
+		A1          : first harmonic amplitude  = (Fd-Fn)/(2*cos^n1(delta))
+		A2          : second harmonic amplitude
+		Aatm        : = A1  (semi-amplitude of the day-night variation)
+		Fmin        : global minimum of the phase curve
+		Fmax        : global maximum
+		Focc        : total flux at occultation  [= Fd, by construction]
+		Ftr         : total flux at transit      [= Fn, by construction]
+		pc          : phase curve array
+	"""
+	phi    = np.atleast_1d(np.asarray(phi, dtype=float))
+	res    = SimpleNamespace()
+	res.delta       = np.deg2rad(delta_deg)
+	res.delta2      = np.deg2rad(delta2_deg)
+	res.delta_phase = res.delta / (2 * np.pi)
+
+	# ── Second harmonic contribution at phi=0 and phi=pi (same value) ─────
+	d2_offset = A2 * (1 - np.cos(res.delta2))
+
+	# ── First harmonic: anchored to (Fd - d2_offset) and (Fn - d2_offset) ─
+	# Note: (Fd - d2_offset) - (Fn - d2_offset) = Fd - Fn  → A1 unchanged
+	Fd_1st      = Fd - d2_offset
+	Fn_1st      = Fn - d2_offset
+	cos_d1   	= np.cos(res.delta)
+	res.A1      = (Fd_1st - Fn_1st) / (2 * cos_d1)   # = (Fd-Fn)/(2*cos(delta))
+	res.Aatm    = res.A1
+	res.A2      = A2
+	Fmin1       = Fd_1st - res.A1 * (1 - np.cos(np.pi + res.delta))
+
+	# ── Phase curve ───────────────────────────────────────────────────────
+	term1  = res.A1 * (1 - np.cos(phi + res.delta))
+	term2  = res.A2 * (1 - np.cos(2*phi + res.delta2))
+	res.pc = Fmin1 + term1 + term2
+
+	res.Fmin = float(np.min(res.pc))
+	res.Fmax = float(np.max(res.pc))
+	res.Focc = float(Fmin1 + res.A1*(1 - np.cos(np.pi + res.delta))
+						   + res.A2*(1 - np.cos(2*np.pi + res.delta2)))
+	res.Ftr  = float(Fmin1 + res.A1*(1 - np.cos(res.delta))
+							+ res.A2*(1 - np.cos(res.delta2)))
+
+	if CA08_convert:
+		res.CA08_eqiv = dict(
+			C1 = (Fd - Fn)/2,
+			D1 = -(Fd - Fn)/2 * np.tan(res.delta),
+			C2 = -A2 * np.cos(res.delta2),
+			D2 = A2 * np.sin(res.delta2),
+    		Fd = Fd 
+		)
 	return res
 
 def gauss_atm_variation(phi,A=0,delta_deg=0,width_deg=90):
@@ -1340,7 +1464,7 @@ def gauss_atm_variation(phi,A=0,delta_deg=0,width_deg=90):
 	# return A * (F - Fmin)/(Fmax-Fmin)
 	return A * F
 	
-def lambertian_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,inc_rad=np.pi/2, night_phase_var=False):
+def lambertian_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,inc_rad=np.pi/2, e=0, w_rad=np.pi/2, night_phase_var=False):
 	"""
 	Calculate the phase curve of a planet approximated by a lambertian function.
 	Eq. 3 of Esteves+2013 (https://iopscience.iop.org/article/10.1088/0004-637X/772/1/51) is used to calculate the flux variation.
@@ -1356,13 +1480,30 @@ def lambertian_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,inc_rad=np.pi/2, night
 		night side flux
 	delta_deg : float
 		hotspot offset in degrees.
-		
+	e : float
+		eccentricity of the orbit. Default is 0 (circular orbit)
+	w_rad : float
+		argument of periastron in radians. Default is pi/2.
 	Returns
 	--------
 	F : array-like
 		planetary flux as a function of phase
 
 	"""
+	if e > 0:
+		nu 			 = phi - w_rad + np.pi/2 # true anomaly is related to phase angle by true_anom = phi - omega + pi/2
+		r_over_a     = (1 - e**2) / (1 + e * np.cos(nu))    # eccentricity distance factor 
+		
+		nu_ecl       = 1.5*np.pi - w_rad # true anomaly at eclipse
+		r_ecl_over_a = (1 - e**2) / (1 + e * np.cos(nu_ecl)) 
+
+		nu_tra		 = 0.5*np.pi - w_rad # true anomaly at transit
+		r_tra_over_a = (1 - e**2) / (1 + e * np.cos(nu_tra))
+		
+		# Irradiation scaling. normalized to distance at ecl and tra
+		Fd = Fd / (r_over_a/r_ecl_over_a)**2
+		Fn = Fn / (r_over_a/r_tra_over_a)**2
+		
 	res        = SimpleNamespace()
 	res.delta  = np.deg2rad(delta_deg)
 
@@ -1384,9 +1525,9 @@ def lambertian_atm_variation(phi, Fd=0, Fn=0, delta_deg=0,inc_rad=np.pi/2, night
 
 	return res
 
-def ellipsoidal_variation_signal(phi, A_ev=0, f1_ev=0, inc_rad=1.571):
+def ellipsoidal_variation_signal(phi, A_ev=0, f1_ev=0, inc_rad=1.571, e=0, w_rad=1.571, tau=0):
 	"""
-	Calculate the ellipsoidal variation signal of a planet as a function of phase angle.
+	Calculate the ellipsoidal variation signal of a planet as a function of phase angle, phi.
 	The equation is given as F = Aev * (1 - cos(2*phi) - f1*cos(phi) - f2*cos(3*phi)).  
 	The semi-amplitude of the ellipsoidal variation is A, f1 and f2 are fractional coefficients controlling 
 	the fundamental and second harmonics respectively. see eq.8 of Esteves+2013 (https://iopscience.iop.org/article/10.1088/0004-637X/772/1/51)
@@ -1401,21 +1542,69 @@ def ellipsoidal_variation_signal(phi, A_ev=0, f1_ev=0, inc_rad=1.571):
 		fractional coefficient controlling the fundamental harmonic
 	inc_rad : float
 		inclination of the planet orbit in radians. Default is 1.571 (90 degrees)
+	e : float, optional
+		eccentricity of the orbit. Default is 0.
+	w_rad : float, optional
+		argument of periastron in radians. Default is 1.571 (90 degrees)
+	tau : float, optional
+		tidal lag angle in radians i.e. tau = 2*np.pi*Δt/P, where Δt is the time lag between the 
+		tidal bulge and the line connecting the centers of the two bodies. 
+		EV signal shifts rightward for +ve tau. Default is 0 (no lag).
 	
 	Returns
 	--------
 	F_ev : array-like
 		ellipsoidal variation signal as a function of phase
 	"""
-
+	true_anom = phi - w_rad + np.pi/2 # true anomaly is related to phase angle by true_anom = phi - omega + pi/2
+	ecc_fac   = (1 - e**2) / (1 + e * np.cos(true_anom))    # eccentricity factor missing from all instances of a/R* see eqn E.2 Deline2025
+	A_ev = A_ev * ecc_fac**-3  # scale the amplitude by the eccentricity factor
+	f1_ev = f1_ev * ecc_fac**-1  # scale f1 by the eccentricity factor
+		
+	theta = phi - tau # phase shift of the ellipsoidal variation signal due to tidal lag
 	f2_ev = 5/3 * (f1_ev*np.sin(inc_rad)**2)/(5*np.sin(inc_rad)**2 - 4)
 	f0    = 1 - f1_ev - f2_ev   # normalization factor to ensure stellar flux level is zero at mid occultation
-	F_ev  = - A_ev * ( np.cos(2*phi) + f1_ev*np.cos(phi) + f2_ev*np.cos(3*phi) - f0)
+	F_ev  = - A_ev * ( np.cos(2*theta) + f1_ev*np.cos(theta) + f2_ev*np.cos(3*theta) - f0)
 	return F_ev
 
-def doppler_boosting_signal(phi, A_db=0):
+
+def EV_amplitude( 	qm:     float | UFloat,
+					aR:     float | UFloat,
+					inc_rad:float | UFloat, 
+					alpha1: float | UFloat,
+					alpha2: float | UFloat
+					):
 	"""
-	Calculate the Doppler boosting signal of a planet as a function of phase angle.
+	calculate theoretical ampltiude of ellipsodial variation
+	eqn 9 and 11 of Esteves2013 https://doi.org/10.1088/0004-637X/772/1/51
+
+	Parameters
+	----------
+	qm : float,UFloat
+		planet-to-star mass ratio
+	aR : float,UFloat
+		scaled semi-major axis
+	inc_rad : float,UFloat
+		inclination of the orbit in radians
+	alpha1 : float,UFloat
+		ellipsoidal variation coefficient 1 used in the fractional constants f1 and f2
+	alpha2 : float,UFloat
+		ellipsoidal variation coefficient 2 used in the main amplitude Aev
+
+	Returns
+	-------
+	Amplitudes: SimpleNamespace
+		f1 : float, UFloat. fractional constant f1
+		Aev : float, UFloat. main amplitude of ellipsoidal variation in ppm
+	"""
+	sini = sin(inc_rad)
+	Aev  = alpha2 * qm*sini**2 / aR**3 * 1e6
+	f1   = 3*alpha1/aR * (5*sini**2 - 4)/sini
+	return SimpleNamespace(f1=f1, Aev=Aev)
+
+def doppler_boosting_signal(phi, A_db=0, e=0, w_rad=1.571):
+	"""
+	Calculate the Doppler boosting signal of a planet as a function of phase angle, phi.
 	The equation is given as F = A_db * sin(phi).
 	see eq. 4 of Esteves+2013 (https://iopscience.iop.org/article/10.1088/0004-637X/772/1/51)
 
@@ -1425,13 +1614,19 @@ def doppler_boosting_signal(phi, A_db=0):
 		phase angle (2*pi*phase for circular orbit) or true anomaly+omega-pi/2 in radians.
 	A_db : float
 		semi-amplitude of the Doppler boosting signal.
+	e : float
+		eccentricity of the orbit. Default is 0.
+	w_rad : float
+		argument of periastron in radians. Default is 1.571 (90 degrees)
 
 	Returns
 	--------
 	F_db : array-like
 		Doppler boosting signal as a function of phase.
 	"""
-	F_db = A_db * np.sin(phi)   # F_db is zero at mid occultation
+	# for ecc orbit we include the ecc component of the rv equation, cos(ν+ω)
+	# note that cos(ν+ω)=sinϕ, since ϕ is the phase angle defined as ϕ=ν+ω−π/2
+	F_db = A_db * (np.sin(phi) + e * np.cos(w_rad))  # F_db is zero at mid occultation
 
 	return F_db
 
