@@ -342,22 +342,26 @@ def _occultquad_kernel(z0, u1, u2, p, nz=None):
 
         # Case IV: transits the source
         if (p <= 1.0) and (z <= (1.0 - p) * 1.0001):
-            q = sqrt((x2 - x1) / (1.0 - x1))
-            Kk = _ellk_numba(q)
-            Ek = _ellec_numba(q)
-            n = x2 / x1 - 1.0
-            Pk = Kk - n / 3.0 * _rj_numba(0.0, 1.0 - q * q, 1.0, 1.0 + n)
-            lambdad[i] = 2.0 / 9.0 / pi / sqrt(1.0 - x1) * (
-                (1.0 - 5.0 * z * z + p * p + x3 * x3) * Kk
-                + (1.0 - x1) * (z * z + 7.0 * p * p - 4.0) * Ek
-                - 3.0 * x3 / x1 * Pk
-            )
-            if z < p:
-                lambdad[i] += 2.0 / 3.0
+            # Special case: planet limb tangent to stellar limb (p+z≈1).
+            # q→1 here, making _ellec_numba(q) compute log(1/0) → ZeroDivisionError.
+            # Use the analytic limit formula directly instead.
             if abs(p + z - 1.0) <= 1e-4:
                 lambdad[i] = 2.0 / 3.0 / pi * np.arccos(1.0 - 2.0 * p) - 4.0 / 9.0 / pi * sqrt(
                     p * (1.0 - p)
                 ) * (3.0 + 2.0 * p - 8.0 * p * p)
+            else:
+                q = sqrt((x2 - x1) / (1.0 - x1))
+                Kk = _ellk_numba(q)
+                Ek = _ellec_numba(q)
+                n = x2 / x1 - 1.0
+                Pk = Kk - n / 3.0 * _rj_numba(0.0, 1.0 - q * q, 1.0, 1.0 + n)
+                lambdad[i] = 2.0 / 9.0 / pi / sqrt(1.0 - x1) * (
+                    (1.0 - 5.0 * z * z + p * p + x3 * x3) * Kk
+                    + (1.0 - x1) * (z * z + 7.0 * p * p - 4.0) * Ek
+                    - 3.0 * x3 / x1 * Pk
+                )
+                if z < p:
+                    lambdad[i] += 2.0 / 3.0
             etad[i] = p * p / 2.0 * (p * p + 2.0 * z * z)
 
     muo1 = 1.0 - ((1.0 - u1 - 2.0 * u2) * lambdae + (u1 + 2.0 * u2) * lambdad + u2 * etad) / omega
