@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import corner
 import dill as pickle
 from types import SimpleNamespace as SN
-import os
+import os,sys
 import matplotlib
 import pandas as pd
 from lmfit import minimize, Parameters, Parameter
@@ -1559,7 +1559,7 @@ class load_lightcurves:
                     numer    = f'sqrt( ((1+abs(RpRs{lbl}))**2 - Impact_para{lbl}**2) )'
                     _res.params.add(f"aR{lbl}", expr = f'((rho_star*{ecc_fac2}*{G}*(Period{lbl}*24*3600)**2) /(3*pi))**(1/3)', min=0, max=np.inf)
                     _res.params.add(f"inc{lbl}", expr=f'(180/pi*acos(Impact_para{lbl}/(aR{lbl}*{ecc_fac})))')
-                    _res.params.add(f"Duration{lbl}", expr=f'( Period{lbl}/pi * ({ecc_fac}**2/(sqrt(1-ecc**2))) * asin({numer}/(aR{lbl}*{ecc_fac}*sin(pi/180*inc{lbl}))))', min=0, max=np.inf)
+                    _res.params.add(f"Duration{lbl}", expr=f'( Period{lbl}/pi * ({ecc_fac}**2/(sqrt(1-ecc{lbl}**2))) * asin({numer}/(aR{lbl}*{ecc_fac}*sin(pi/180*inc{lbl}))))', min=0, max=np.inf)
             
             #GP
             for gpn in [1,2]:
@@ -2036,7 +2036,8 @@ class load_lightcurves:
             Degree of the smoothing spline. Must be 1 <= degree <= 5. Default is 3 for a cubic spline.
         knot_spacing : float, tuple, list
             distance between knots of the spline, in units of the desired column array. E.g 15 degrees for roll angle in CHEOPS data.
-            If 'r' is given, the full range of the array is fit by a single spline of the specified order. this is useful if the range of the array varies for different datasets
+            If 'r' is given, the full range of the array is fit by a single spline of the specified order. this is useful if the range of the array varies for different datasets.
+            set to 'n', if no knots required but flux jumps are to be fit. Define the location (time) of jumps using `lc_obj._lcspline[lc].jumps_loc= [0.112, 0.562]`
         plot_knots : int
             whether to make plot of each lc in lc_list showing the location of the knots. if 0, plot is not shown; 1 or 2 shows the location of the knots for the 1st or 2nd dimension.
         verbose : bool, optional
@@ -2083,6 +2084,7 @@ class load_lightcurves:
             self._lcspline[lc].use       = False
             self._lcspline[lc].deg       = None
             self._lcspline[lc].knots_loc = None
+            self._lcspline[lc].jumps_loc = None
             self._lcspline[lc].conf      = "None"
 
         if lc_list is None:
@@ -2140,29 +2142,30 @@ class load_lightcurves:
             self._lcspline[lc].use       = True if par else False
             self._lcspline[lc].deg       = deg
             self._lcspline[lc].knots_loc = None
+            self._lcspline[lc].jumps_loc = None
 
             self._fit_offset[ind]        = "n" # do not fit offset if fitting spline
 
             
             df = self._input_lc[lc]
             if dim==1:
-                assert knots=='r' or knots <= np.ptp(df[par]), f"add_spline():{lc} – knot_spacing must be <= the range of the column array but {knots} given for {par} with a range of {np.ptp(df[par])}."
+                assert knots in ['r','n'] or knots <= np.ptp(df[par]), f"add_spline():{lc} – knot_spacing must be <= the range of the column array but {knots} given for {par} with a range of {np.ptp(df[par])}."
                 assert deg <= 5, f"add_spline():{lc} – degree must be <=5 but {deg} given for {par}."
                 self._lcspline[lc].conf   = f"c{par[-1]}:d{deg}k{knots}"
                 #create knots
                 spl_x     = df[par]
-                knots_loc = np.array([max(spl_x)]) if knots=='r' else np.arange(min(spl_x)+knots, max(spl_x), knots)
+                knots_loc = np.array([max(spl_x)]) if knots=='r' else None if knots=='n' else np.arange(min(spl_x)+knots, max(spl_x), knots)
                 self._lcspline[lc].knots_loc = knots_loc 
             else:
                 for j in range(2):
                     assert deg[j] <= 5, f"add_spline():{lc} – degree must be <=5 but {deg[j]} given for {par[j]}." 
-                    assert knots[j]=='r' or knots[j] <= np.ptp(df[par[j]]), f"add_spline():{lc} – knot_spacing must be <= the range of the column array but {knots[j]} given for {par[j]} with range of {np.ptp(df[par[j]])}."
+                    assert knots[j] in ['r','n'] or knots[j] <= np.ptp(df[par[j]]), f"add_spline():{lc} – knot_spacing must be <= the range of the column array but {knots[j]} given for {par[j]} with range of {np.ptp(df[par[j]])}."
                 self._lcspline[lc].conf   = f"c{par[0][-1]}:d{deg[0]}k{knots[0]}|c{par[1][-1]}:d{deg[1]}k{knots[1]}"
                 # create knots
                 self._lcspline[lc].knots_loc = []
                 for j in range(2):
                     spl_x     = df[par[j]]
-                    knots_loc = np.array([max(spl_x)]) if knots[j]=='r' else np.arange(min(spl_x)+knots[j], max(spl_x), knots[j])
+                    knots_loc = np.array([max(spl_x)]) if knots[j]=='r' else None if knots[j]=='n' else np.arange(min(spl_x)+knots[j], max(spl_x), knots[j])
                     self._lcspline[lc].knots_loc.append(knots_loc)
             # if verbose: print(f"{lc} – degree {deg} spline to fit {par}: knot spacing={knots} --> [{self._lcspline[lc].conf}]") 
 
@@ -5374,7 +5377,14 @@ class load_result:
         self._par_names     = self._chains.keys() if os.path.exists(chain_file) else self._burnin_chains.keys()
 
         #retrieve configration of the fit
-        self._ind_para      = pickle.load(open(folder+"/.par_config.pkl","rb"))
+        try:
+            self._ind_para      = pickle.load(open(folder+"/.par_config.pkl","rb"))
+        except ModuleNotFoundError:
+            abs_fpath = os.path.abspath(folder)
+            if abs_fpath not in sys.path:
+                sys.path.insert(0, abs_fpath)
+            self._ind_para      = pickle.load(open(folder+"/.par_config.pkl","rb"))
+            
         self._lcnames       = self._ind_para["LCnames"]
         self._rvnames       = self._ind_para["RVnames"]
         self._nplanet       = self._ind_para["npl"]
@@ -6154,7 +6164,7 @@ class load_result:
             file = self.rv.names[0]
 
         mod  = logprob_multi(params,self._ind_para,t=time,get_planet_model=True)
-
+        
         if not return_std:     #return only the model
             output = SN(time=time if time is not None else self._ind_para["input_rvs"][file]["col0"],
                         planet_model=mod.rv[file][0], components=mod.rv[file][1], sigma_low=None, sigma_high=None)
@@ -6170,7 +6180,7 @@ class load_result:
 
             qs = np.quantile(mods,q=[0.16,0.5,0.84],axis=0) #compute 68% percentiles
             
-            output = SN(time=time if time is not None else self._ind_para["input_lcs"][file]["col0"],
+            output = SN(time=time if time is not None else self._ind_para["input_rvs"][file]["col0"],
                         planet_model=mod.rv[file][0], components=mod.rv[file][1], sigma_low=qs[0], sigma_high=qs[2])
             return output
 

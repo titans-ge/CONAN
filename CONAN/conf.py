@@ -808,14 +808,14 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
             _spl_lclist.append(_adump[0])
             if "|" not in _adump[17]:   #1D spline
                 k1 = _adump[17].split("k")[-1]
-                _spl_knot.append((int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1)
+                _spl_knot.append((int(k1) if float(k1).is_integer() else float(k1)) if k1 not in ["r","n"] else k1)
                 _spl_deg.append(int(_adump[17].split("k")[0].split("d")[-1]))
                 _spl_par.append("col" + _adump[17].split("d")[0][1])
             else: #2D spline
                 sp    = _adump[17].split("|")  #split the diff spline configs
                 k1,k2 = sp[0].split("k")[-1], sp[1].split("k")[-1]
-                k_1   = (int(k1) if float(k1).is_integer() else float(k1)) if k1 != "r" else k1
-                k_2   = (int(k2) if float(k2).is_integer() else float(k2)) if k2 != "r" else k2
+                k_1   = (int(k1) if float(k1).is_integer() else float(k1)) if k1 not in ["r","n"] else k1
+                k_2   = (int(k2) if float(k2).is_integer() else float(k2)) if k2 not in ["r","n"] else k2
                 _spl_knot.append( (k_1,k_2) )
                 _spl_deg.append( (int(sp[0].split("k")[0].split("d")[-1]),int(sp[1].split("k")[0].split("d")[-1])) )
                 _spl_par.append( ("col"+sp[0].split("d")[0][1],"col"+sp[1].split("d")[0][1]) ) 
