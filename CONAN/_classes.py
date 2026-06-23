@@ -4636,7 +4636,7 @@ class load_rvs:
                                 assert tup_item not in  ["col0","col2"], f'add_rvGP(): for multi-dim GP with spleaf, `{p}` refers to the timeseries column to model as a function of time.' + \
                                                                                         f'\nTherefore `{p}` cannot be "col0"(time) or "col2"(err), but {tup_item} was given.'
                             else:
-                                assert tup_item in gp_allowed_columns,  f'add_rvGP(): `{p}` must be in {gp_allowed_columns} but {tup_item} given.'
+                                assert tup_item in gp_allowed_columns,  f'add_rvGP(): `{p}` must be in {gp_allowed_columns} if not using spleaf, but {tup_item} given.'
 
                         if isinstance(DA["operation"][i], str):
                             DA["operation"][i] = (DA["operation"][i],)*(ngp-1)

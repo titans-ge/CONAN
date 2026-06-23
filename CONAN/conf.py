@@ -688,19 +688,18 @@ def load_configfile(configfile, return_fit=False, init_decorr=False,
     >>>                                            lc_path     = 'Notebooks/WASP-127/data/',
     >>>                                            rv_path     = 'Notebooks/WASP-127/data/',
     >>>                                            verbose     = True)
-    
     """
 
     if configfile.endswith(".yaml") or configfile.endswith(".yml"):
-        lc_obj, rv_obj, fit_obj = load_yamlfile(configfile=configfile, return_fit=return_fit, init_decorr=init_decorr,
+        out = load_yamlfile(configfile=configfile, return_fit=return_fit, init_decorr=init_decorr,
                                                 lc_path=lc_path, rv_path=rv_path, verbose=verbose)
     elif configfile.endswith(".dat"):
-        lc_obj, rv_obj, fit_obj = load_datfile(configfile=configfile, return_fit=return_fit, init_decorr=init_decorr,
+        out = load_datfile(configfile=configfile, return_fit=return_fit, init_decorr=init_decorr,
                                                 lc_path=lc_path, rv_path=rv_path, verbose=verbose)
     else:
         raise ValueError(f"configfile must be a .dat or .yaml file but {configfile} given")
-    
-    return lc_obj, rv_obj, fit_obj
+
+    return out
 
 
 def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=False, 

@@ -947,14 +947,30 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                     else:
                         # Merge all time series
                         Yerr     = [thisRVdata[c] for c in gpcol_err]
-                        Yerr[0]  = err_all[j]  #replace RV error with the jitter already added
-                        for ee in range(1,ndim_gp):       #add jitter for error of each timeseries
-                            Yerr[ee] = np.sqrt(Yerr[ee]**2 + gp_jitt[ee-1]**2) 
+                        # Find which index in gpcol corresponds to the RV measurement (col1)
+                        # This is important when different error columns are used for different kernels
+                        if 'col1' not in gpcol:
+                            raise ValueError(f"RV measurement column 'col1' not found in gpcol: {gpcol}. "
+                                           "Multi-dimensional RV GP must include 'col1' (RV measurement data).")
+                        rv_col_idx = gpcol.index('col1') if isinstance(gpcol, (list, tuple)) else 0
+                        Yerr[rv_col_idx]  = err_all[j]  #replace RV error with the jitter already added
+                        
+                        # Add jitter for error of each non-RV timeseries
+                        jit_counter = 0
+                        for ee in range(ndim_gp):
+                            if ee != rv_col_idx:  
+                                Yerr[ee] = np.sqrt(Yerr[ee]**2 + gp_jitt[jit_counter]**2)
+                                jit_counter += 1
                         
                         Y    = [thisRVdata[c] for c in gpcol]
-                        Y[0] = residual_all[j]     #replace RV timeseries with residual after removing planet
-                        for ee in range(1, ndim_gp):
-                            Y[ee] = Y[ee] - gp_off[ee-1]
+                        Y[rv_col_idx] = residual_all[j]     #replace RV timeseries with residual after removing planet
+                        
+                        # Apply offset for each non-RV timeseries
+                        offset_counter = 0
+                        for ee in range(ndim_gp):
+                            if ee != rv_col_idx:
+                                Y[ee] = Y[ee] - gp_off[offset_counter]
+                                offset_counter += 1
 
                         T    = [thisRVdata["col0"]]*ndim_gp #time array is same for all timeseries
 
