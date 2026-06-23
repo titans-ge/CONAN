@@ -736,8 +736,15 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
     #### auto decorrelation
     dump   = _file.readline().rstrip()
     _adump = dump.split()
-    assert _adump[1] in ["True","False"], f"LC_auto_decorr: must be 'True' or 'False' but {_adump[1]} given"
-    use_decorr = True if _adump[1] == "True" else False
+    if _adump[1].startswith('['):
+        decorr_yn = " ".join(_adump[1:]).split("|")[0].replace("[","").replace("]","").replace(" ","").replace("'","").replace("\"","").split(",")
+        use_decorr = True if 'y' in decorr_yn else False
+        decorr_lclist = 'selection'
+    else:    
+        assert _adump[1] in ["True","False"], f"LC_auto_decorr: must be 'True' or 'False' but {_adump[1]} given"
+        use_decorr = True if _adump[1] == "True" else False
+        decorr_lclist = 'all'
+
     del_BIC = float(_adump[4]) if len(_adump) > 4 else -5
     dump = _file.readline().rstrip().split()[1]
     assert dump[0] == "[" and dump[-1] == "]", f"exclude_cols: must be a list of column numbers (e.g. [3,4]) but {dump} given"
@@ -942,8 +949,15 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
     #### auto decorrelation
     dump = _file.readline().rstrip()
     _adump = dump.split()
-    assert _adump[1] in ["True","False"], f"RV_auto_decorr: must be 'True' or 'False' but {_adump[1]} given"
-    use_decorrRV = True if _adump[1] == "True" else False
+    if _adump[1].startswith('['):
+        decorrRV_yn = " ".join(_adump[1:]).split("|")[0].replace("[","").replace("]","").replace(" ","").replace("'","").replace("\"","").split(",")
+        use_decorrRV = True if 'y' in decorrRV_yn else False
+        decorr_rvlist = 'selection'
+    else:
+        assert _adump[1] in ["True","False"], f"RV_auto_decorr: must be 'True' or 'False' but {_adump[1]} given"
+        use_decorrRV = True if _adump[1] == "True" else False
+        decorr_rvlist = 'all'
+
     rvdel_BIC = float(_adump[4]) if len(_adump) > 4 else -5
     dump = _file.readline().rstrip().split()[1]
     assert dump[0] == "[" and dump[-1] == "]", f"RV exclude_cols: must be a list of column numbers (e.g. [3,4]) but {dump} given"
@@ -1262,7 +1276,12 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
     if nphot > 0:
         if use_decorr or init_decorr:
             if init_decorr and verbose: print("\ngetting start values for LC decorrelation parameters ...")
-            lc_obj.get_decorr(**pl_pars,q1=q1,q2=q2,
+            if decorr_lclist=="all":
+                decorr_lclist = decorr_lclist 
+            else:
+                decorr_lclist = [lc_obj._names[i] for i, dyn in enumerate(decorr_yn) if dyn=='y']
+
+            lc_obj.get_decorr(decorr_lclist, **pl_pars,q1=q1,q2=q2,
                                 D_occ=D_occ[0] if len(D_occ)>0 else 0, 
                                 Fn=Fn[0] if len(Fn)>0 else 0, 
                                 ph_off=ph_off[0] if len(ph_off)>0 else 0, 
@@ -1285,7 +1304,12 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
     if nRV > 0:
         if use_decorrRV or init_decorr:
             if init_decorr and verbose: print("\ngetting start values for RV decorrelation parameters ...\n")
-            rv_obj.get_decorr(  T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
+            if decorr_rvlist == 'all':
+                decorr_rvlist = decorr_rvlist
+            else:
+                decorr_rvlist = [rv_obj._names[i] for i, dyn in enumerate(decorrRV_yn) if dyn=='y']
+
+            rv_obj.get_decorr(  decorr_rvlist, T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
                                 Eccentricity=pl_pars["Eccentricity"], omega=pl_pars["omega"],
                                 gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
                                 exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, delta_BIC=rvdel_BIC,
@@ -2056,7 +2080,16 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
         #### auto decorrelation
         if "auto_decorr" in _file["photometry"]:
             auto_decorr  = _file["photometry"]["auto_decorr"]
-            use_decorr   = auto_decorr.get("get_decorr", False)
+            get_decorr   = auto_decorr.get("get_decorr", False)
+            if isinstance(get_decorr, list):
+                for dyn in get_decorr: 
+                    assert dyn in ['y','n'],f'auto_decorr: get_decorr must be a boolean or a list of "y" or "n" but {get_decorr} given'
+                use_decorr = True if 'y' in get_decorr else False
+                decorr_lclist = [lc_obj._names[i] for i, dyn in enumerate(get_decorr) if dyn=='y']
+            else:
+                use_decorr = get_decorr
+                decorr_lclist = 'all'
+
             del_BIC      = auto_decorr.get("delta_bic", -5)
             exclude_cols = auto_decorr.get("exclude_cols", [])
             exclude_pars = auto_decorr.get("exclude_pars", [])
@@ -2066,7 +2099,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
 
         if use_decorr or init_decorr:
             if init_decorr and verbose: print("\ngetting start values for LC decorrelation parameters ...")
-            lc_obj.get_decorr(**pl_pars,**pc_pars, q1=q1,q2=q2,
+            lc_obj.get_decorr(decorr_lclist,**pl_pars,**pc_pars, q1=q1,q2=q2,
                                 plot_model=False,fit_offset = _offset, cont=cont_fac,
                                 ttv =  np.where(_file["photometry"].get('ttv','n')=='n', True, False).item(),
                                 setup_baseline=use_decorr,exclude_cols=exclude_cols,delta_BIC=del_BIC,
@@ -2085,7 +2118,16 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
         #### auto decorrelation
         if "auto_decorr" in _file["radial_velocity"]:
             RV_auto_decorr = _file["radial_velocity"]["auto_decorr"]
-            use_decorrRV   = RV_auto_decorr.get("get_decorr", False)
+            get_decorrRV   = RV_auto_decorr.get("get_decorr", False)
+            if isinstance(get_decorrRV, list):
+                for dyn in get_decorrRV: 
+                    assert dyn in ['y','n'],f'RV auto_decorr: get_decorr must be a boolean or a list of "y" or "n" but {get_decorrRV} given'
+                use_decorrRV = True if 'y' in get_decorrRV else False
+                decorr_rvlist = [rv_obj._names[i] for i, dyn in enumerate(get_decorrRV) if dyn=='y']
+            else:
+                use_decorrRV = get_decorrRV
+                decorr_rvlist = 'all'
+            
             rvdel_BIC      = RV_auto_decorr.get("delta_bic", -5)
             exclude_colsRV = RV_auto_decorr.get("exclude_cols", [])
             exclude_parsRV = RV_auto_decorr.get("exclude_pars", [])
@@ -2095,7 +2137,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
 
         if use_decorrRV or init_decorr:
             if init_decorr and verbose: print("\ngetting start values for RV decorrelation parameters ...\n")
-            rv_obj.get_decorr(  T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
+            rv_obj.get_decorr( decorr_rvlist, T_0=pl_pars["T_0"], Period=pl_pars["Period"], K=pl_pars["K"],
                                 Eccentricity=pl_pars["Eccentricity"], omega=pl_pars["omega"],
                                 gamma=gammas[0] if len(gammas)>0 else 0, setup_baseline=use_decorrRV,
                                 exclude_cols=exclude_colsRV, enforce_pars=enforce_parsRV, exclude_pars=exclude_parsRV,

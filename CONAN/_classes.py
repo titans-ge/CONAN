@@ -1012,7 +1012,7 @@ class load_lightcurves:
 
         self._rescaled_data = SN(flag=True, config=method)
 
-    def get_decorr(self, T_0=None, Period=None, rho_star=None, Duration=None, D_occ=0, Impact_para=0, RpRs=1e-5,
+    def get_decorr(self, lc_list="all", T_0=None, Period=None, rho_star=None, Duration=None, D_occ=0, Impact_para=0, RpRs=1e-5,
                     Eccentricity=None, omega=None, sesinw=None, secosw=None, Fn=None, ph_off=None, A_ev=0, f1_ev=0,
                     A_db=0, K=0, q1=0, q2=0, cont=0.0,fit_offset=None, mask=False, ss_exp=None,Rstar=None, 
                     ttv=False,delta_BIC=-5, decorr_bound =(-10,10), exclude_cols=[], enforce_pars=[], exclude_pars=[],
@@ -1034,6 +1034,8 @@ class load_lightcurves:
 
         Parameters
         -----------
+        lc_list: str, list of str;
+            list of lc filenames to get decorrelation parameters. Default is "all" to get best decorrelation for all files
         T_0, Period, rho_star/Duration, D_occ, Impact_para, RpRs, Eccentricity/sesinw, omega/secosw, Fn, ph_off,A_ev,f1_ev,A_db: floats,tuple, None;
             transit/eclipse parameters of the planet. ``T_0`` and ``Period`` must be in same units as 
             the time axis (col0) in the data file. ``D_occ``, ``Fn``, ``A_ev`` and ``A_db`` are in ppm.
@@ -1375,11 +1377,24 @@ class load_lightcurves:
             assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude_cols." 
         _ = [decorr_cols.remove(c) for c in exclude_cols]  #remove excluded columns from decorr_cols
 
+        if isinstance(lc_list,str):
+            assert lc_list in ["all"]+self._names, f'if lc_list is of type str, it must be "all" or loaded filenames but {lc_list} given'
+            if lc_list == "all": 
+                lc_list = self._names
+            else:
+                lc_list = [lc_list]
+        if isinstance(lc_list,list):
+            for lc in lc_list:
+                assert lc in self._names, f'lcs in lc_list must be one of the loaded filenames but {lc} given'
+        
         for j,file in enumerate(self._names):
             df = self._input_lc[file]
             if verbose: 
-                print(_text_format.BOLD + f"\ngetting decorr params for lc{j+1:02d}: {file} (spline={spline[j]!=None}, sine={sinusoid[file]!=None}, gp={GP[file]!=None}, s_samp={ss_exp[j]!=None}, jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.1f}ppm)" + _text_format.END)
-            
+                if file in lc_list:
+                    print(_text_format.BOLD + f"\ngetting decorr params for lc{j+1:02d}: {file} (spline={spline[j]!=None}, sine={sinusoid[file]!=None}, gp={GP[file]!=None}, s_samp={ss_exp[j]!=None}, jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.1f}ppm)" + _text_format.END)
+                else:
+                    print(_text_format.BOLD + f"\n no decorrelation for lc{j+1:02d}" + _text_format.END)
+
             all_par  = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]]     #A0,B0,A3,B3,...
             for ep in exclude_pars:
                 assert ep in all_par, f"get_decorr(): excluded parameter {ep} not in {all_par}. ensure that col{ep[-1]} is not in exclude_cols."
@@ -1402,53 +1417,60 @@ class load_lightcurves:
                             bds = np.diff(ttime)
                             self._tra_occ_pars["T_0"][i] = (this_t0-bds[0],this_t0,this_t0+bds[1])
             
-            #perform first fit of all jump parameters(astro,gp,sine,spline) with offset as only decorr par
-            out = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],
-                            q2=ld_q2[self._filters[j]], mask=mask, cont=fcont[self._filters[j]], offset=0 if fit_offset[j]=="y" else None, 
-                            decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
-                            jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
-                            pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)    #no trend, only offset if no spline
-            if set(exclude_cols) == set([0,3,4,5,6,7,8]):
-                best_pars = {} if fit_offset[j]=='n' else {"offset":0}        #offset turned off if spline is used or fit_offset='n'
+            if file in lc_list:
+                #perform first fit of all jump parameters(astro,gp,sine,spline) with offset as only decorr par
+                out = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],
+                                q2=ld_q2[self._filters[j]], mask=mask, cont=fcont[self._filters[j]], offset=0 if fit_offset[j]=="y" else None, 
+                                decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
+                                jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
+                                pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)    #no trend, only offset if no spline
+                if set(exclude_cols) == set([0,3,4,5,6,7,8]):
+                    best_pars = {} if fit_offset[j]=='n' else {"offset":0}        #offset turned off if spline is used or fit_offset='n'
+                else:
+                    best_bic  = out.bic                                         #best bic from first fit
+                    best_pars = {} if fit_offset[j]=='n' else {"offset":0}        #offset turned off if spline is used or offset='n'
+                    for cp in enforce_pars: best_pars[cp]=0                             #add enforced parameters
+                    _ = [all_par.remove(cp) for cp in enforce_pars if cp in all_par]    #remove enforced parameters from all_par to test
+
+                    if show_steps: print(f"{'Param':7s} : {'BIC':18s} N_pars \n---------------------------")
+
+                    del_BIC = -np.inf  #initialize del_BIC to -inf to start the while loop
+                    while del_BIC < delta_BIC and all_par!=[]:
+                        if show_steps: print(f"{'Best':7s} : {best_bic:<18.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
+                        pars_bic = {}
+                        for p in all_par:
+                            dtmp = best_pars.copy()   #always include offset if no spline
+                            dtmp[p] = 0               #setting the par p to 0 means it will be varied in the fit
+                            out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
+                                            decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
+                                            jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
+                                            pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
+                            if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
+                            pars_bic[p] = out.bic
+
+                        par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
+                        par_in_bic = pars_bic[par_in]
+                        del_BIC = par_in_bic - best_bic
+                        bf = np.exp(-0.5*(del_BIC))
+                        if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
+
+                        if del_BIC < delta_BIC:# if bf>1:
+                            if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
+                            best_pars[par_in]=0
+                            best_bic = par_in_bic
+                            all_par.remove(par_in)            
+
+                result = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
+                                    **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],
+                                    gp=GP[file],ss_exp=ss_exp[j], jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
+                                    pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
             else:
-                best_bic  = out.bic                                         #best bic from first fit
-                best_pars = {} if fit_offset[j]=='n' else {"offset":0}        #offset turned off if spline is used or offset='n'
-                for cp in enforce_pars: best_pars[cp]=0                             #add enforced parameters
-                _ = [all_par.remove(cp) for cp in enforce_pars if cp in all_par]    #remove enforced parameters from all_par to test
-
-                if show_steps: print(f"{'Param':7s} : {'BIC':18s} N_pars \n---------------------------")
-
-                del_BIC = -np.inf  #initialize del_BIC to -inf to start the while loop
-                while del_BIC < delta_BIC and all_par!=[]:
-                    if show_steps: print(f"{'Best':7s} : {best_bic:<18.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
-                    pars_bic = {}
-                    for p in all_par:
-                        dtmp = best_pars.copy()   #always include offset if no spline
-                        dtmp[p] = 0               #setting the par p to 0 means it will be varied in the fit
-                        out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
-                                        decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
-                                        jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
-                                        pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
-                        if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
-                        pars_bic[p] = out.bic
-
-                    par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
-                    par_in_bic = pars_bic[par_in]
-                    del_BIC = par_in_bic - best_bic
-                    bf = np.exp(-0.5*(del_BIC))
-                    if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
-
-                    if del_BIC < delta_BIC:# if bf>1:
-                        if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
-                        best_pars[par_in]=0
-                        best_bic = par_in_bic
-                        all_par.remove(par_in)            
-
-            result = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
-                                **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],
-                                gp=GP[file],ss_exp=ss_exp[j], jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
-                                pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
-
+                best_pars = {} if fit_offset[j]=='n' else {"offset":0}        #offset turned off if spline is used or fit_offset='n'
+                result = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
+                                    **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],
+                                    ss_exp=ss_exp[j], jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
+                                    pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)  
+                
             self._decorr_result.append(result)
             if verbose: print(f"BEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
             
@@ -3990,7 +4012,7 @@ class load_rvs:
                         else: pass
         self._rescaled_data = SN(flag=True, config=method)
 
-    def get_decorr(self, T_0=None, Period=None, K=None, Eccentricity=None, omega=None, sesinw=None, secosw=None,
+    def get_decorr(self, rv_list="all", T_0=None, Period=None, K=None, Eccentricity=None, omega=None, sesinw=None, secosw=None,
                     gamma=0, delta_BIC=-5, decorr_bound =(-1000,1000), exclude_cols=[],enforce_pars=[],exclude_pars=[],
                     show_steps=False, plot_model=True, use_jitter_est=False, setup_baseline=True, 
                     setup_planet=False, custom_RVfunc=None, verbose=True ):
@@ -4005,6 +4027,8 @@ class load_rvs:
 
         Parameters
         -----------
+        rv_list: str, list;
+            list of rv filenames to get decorrelation parameters. Default is "all" to get best decorrelation for all files
         T_0, Period, K, Eccentricity/sesinw, omega/secosw : floats, None;
             RV parameters of the planet. T_0 and P must be in same units as the time axis (cols0) 
             in the data file. if float/int, the values are held fixed. tuple/list of len 2 implies 
@@ -4111,51 +4135,69 @@ class load_rvs:
         for c in exclude_cols: assert c in decorr_cols, f"get_decorr(): column number to exclude from decorrelation must be in {decorr_cols} but {c} given in exclude_cols." 
         _ = [decorr_cols.remove(c) for c in exclude_cols]  #remove excluded columns from decorr_cols
 
+        if isinstance(rv_list,str):
+            assert rv_list in ["all"]+self._names, f'if rv_list is of type str, it must be "all" or loaded filenames but {rv_list} given'
+            if rv_list == "all": 
+                rv_list = self._names
+            else:
+                rv_list = [rv_list]
+        if isinstance(rv_list,list):
+            for rv in rv_list:
+                assert rv in self._names, f'rvs in rv_list must be one of the loaded filenames but {rv} given'
+        
         for j,file in enumerate(self._names):
             df = self._input_rv[file]
             if verbose: 
-                print(_text_format.BOLD + f"\ngetting decorr params for rv{j+1:02d}: {file} (jitt={self._jitt_estimate[j] if use_jitter_est else 0:.2f}{self._RVunit})" + _text_format.END)
-            
+                if file in rv_list:
+                    print(_text_format.BOLD + f"\ngetting decorr params for rv{j+1:02d}: {file} (jitt={self._jitt_estimate[j] if use_jitter_est else 0:.2f}{self._RVunit})" + _text_format.END)
+                else:
+                    print(_text_format.BOLD + f"\n no decorrelation for rv{j+1:02d}" + _text_format.END)
+
             all_par = [f"{L}{i}" for i in decorr_cols for L in ["A","B"]] 
             for ep in exclude_pars:
                 assert ep in all_par, f"get_decorr(): excluded parameter {ep} not in {all_par}. ensure that col{ep[-1]} is not in exclude_cols."
                 assert ep not in enforce_pars, f"get_decorr(): excluded parameter {ep} cannot be in enforce_pars list {enforce_pars}."
             _   = [all_par.remove(ep) for ep in exclude_pars if ep in all_par]  #remove excluded parameters from all_par if there
             
-            out = _decorr_RV(df, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet,
-                            jitter=self._jitt_estimate[j] if use_jitter_est else 0, custom_RVfunc=custom_RVfunc)    #no trend, only offset
-            best_bic = out.bic
-            best_pars = {}                      #parameter salways included
-            for cp in enforce_pars: best_pars[cp]=0            #add enforced parameters
-            _ = [all_par.remove(cp) for cp in enforce_pars if cp in all_par]    #remove enforced parameters from all_par
+            if file in rv_list:
+                out = _decorr_RV(df, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet,
+                                jitter=self._jitt_estimate[j] if use_jitter_est else 0, custom_RVfunc=custom_RVfunc)    #no trend, only offset
+                best_bic = out.bic
+                best_pars = {}                      #parameters always included
+                for cp in enforce_pars: best_pars[cp]=0            #add enforced parameters
+                _ = [all_par.remove(cp) for cp in enforce_pars if cp in all_par]    #remove enforced parameters from all_par
 
-            if show_steps: print(f"{'Param':7s} : {'BIC':6s} N_pars \n---------------------------")
-            del_BIC = -np.inf 
-            while del_BIC < delta_BIC:
-                if show_steps: print(f"{'Best':7s} : {best_bic:.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
-                pars_bic = {}
-                for p in all_par:
-                    dtmp = best_pars.copy()  #temporary dict to hold parameters to test
-                    dtmp[p] = 0
-                    out = _decorr_RV(df, **self._rv_pars,**dtmp, decorr_bound=decorr_bound, npl=self._nplanet,
-                                    jitter=self._jitt_estimate[j] if use_jitter_est else 0)
-                    if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
-                    pars_bic[p] = out.bic
+                if show_steps: print(f"{'Param':7s} : {'BIC':6s} N_pars \n---------------------------")
+                del_BIC = -np.inf 
+                while del_BIC < delta_BIC:
+                    if show_steps: print(f"{'Best':7s} : {best_bic:.2f} {len(best_pars.keys())} {list(best_pars.keys())}\n---------------------")
+                    pars_bic = {}
+                    for p in all_par:
+                        dtmp = best_pars.copy()  #temporary dict to hold parameters to test
+                        dtmp[p] = 0
+                        out = _decorr_RV(df, **self._rv_pars,**dtmp, decorr_bound=decorr_bound, npl=self._nplanet,
+                                        jitter=self._jitt_estimate[j] if use_jitter_est else 0)
+                        if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
+                        pars_bic[p] = out.bic
 
-                par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
-                par_in_bic = pars_bic[par_in]
-                del_BIC = par_in_bic - best_bic
-                bf = np.exp(-0.5*(del_BIC))
-                if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
+                    par_in = min(pars_bic,key=pars_bic.get)   #parameter that gives lowest BIC
+                    par_in_bic = pars_bic[par_in]
+                    del_BIC = par_in_bic - best_bic
+                    bf = np.exp(-0.5*(del_BIC))
+                    if show_steps: print(f"+{par_in} -> BF:{bf:.2f}, del_BIC:{del_BIC:.2f}")
 
-                if del_BIC < delta_BIC:# if bf>1:
-                    if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
-                    best_pars[par_in]=0
-                    best_bic = par_in_bic
-                    all_par.remove(par_in)            
+                    if del_BIC < delta_BIC:# if bf>1:
+                        if show_steps: print(f"adding {par_in} lowers BIC to {par_in_bic:.2f}\n" )
+                        best_pars[par_in]=0
+                        best_bic = par_in_bic
+                        all_par.remove(par_in)            
 
-            result = _decorr_RV(df, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet,
-                                jitter=self._jitt_estimate[j] if use_jitter_est else 0, custom_RVfunc=custom_RVfunc)
+                result = _decorr_RV(df, **self._rv_pars,**best_pars, decorr_bound=decorr_bound, npl=self._nplanet,
+                                    jitter=self._jitt_estimate[j] if use_jitter_est else 0, custom_RVfunc=custom_RVfunc)
+            else:
+                result = _decorr_RV(df, **self._rv_pars, decorr_bound=decorr_bound, npl=self._nplanet,
+                                    jitter=self._jitt_estimate[j] if use_jitter_est else 0, custom_RVfunc=custom_RVfunc)
+                                
             self._rvdecorr_result.append(result)
             if verbose: print(f"\nBEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
             

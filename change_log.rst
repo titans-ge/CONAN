@@ -1,3 +1,8 @@
+23-Jun-2026: version 3.3.16
+~~~~~~~~~~~~~~
+* support for specifying list of lcs/rvs to run get_decorr() on
+
+
 11-Mar-2026: version 3.3.13
 ~~~~~~~~~~~~~~
 * numba acceleration for the occultquad transit model (significant speed-up)
