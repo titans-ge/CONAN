@@ -12,6 +12,7 @@ from uncertainties.umath import sin,cos, sqrt
 from scipy.interpolate import interp1d
 from celerite import terms
 import spleaf
+from scipy.stats import norm
 from numba import vectorize
 
 
@@ -1567,6 +1568,172 @@ def ellipsoidal_variation_signal(phi, A_ev=0, f1_ev=0, inc_rad=1.571, e=0, w_rad
 	F_ev  = - A_ev * ( np.cos(2*theta) + f1_ev*np.cos(theta) + f2_ev*np.cos(3*theta) - f0)
 	return F_ev
 
+
+def ellipsoidal_variation_coefficients(coeffs, y, input_LDlaw="quad", mu_min=0.05, n_powers=4, show_plot=False):
+	"""
+	calculate alpha1 and alpha2, the ellisoidal varation coefficients. The value of alpha2 is usually close to unity.
+	
+	see eqn 12 and 13 of Esteves2013 https://doi.org/10.1088/0004-637X/772/1/51. This is expanded for the case of
+	quadratic and claret 4-parameter limb darkening laws (using eqn 9 and 10 of Deline2025 https://arxiv.org/pdf/2505.01544).
+	where alpha_ev=alpha2 and beta_ev=alpha1.
+
+	- Kopal LD law --> 1 - κ1(1-μ) - κ2(1-μ^2) - κ3(1-μ^3) - κ4(1-μ^4).
+
+	- power-2 law --> 1 - c*(1-μ^α).
+
+	- claret 4-parameter law --> 1 - u1(1-μ^0.5) - u2(1-μ) - u3(1-μ^1.5) - u4(1-μ^2).	
+
+	Parameters
+	----------
+	coeffs: list, array
+		limb darkening coefficients. length 1 for linear limb darkening law (u1), length 2 for quad (u1, u2) and power-2 (c, alpha) limb darkening law, 
+		and length 4 for claret ("non-linear": u1, u2, u3, u4) limb darkening law. Note that the power-2 and claret coefficients are transformed to 
+		Kopal LD law before being used in EV equations, since Kopal LD laws are different from these.
+	y : float,UFloat
+		gravity darkening coefficient
+	input_LDlaw: str, optional
+		limb darkening law of the input coefficients. either "quad", "power-2" or "claret". default is "quad".
+	mu_min: float, optional
+		minimum mu value to consider when fitting the Kopal limb darkening law to the input law. default is 0.05,
+		but can be set to a higher value to exclude the steep drop in intensity near the limb which is often poorly captured by the input LD laws.
+	n_powers: int, optional
+		number of powers (of μ) of the Kopal limb darkening law to match the input (power-2 or Claret) LD. 
+		Default is 4, since the Kopal limb darkening law has 4 powers of μ at maximum.
+	show_plot: bool, optional
+		if True, shows a plot of the limb darkening profile and the Kopal fit. default is False.
+
+	Return
+	------
+	alpha : SimpleNamespace
+		alpha1 - float, UFloat: ellipsoidal variation coefficient 1 used in the fractional constants f1 and f2
+		alpha2 - float, UFloat: ellipsoidal variation coefficient 2 used in the main amplitude Aev
+	"""
+	
+	assert input_LDlaw in ["linear", "quad","power-2","claret"], f"input_LDlaw must be one of ['linear', 'quad', 'power-2', 'claret']"
+	assert n_powers <=4, f"n_powers must be less than or equal to 4 since Kopal limb darkening law has 4 powers of μ at maximum"
+	assert (0.0 <= mu_min < 1.0), f"mu_min must be between 0 and 1, got {mu_min}."
+
+	# --- if law is quadratic, Monte Carlo sampling when any coefficient or y is a UFloat ---. quadratic is directly propagated with ufloat
+	if input_LDlaw != "quad":
+		coeffs_has_ufloat = (
+							isinstance(coeffs, UFloat) or
+							(hasattr(coeffs, "__len__") and any(isinstance(c, UFloat) for c in coeffs))
+						)
+		if coeffs_has_ufloat or isinstance(y, UFloat):
+			n_samp = 1000
+			if isinstance(coeffs, UFloat):
+				coeffs_samp = [norm(coeffs.n, coeffs.s).rvs(n_samp)]
+			else:
+				coeffs_samp = [
+					norm(c.n, c.s).rvs(n_samp) if isinstance(c, UFloat) else np.full(n_samp, float(c))
+					for c in coeffs
+				]
+			y_samp = norm(y.n, y.s).rvs(n_samp) if isinstance(y, UFloat) else np.full(n_samp, float(y))
+
+			if show_plot:
+				res_fig =  ellipsoidal_variation_coefficients([c.n if isinstance(c, UFloat) else c for c in coeffs], 
+																y.n if isinstance(y, UFloat) else y, 
+																input_LDlaw=input_LDlaw, mu_min=mu_min, n_powers=n_powers,show_plot=show_plot)
+
+			alpha1_arr = np.empty(n_samp)
+			alpha2_arr = np.empty(n_samp)
+			for i in range(n_samp):
+				c_i = float(coeffs_samp[0][i]) if isinstance(coeffs, UFloat) else [float(s[i]) for s in coeffs_samp]
+				res = ellipsoidal_variation_coefficients(c_i, float(y_samp[i]), input_LDlaw=input_LDlaw, mu_min=mu_min, n_powers=n_powers, show_plot=False)
+				alpha1_arr[i] = float(res.alpha1)
+				alpha2_arr[i] = float(res.alpha2)
+			return SimpleNamespace(
+				alpha1=ufloat(np.mean(alpha1_arr), np.std(alpha1_arr)),
+				alpha2=ufloat(np.mean(alpha2_arr), np.std(alpha2_arr)),
+				fig=res_fig.fig
+			)
+			
+	# ---------------------------------------------------------------
+	if input_LDlaw in ["linear","quad"]:
+		if isinstance(coeffs, (float, UFloat)):
+			u  = [coeffs, 0.0]  # set u2=0 for linear limb darkening law
+		elif hasattr(coeffs, "__len__"):
+			assert len(coeffs) in [1,2], "coeffs must be of length 1(for linear), 2(for quadratic)"
+			if len(coeffs)==1:
+				u = [coeffs[0], 0.0]  # set u2=0 for linear limb darkening law
+			else:
+				u = coeffs
+		ld_fig = None
+		#eqn 2-39 of Kopal 1959 with modification for different quadratic parameterization gotten from Deline 2025 (eqns E.8 and E.9)
+		u1, u2 = u[0], u[1]
+		Xi = np.array( [ 
+							2/5 * (15 + u1 + 2*u2),
+							1/7 * (35*u1 + 22*u2),
+							9/8 * (4*(u1-1)+u2), 
+						]) / (6 - 2*u1 - u2)
+
+	elif input_LDlaw in ["power-2", "claret"]:   #eqn 2-41 of Kopal 1959 with fit to input law to obtain the best coeffs for the eqn           
+
+		def _inner(p, q, mu_min=mu_min):
+			"""Analytic integral: int_0^1 (1 - mu^p)(1 - mu^q) dmu"""
+			return (1.0-mu_min) - (1-mu_min**(1+p))/(1+p) - (1-mu_min**(1+q))/(1+q) + (1.0-mu_min**(1+p+q))/(1+p+q)
+
+		if input_LDlaw == "claret":
+			assert len(coeffs) == 4, "coeffs must be of length 4 for claret limb darkening law"
+			source_amps   = list(coeffs)
+			source_powers = [0.5, 1.0, 1.5, 2.0] # powers of mu for claret law
+
+		elif input_LDlaw == "power-2":
+			assert len(coeffs) == 2, "coeffs must be of length 2 for power-2 limb darkening law"
+			c_p2, alpha   = coeffs
+			source_amps   = [c_p2]
+			source_powers = [alpha]
+
+		# ── Build Gram matrix A (N x N) ───────────────────────────────────────
+		int_powers = np.arange(1, n_powers + 1, dtype=float)
+		A = np.array([[_inner(m, n,mu_min) for n in int_powers] for m in int_powers])
+
+		# ── Build RHS vector b (N,) ───────────────────────────────────────────
+		b = np.array([
+			sum(amp * _inner(m, sp, mu_min)
+				for amp, sp in zip(source_amps, source_powers))
+			for m in int_powers
+		])
+
+		# ── Solve and compute RMS residual ────────────────────────────────────
+		c = np.linalg.solve(A, b) #returns coeff
+		#extract u1 to u4 depending on length of c
+		u1 = c[0] if len(c) > 0 else 0.0
+		u2 = c[1] if len(c) > 1 else 0.0
+		u3 = c[2] if len(c) > 2 else 0.0
+		u4 = c[3] if len(c) > 3 else 0.0
+
+
+		#plot fit to power-2 or claret LD profiles
+		if show_plot:
+			mu = np.linspace(0, 1, 100)
+			if input_LDlaw == "claret":
+				ld_profile = 1 - sum(amp * (1 - mu**pow) for amp, pow in zip(source_amps, source_powers))
+			elif input_LDlaw == "power-2":
+				ld_profile = 1 - c_p2 * (1 - mu**alpha)
+
+			ld_fit = 1 - sum(ci * (1 - mu**pi) for ci, pi in zip(c, int_powers))
+
+			ld_fig = plt.figure(figsize=(6,4))
+			plt.plot(mu, ld_profile, label=f"{input_LDlaw} LD profile\ncoeffs={coeffs}")
+			plt.plot(mu, ld_fit, label=f"Kopal fit ({n_powers} powers)\n{', '.join([f'u{i+1}={c[i]:.2f}' for i in range(len(c))])}", linestyle="--")
+			plt.xlabel("mu")
+			plt.ylabel("I(mu)/I(1)")
+			plt.title("Limb Darkening Profile and Kopal Fit")
+			plt.legend()
+			plt.grid()
+			plt.show()
+
+		#eqn 2-41 of Kopal 1959
+		Xi = np.array( [ 
+							1/7  * (210 + 14*u1 - 18*u3 - 35*u4),
+							5/42 * (210*u1 + 288*u2 + 315*u3 + 320*u4),
+							3/56 * ( 420*(u1-1) + 735*u2 + 932*u3 + 1050*u4) 
+					]) / (30 - 10*u1 -15*u2 - 18*u3 - 20*u4)
+
+	alpha2 = 3 / 4 * Xi[0] * (1 + y)
+	alpha1 = 1/12 * Xi[1]/Xi[0] * ((y + 2) / (y + 1))
+	return SimpleNamespace(alpha1=alpha1, alpha2=alpha2, fig=ld_fig if show_plot else None)
 
 def EV_amplitude( 	qm:     float | UFloat,
 					aR:     float | UFloat,

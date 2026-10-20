@@ -1626,7 +1626,7 @@ class load_lightcurves:
             return None
         assert hasattr(self,"_tmodel"), 'No trend model has been determined. Run `get_decorr()` first.'
         
-        dtd_folder=self._fpath[:-1]+"detrended/"
+        dtd_folder=self._fpath+"detrended/"
 
         if not os.path.exists(dtd_folder): os.makedirs(dtd_folder)
 
@@ -2992,7 +2992,12 @@ class load_lightcurves:
             assert self._planet_pars["pl1"]["Period"].start_value != 0, "transit_depth_variation(): `.planet_parameters()` must be called before transit_depth_variation()."
             if self._planet_pars["pl1"]["RpRs"].to_fit!="n" or self._planet_pars["pl1"]["RpRs"].step_size!=0:
                 print(f'transit_depth_variation(): Fixing base `RpRs` to the start value {self._planet_pars["pl1"]["RpRs"].start_value} defined in `.planet_parameters()`\n.')
-        
+
+            if self._nplanet > 1:
+                raise NotImplementedError("transit_depth_variation() currently supports only "
+                                            "single-planet systems; multi-planet fits would share "
+                                            "one dRpRs parameter per filter across all planets."
+                                        )
         assert isinstance(dRpRs, tuple),f"transit_depth_variation(): dRpRs must be tuple of len 2/3 specifying (mu,std) or (min,start,max)."
 
         grnames    = np.array(list(sorted(set(self._groups))))
