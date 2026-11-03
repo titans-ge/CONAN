@@ -6413,6 +6413,9 @@ class load_result:
             binsize to use for binning the data in time. Default is None to use dur/10.
         offset : float or list of floats;
             vertical offset between the transits to use for plotting. Default is None to use 5*stdev transit data.
+        sort_lcs : bool;
+            stack transits chronologically when True (default), preserving input
+            order for transits at the same epoch. False uses the input order.
         show_T0_fit : bool;
             whether to mark (with an 'x') the best-fit T0s in the lc plot.
         
@@ -6443,9 +6446,13 @@ class load_result:
         fig,ax = plt.subplots(int(np.ceil(npl/2)),npl, figsize=figsize)
         ax = [ax] if npl==1 else ax.reshape(-1)
         for n in range(1,npl+1):
-            T0_labels   = [k for k in params_dict.keys() if f'T0_pl{n}' in k]              # get the T0 labels for planet n
-            fit_t0s     = np.array([v.n for k,v in params_dict.items() if f'T0_pl{n}' in k]) # get t0 results for planet n
-            fit_t0s_err = np.array([v.s for k,v in params_dict.items() if f'T0_pl{n}' in k]) # get t0 results for planet n
+            # Shared recipients may have been appended in donor order. Restore
+            # the TTV setup order to match the light-curve names and edges below.
+            T0_labels = sorted(
+                (k for k in params_dict if k.endswith(f'-T0_pl{n}')),
+                key=lambda k: int(k.split('-')[0][3:]))
+            fit_t0s     = np.array([params_dict[k].n for k in T0_labels])
+            fit_t0s_err = np.array([params_dict[k].s for k in T0_labels])
 
             epoch       = np.round((fit_t0s - self.params.T0[n-1])/self.params.P[n-1])            # get epoch for each t0
             pp          = np.polyfit(x=epoch, y=fit_t0s, deg=1, w=1/fit_t0s_err)                                            # fit linear ephemeris
@@ -6466,7 +6473,7 @@ class load_result:
                     lc_names.extend([self.lc.names[i]]*len(np.array(self._ttvs[i].t0s)[pl_ind]))
 
             if sort_lcs:   #sort the lc data by the linear ephemeris
-                srt_t0s  = np.argsort(lin_t0s)
+                srt_t0s  = np.argsort(lin_t0s, kind="stable")
                 lin_t0s  = lin_t0s[srt_t0s]
                 fit_t0s  = fit_t0s[srt_t0s]
                 edges    = np.array(edges)[srt_t0s]
