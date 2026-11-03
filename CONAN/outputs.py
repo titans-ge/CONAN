@@ -5,7 +5,7 @@ from .funcs import credregionML
 
 
 def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
-                    nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder):
+                    nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder, shared_params=None):
     
     """
     Function to write out the medians, best values and distributions of the jump parameters
@@ -52,8 +52,29 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         The number of planets.
     out_folder : str
         The folder to save the outputs.
+    shared_params : dict, optional
+        Donor parameter names mapped to lists of recipients sharing their values.
 
     """
+    # Include shared recipients in summaries and derived PDFs using their donor's
+    # samples, while returning statistics only for the independently fitted parameters.
+    nfit = posterior.shape[1]
+    if shared_params:
+        bp = np.copy(bp)
+        param_indices = dict(zip(jnames, ijnames[0]))
+        param_indices.update(zip(njnames, nijnames[0]))
+        for donor, recipients in shared_params.items():
+            for recipient in recipients:
+                bp[param_indices[recipient]] = bp[param_indices[donor]]
+                donor_col = np.flatnonzero(jnames == donor)
+                if donor_col.size:
+                    posterior = np.column_stack((posterior, posterior[:, donor_col[0]]))
+                    jnames = np.append(jnames, recipient)
+                    ijnames = (np.append(ijnames[0], param_indices[recipient]),)
+                    keep = njnames != recipient
+                    njnames = njnames[keep]
+                    nijnames = (nijnames[0][keep],)
+
     npoint,npara=posterior.shape
     #TODO: can be improved with parameter names already in posterior dict
     # =============== calculate the physical parameters taking into account the input and inferred PDFs ========
@@ -626,7 +647,7 @@ def mcmc_outputs(posterior, jnames, ijnames, njnames, nijnames, bp, uwl, Rs_in, 
         plot_traspec(dRpRsres, edRpRsres, uwl,out_folder)
 
     
-    return medvals, maxvals,np.median(abs(sig1),axis=1)
+    return medvals[:nfit], maxvals[:nfit],np.median(abs(sig1[:nfit]),axis=1)
 
 
 def gr_print(jnames,GRvals, out_folder):

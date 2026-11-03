@@ -6010,6 +6010,11 @@ class load_result:
                     else:
                         results_dict[words[0]] = val
                         
+        # Resolve aliases here as well so older result files containing NaN
+        # placeholders inherit the donor's value and uncertainty.
+        for donor, recipients in self._ind_para.get("shared_params", {}).items():
+            for recipient in recipients:
+                results_dict[recipient] = results_dict[donor]
         return results_dict
     
     def _load_result_array(self, data=["lc","rv"],verbose=True):
@@ -6418,8 +6423,13 @@ class load_result:
         if self._ttvs==[]:
             return print("TTV fit not performed for this system.")
         npl         = self._nplanet
-
-        max_ntra = max([len([v.n for k,v in self.params_dict.items() if f'T0_pl{n}' in k]) for n in range(1,npl+1)])
+        # Resolve aliases here as well so older result files containing NaN
+        # placeholders inherit the donor's value and uncertainty.
+        params_dict = {k:v for k,v in self.params_dict.items()} #copy
+        for donor, recipients in self._ind_para.get("shared_params", {}).items():
+            for recipient in recipients:
+                params_dict[recipient] = params_dict[donor]
+        max_ntra = max([len([v.n for k,v in params_dict.items() if f'T0_pl{n}' in k]) for n in range(1,npl+1)])
         if figsize==None: figsize = (6 if npl==1 else 10, max_ntra)
 
         if isinstance(offset,(float,type(None))): offset=[offset]*npl
@@ -6433,9 +6443,9 @@ class load_result:
         fig,ax = plt.subplots(int(np.ceil(npl/2)),npl, figsize=figsize)
         ax = [ax] if npl==1 else ax.reshape(-1)
         for n in range(1,npl+1):
-            T0_labels   = [k for k in self.params_dict.keys() if f'T0_pl{n}' in k]              # get the T0 labels for planet n
-            fit_t0s     = np.array([v.n for k,v in self.params_dict.items() if f'T0_pl{n}' in k]) # get t0 results for planet n
-            fit_t0s_err = np.array([v.s for k,v in self.params_dict.items() if f'T0_pl{n}' in k]) # get t0 results for planet n
+            T0_labels   = [k for k in params_dict.keys() if f'T0_pl{n}' in k]              # get the T0 labels for planet n
+            fit_t0s     = np.array([v.n for k,v in params_dict.items() if f'T0_pl{n}' in k]) # get t0 results for planet n
+            fit_t0s_err = np.array([v.s for k,v in params_dict.items() if f'T0_pl{n}' in k]) # get t0 results for planet n
 
             epoch       = np.round((fit_t0s - self.params.T0[n-1])/self.params.P[n-1])            # get epoch for each t0
             pp          = np.polyfit(x=epoch, y=fit_t0s, deg=1, w=1/fit_t0s_err)                                            # fit linear ephemeris

@@ -106,9 +106,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         basemodel_outputs = SimpleNamespace(lc={},rv={}) 
 
     params_all[jumping] = p   # set the jumping parameters to the values in p which are varied in mcmc 
-    for sp in shared_params:
-        for s_recip in shared_params[sp]:
-            params_all[pnames_all == s_recip] = params_all[pnames_all == sp]
+    for donor, recipients in shared_params.items():
+        for recip in recipients:
+            params_all[pnames_all == recip] = params_all[pnames_all == donor]
 
     # conditionals
     if isinstance(conditionals, dict) and len(conditionals)>0:
@@ -128,6 +128,10 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
 
     time_all, flux_all, err_all, full_mod_all, base_para_all, base_sine_all, base_spl_all, base_gp_all, base_total_all, transit_all, det_flux_all, residual_all = [],[],[],[],[],[],[],[],[],[],[],[]
     lcGPsave = dict()
+    # TTV parameters are stored consecutively for each light curve.
+    if nttv > 0:
+        ttv_offsets = 1 + 7*npl + np.cumsum([0] + [len(conf.t0s) for conf in ttv_conf], dtype=int)
+
     # restrict the parameters to those of the light curve
     for j in range(nphot):
         
@@ -147,9 +151,6 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         if baseLSQ == "y": bvar = bvars[j][0]
         else: bvar=[]
 
-        pp      = p[pindices[j]]                    # the elements of the p array jumping in this LC, pp is the array of non-GP jumping parameters for this LC
-        ppnames = pnames_all[jumping][pindices[j]]  # the names of the parameters jumping in this LC
-        
         # extract the parameters input to the modeling function from the input array
         # specify the LD and ddf correctly
         # identify the filter index of this LC
@@ -171,157 +172,53 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
 
         LCjitterind = 1+7*npl + nttv+nddf+nocc*7 + nfilt*2 + j
 
-        # get the index of pp that is 
-        # adapt the RpRs value used in the LC creation to any ddfs
-        ppcount = 0   # the index of the jumping parameter in the pp array
-        T0in, RpRsin, bbin, perin, sesinwin, secoswin, Kin = [], [], [], [], [], [], []
+        # params_all already includes sampled values and shared parameter updates.
+        T0in     = params_all[1:1+7*npl:7].tolist()
+        RpRsin   = params_all[2:1+7*npl:7].tolist()
+        bbin     = params_all[3:1+7*npl:7].tolist()
+        perin    = params_all[4:1+7*npl:7].tolist()
+        sesinwin = params_all[5:1+7*npl:7].tolist()
+        secoswin = params_all[6:1+7*npl:7].tolist()
         rhoin, durin = None, None
-        #if parameter is jumping, get value from pp array, otherwise use the value from the params array
-        if "rho_star" in pnames_all:    #using rho_star for transit model
-            if 0 in jumping[0]:
-                rhoin = pp[ppcount]
-                ppcount = ppcount+1
-            else:
-                rhoin = params_all[0]
-        else:  #using duration for transit model
-            if 0 in jumping[0]:
-                durin = pp[ppcount]
-                ppcount = ppcount+1
-            else:
-                durin = params_all[0]
+        if "rho_star" in pnames_all:
+            rhoin = params_all[0]
+        else:
+            durin = params_all[0]
 
-        for n in range(npl):
-            if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                T0in.append(pp[ppcount])        # the first element of pp is the T0 value
-                ppcount = ppcount+1 
-            else:
-                T0in.append(params_all[1+7*n])
-                
-            if (2+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                RpRsin.append(pp[ppcount])
-                ppcount = ppcount+1   
-            else:
-                RpRsin.append(params_all[2+7*n])
-
-            if (3+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                bbin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                bbin.append(params_all[3+7*n])
-                    
-            if (4+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                perin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                perin.append(params_all[4+7*n])
-
-            if (5+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                sesinwin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                sesinwin.append(params_all[5+7*n])
-
-            if (6+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                secoswin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                secoswin.append(params_all[6+7*n])
-        
-        #ttv
-        if nttv>0:
-            for i,t_0 in enumerate(ttv_conf[j].t0_list):
-                ttv_conf[j].t0_list[i] = pp[ppcount:ppcount+len(t_0)]
-                ppcount = ppcount+len(t_0)
+        # Preserve the transit chunks while selecting this light curve's TTVs.
+        if nttv > 0:
+            chunk_offsets = np.cumsum([0] + [len(t0) for t0 in ttv_conf[j].t0_list], dtype=int)
+            ttv_values = params_all[ttv_offsets[j]:ttv_offsets[j+1]]
+            ttv_conf[j].t0_list = [ttv_values[start:end] for start, end in zip(chunk_offsets[:-1], chunk_offsets[1:])]
 
         if nddf>0:   
-            ddf0 = pp[ppcount]
+            ddf0 = params_all[1+7*npl+nttv+k]
             isddf = 'y'
             grprs_here = grprs[gg]
-            ppcount = ppcount+1
         else:
             ddf0 = 0.
             isddf = 'n'
             grprs_here = 0.
         
-        if (occind in jumping[0]):   
-            occin = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            occin = params_all[occind]
+        occin    = params_all[occind]
+        Fn_in    = params_all[Fn_ind]
+        phoff_in = params_all[phoff_ind]
+        Aev_in   = params_all[Aev_ind]
+        Adb_in   = params_all[Adb_ind]
+        f1ev_in  = params_all[f1ev_ind]
+        cont_in  = params_all[cont_ind]
+        q1in     = params_all[q1ind]
+        q2in     = params_all[q2ind]
 
-        if (Fn_ind in jumping[0]):   
-            Fn_in = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            Fn_in = params_all[Fn_ind]
-
-        if (phoff_ind in jumping[0]):   
-            phoff_in = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            phoff_in = params_all[phoff_ind]
-
-        if (Aev_ind in jumping[0]):   
-            Aev_in = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            Aev_in = params_all[Aev_ind]
-
-        if (Adb_ind in jumping[0]):   
-            Adb_in = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            Adb_in = params_all[Adb_ind]
-
-        if (f1ev_ind in jumping[0]):   
-            f1ev_in = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            f1ev_in = params_all[f1ev_ind]
-
-        if (cont_ind in jumping[0]):   
-            cont_in = pp[ppcount]
-            ppcount = ppcount+1
-        else:
-            cont_in = params_all[cont_ind]
-            
-        #########
-        #now check the correct LD coeffs
-        if (q1ind in jumping[0]):    # index of specific LC LD in jumping array -> check in jumping array
-            q1in    = pp[ppcount]
-            ppcount = ppcount + 1
-        else:
-            q1in = params_all[q1ind]
-
-        if (q2ind in jumping[0]):   # index of specific LC LD in jumping array -> check in jumping array
-            q2in    = pp[ppcount]
-            ppcount = ppcount + 1
-        else:
-            q2in = params_all[q2ind]
-
-        if (LCjitterind in jumping[0]):   # index of specific LC jitter in jumping array -> check in jumping array
-            ppcount = ppcount + 1
-        
         cst_pars= {}
         if ncustom>0:
             customind = 1+7*npl + nttv+nddf+nocc*7 + nfilt*2 + nphot + np.arange(ncustom)
-            for kk,cst_ind in enumerate(customind):
-                if cst_ind in jumping[0]:
-                    cst_pars[list(custom_LCfunc.par_dict.keys())[kk]] = pp[ppcount]
-                    ppcount = ppcount + 1
-                else:
-                    cst_pars[list(custom_LCfunc.par_dict.keys())[kk]] = params[cst_ind]
+            cst_pars = dict(zip(custom_LCfunc.par_dict, params_all[customind]))
 
         if sine_conf.flag:
             file_slct = filnames[k] if sine_conf.fit=="filt" else "same" if sine_conf.fit=="same" else LCnames[j]
             sin_ind   = 1+7*npl +nttv+ nddf+nocc*7 + nfilt*2 + nphot + ncustom + sine_conf.index[file_slct]  #the indices of this lc/filt sinuoid parameters
-            # sine_conf.pars[file_slct] = params_all[sin_ind]     #TODO all parameters should be updated like this as opppsed to using ppcount
-            for kk,s_ind in enumerate(sin_ind):
-                if s_ind in jumping[0]:
-                    sine_conf.pars[file_slct][kk]  = pp[ppcount]
-                    ppcount = ppcount + 1
-                else:
-                    sine_conf.pars[file_slct][kk] = params_all[s_ind]
+            sine_conf.pars[file_slct] = params_all[sin_ind]
             #compute sinusoidal model
             x      = thisLCdata[sine_conf.x[file_slct]]
             amp    = sine_conf.pars[file_slct][:-2]
@@ -385,15 +282,7 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         # compute baseline model (w/ or w/o spline)
         bfstart = 1 + 7*npl + nttv + nddf +nocc*7 +2*nfilt + nphot + ncustom + nsin + nRV*2+ ncustomRV + j*22  # index in params of the first baseline param of this light curve
         blind   = np.asarray(list(range(bfstart,bfstart+22))) # the indices of the baseline params of this light curve
-        basesin = np.zeros(22)
-        
-        for jj in range(len(blind)):
-            basein = blind[jj]
-            if (basein in jumping[0]):
-                basesin[jj] = pp[ppcount]
-                ppcount = ppcount + 1
-            else:
-                basesin[jj]=params_all[basein]
+        basesin = params_all[blind]
 
         coeff = np.copy(basesin)
         if (baseLSQ == 'y'):
@@ -755,70 +644,20 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         if baseLSQ == "y": bvarRV = bvarsRV[j][0]
         else : bvarRV = []
 
-        # get the current parameters from the pp array.
-        pp      = p[pindices[j+nphot]]  # the elements of the p (noGP) array jumping in this RV curve
-        ppnames = jnames[pindices[j+nphot]]
-
-        ppcount = 0 
-        T0in, RpRsin, bbin, perin, sesinwin, secoswin, Kin = [], [], [], [], [], [],[]
+        # params_all already includes sampled values and shared parameter updates.
+        T0in     = params_all[1:1+7*npl:7].tolist()
+        RpRsin   = params_all[2:1+7*npl:7].tolist()
+        bbin     = params_all[3:1+7*npl:7].tolist()
+        perin    = params_all[4:1+7*npl:7].tolist()
+        sesinwin = params_all[5:1+7*npl:7].tolist()
+        secoswin = params_all[6:1+7*npl:7].tolist()
         rhoin, durin = None, None
+        if "rho_star" in pnames_all:
+            rhoin = params_all[0]
+        else:
+            durin = params_all[0]
 
-        if "rho_star" in pnames_all:    #using rho_star  for transit model
-            if 0 in jumping[0]:
-                rhoin = pp[ppcount]
-                ppcount = ppcount+1
-            else:
-                rhoin = params_all[0]
-        else:  #using duration for transit model
-            if 0 in jumping[0]:
-                durin = pp[ppcount]
-                ppcount = ppcount+1
-            else:
-                durin = params_all[0]
-
-        for n in range(npl):
-            if (1+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                T0in.append(pp[ppcount])        # the first element of pp is the T0 value
-                ppcount = ppcount+1 
-            else:
-                T0in.append(params_all[1+7*n])
-                
-            if (2+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                RpRsin.append(pp[ppcount])
-                ppcount = ppcount+1   
-            else:
-                RpRsin.append(params_all[2+7*n])
-
-            if (3+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                bbin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                bbin.append(params_all[3+7*n])
-                    
-            if (4+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                perin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                perin.append(params_all[4+7*n])
-
-            if (5+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                sesinwin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                sesinwin.append(params_all[5+7*n])
-
-            if (6+7*n in jumping[0]):   # same for all LCs -> check in jumping array
-                secoswin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                secoswin.append(params_all[6+7*n])
-
-            if (7+7*n in jumping[0]):   # same for all data -> check in jumping array
-                Kin.append(pp[ppcount])
-                ppcount = ppcount+1
-            else:
-                Kin.append(params_all[7+7*n])
-        
+        Kin = params_all[7:1+7*npl:7].tolist()
 
         gammaind = 1+7*npl + nttv+nddf + nocc*7 + nfilt*2 + nphot + ncustom + nsin + j*2   #pass the right gamma index for each file (Akin)
         Gamma_in = params_all[gammaind]

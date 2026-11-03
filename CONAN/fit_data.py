@@ -2097,13 +2097,16 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     bpfull = np.copy(initial)
     bpfull[[ijnames][0]] = bp
+    for donor, recipients in shared_params.items():
+        for recipient in recipients:
+            bpfull[pnames_all == recipient] = bpfull[pnames_all == donor]
 
     try:
         medvals,maxvals,sigma1s = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
-                                        nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
+                                        nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder, shared_params=shared_params)
     except:
         medvals,maxvals,sigma1s = mcmc_outputs(posterior,jnames, ijnames, njnames, nijnames, bpfull, uwl, Rs_in, Ms_in, Rs_PDF, Ms_PDF, 
-                                        nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder)
+                                        nfilt, filnames, howstellar, extinpars, RVunit, extind_PDF,npl,out_folder, shared_params=shared_params)
 
     npar=len(jnames)
     if (baseLSQ == "y"):
@@ -2112,10 +2115,14 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
     medp=np.copy(initial)
     medp[[ijnames][0]]=medvals
-    maxp=initial
+    maxp=np.copy(initial)
     maxp[[ijnames][0]]=maxvals
     stdev = np.zeros_like(initial)
     stdev[[ijnames][0]] = sigma1s
+    for donor, recipients in shared_params.items():
+        for recipient in recipients:
+            for values in (medp, maxp, stdev):
+                values[pnames_all == recipient] = values[pnames_all == donor]
 
     #============================== PLOTTING ===========================================
 
