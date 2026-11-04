@@ -6401,7 +6401,8 @@ class load_result:
         return fig
 
 
-    def _ttv_lcplot(self, figsize=None, binsize=None,offset=None, sort_lcs=True, show_T0_fit=True):
+    def _ttv_lcplot(self, figsize=None, binsize=None,offset=None, sort_lcs=True, show_T0_fit=True,
+                    show_labels=True, labels=None):
         """  
         plot the stacked individual transits of each planet in the system using linear ephemeris revealing the presence of TTVs.
 
@@ -6418,6 +6419,14 @@ class load_result:
             order for transits at the same epoch. False uses the input order.
         show_T0_fit : bool;
             whether to mark (with an 'x') the best-fit T0s in the lc plot.
+        show_labels : bool;
+            whether to show ttv number and input lightcurve order number as labels in the plot.
+        labels : dict, optional;
+            custom text keyed by the default label (e.g. "ttv00-lc1") or full
+            parameter name (e.g. "ttv00-lc1-T0_pl1"). Full names take priority.
+            Unspecified labels keep their default text. Labels follow their
+            transits when sorted. Ignored when show_labels=False.
+            e.g. labels={"ttv00-lc1": "Observatory A", "ttv05-lc6": "Partial transit"}
         
         Returns
         --------
@@ -6425,6 +6434,11 @@ class load_result:
         """
         if self._ttvs==[]:
             return print("TTV fit not performed for this system.")
+        if labels is None:
+            labels = {}
+        elif not isinstance(labels, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in labels.items()):
+            raise TypeError("labels must be a dictionary mapping transit labels to strings")
         npl         = self._nplanet
         # Resolve aliases here as well so older result files containing NaN
         # placeholders inherit the donor's value and uncertainty.
@@ -6478,6 +6492,7 @@ class load_result:
                 fit_t0s  = fit_t0s[srt_t0s]
                 edges    = np.array(edges)[srt_t0s]
                 lc_names = np.array(lc_names)[srt_t0s]
+                T0_labels = np.array(T0_labels)[srt_t0s]
 
             ax[n-1].axvline(0,ls="--",color="gray")
             for i,t0 in enumerate(lin_t0s):
@@ -6515,6 +6530,15 @@ class load_result:
                 ax[n-1].errorbar(x_,f_+i*offset[n-1],e_,fmt="k.",ms=8,mfc="w",label=f"{binsize[n-1]*24*60:.0f}min bins") 
 
                 ax[n-1].plot(xs[srt_xs],ms[srt_xs]+i*offset[n-1],"k")
+                if show_labels:
+                    default_label = T0_labels[i].rsplit('-T0_pl', 1)[0]
+                    label = labels.get(T0_labels[i], labels.get(default_label, default_label))
+                    ax[n-1].annotate(
+                        label,
+                        xy=(0, ms[srt_xs[0]]+i*offset[n-1]),
+                        xycoords=ax[n-1].get_yaxis_transform(),
+                        xytext=(4, 4), textcoords="offset points",
+                        ha="left", va="bottom", fontsize=8)
                 ax[n-1].set_title(f"Planet {n} (P={self.params.P[n-1]:.2f})")
                 ax[n-1].set_yticks([])
                 ax[n-1].set_xlabel("time from linear ephemeris [hrs]")
