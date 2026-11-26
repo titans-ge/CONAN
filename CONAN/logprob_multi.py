@@ -781,13 +781,13 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
 
                     gp  = rvGPobjects[j]      #gp for this rv
                     gp.set_parameter_vector(thisrv_gppars_orig)
-                    gp.compute(rvpargp_arr[srt_rvgp], yerr = err_in[srt_rvgp])
+                    gp.compute(rvpargp_arr[srt_rvgp], yerr = err_all[j][srt_rvgp])
                 else:
                     if ndim_gp == 1:
                         srt_rvgp   = np.argsort(rvpargp_arr) if rvpargp_arr.ndim==1 else np.argsort(rvpargp_arr[:,0])  #indices to sort the gp axis
                         unsrt_rvgp = np.argsort(srt_rvgp)  #indices to unsort the gp axis
 
-                        gp = cov.Cov(t=rvpargp_arr[srt_rvgp],err=term.Error(err_in[srt_rvgp]),kterm=deepcopy(rvGPobjects[j])) #create the spleaf gp from the dictionary of kernels
+                        gp = cov.Cov(t=rvpargp_arr[srt_rvgp],err=term.Error(err_all[j][srt_rvgp]),kterm=deepcopy(rvGPobjects[j])) #create the spleaf gp from the dictionary of kernels
                         gp.set_param(thisrv_gppars_orig)
                     else:
                         # Merge all time series
