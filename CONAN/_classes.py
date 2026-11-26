@@ -17,7 +17,7 @@ from .utils import outlier_clipping, rho_to_tdur, rescale0_1, ecc_om_par,sesinw_
 from .utils import rescale_minus1_1, split_transits,sinusoid, robust_std
 from .geepee import gp_params_convert, celerite_kernels, george_kernels,spleaf_kernels, gp_h3h4names, npars_gp
 from .utils import phase_fold, supersampling, get_transit_time, bin_data_with_gaps
-from .misc import _param_obj, _text_format, filter_shortcuts, _print_output, _raise
+from .misc import _param_obj, _text_format, filter_shortcuts, _print_output, _raise, _custom_func_for_filter, _signature_extra_args
 from copy import deepcopy
 from uncertainties import ufloat
 import inspect
@@ -1389,7 +1389,8 @@ class load_lightcurves:
         
         for j,file in enumerate(self._names):
             df = self._input_lc[file]
-            if verbose: 
+            cfunc_j = _custom_func_for_filter(custom_LCfunc, self._filters[j])  # custom function with args resolved for this lc's filter
+            if verbose:
                 if file in lc_list:
                     print(_text_format.BOLD + f"\ngetting decorr params for lc{j+1:02d}: {file} (spline={spline[j]!=None}, sine={sinusoid[file]!=None}, gp={GP[file]!=None}, s_samp={ss_exp[j]!=None}, jitt={self._jitt_estimate[j]*1e6 if use_jitter_est else 0:.1f}ppm)" + _text_format.END)
                 else:
@@ -1423,7 +1424,7 @@ class load_lightcurves:
                                 q2=ld_q2[self._filters[j]], mask=mask, cont=fcont[self._filters[j]], offset=0 if fit_offset[j]=="y" else None, 
                                 decorr_bound=decorr_bound,spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                                 jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
-                                pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)    #no trend, only offset if no spline
+                                pc_model=pc_model[j], custom_LCfunc=cfunc_j, npl=self._nplanet)    #no trend, only offset if no spline
                 if set(exclude_cols) == set([0,3,4,5,6,7,8]):
                     best_pars = {} if fit_offset[j]=='n' else {"offset":0}        #offset turned off if spline is used or fit_offset='n'
                 else:
@@ -1444,7 +1445,7 @@ class load_lightcurves:
                             out = _decorr(self._input_lc[file], **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],**dtmp,
                                             decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],gp=GP[file],ss_exp=ss_exp[j], 
                                             jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar,
-                                            pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
+                                            pc_model=pc_model[j], custom_LCfunc=cfunc_j, npl=self._nplanet)
                             if show_steps: print(f"{p:7s} : {out.bic:.2f} {out.nvarys}")
                             pars_bic[p] = out.bic
 
@@ -1463,13 +1464,13 @@ class load_lightcurves:
                 result = _decorr(df, **self._tra_occ_pars, **sin_pars, gp_pars = gp_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
                                     **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],spline=spline[j],sinus=sinusoid[file],
                                     gp=GP[file],ss_exp=ss_exp[j], jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
-                                    pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)
+                                    pc_model=pc_model[j], custom_LCfunc=cfunc_j, npl=self._nplanet)
             else:
                 best_pars = {} if fit_offset[j]=='n' else {"offset":0}        #offset turned off if spline is used or fit_offset='n'
                 result = _decorr(df, **self._tra_occ_pars, q1=ld_q1[self._filters[j]],q2=ld_q2[self._filters[j]],
                                     **best_pars, decorr_bound=decorr_bound,  mask=mask, cont=fcont[self._filters[j]],
                                     ss_exp=ss_exp[j], jitter=self._jitt_estimate[j] if use_jitter_est else 0, Rstar=Rstar, 
-                                    pc_model=pc_model[j], custom_LCfunc=custom_LCfunc, npl=self._nplanet)  
+                                    pc_model=pc_model[j], custom_LCfunc=cfunc_j, npl=self._nplanet)  
                 
             self._decorr_result.append(result)
             if verbose: print(f"BEST BIC:{result.bic:.2f}, pars:{list(best_pars.keys())}")
@@ -1492,10 +1493,10 @@ class load_lightcurves:
                 gp_pars[p] = pps[p]
                 pps.pop(p)
 
-            if custom_LCfunc is not None:
-                best_custom_LCfunc = deepcopy(custom_LCfunc)
+            if cfunc_j is not None:
+                best_custom_LCfunc = deepcopy(cfunc_j)   # func_args already resolved for this lc's filter
                 best_custom_LCfunc.func_args = {p:pps[p] for p in best_custom_LCfunc.func_args.keys()} #update best_custom_LCfunc parameters to values from fit
-                _ = [pps.pop(p) for p in custom_LCfunc.func_args.keys()] # remove custom_LCfunc parameters from pps
+                _ = [pps.pop(p) for p in cfunc_j.func_args.keys()] # remove custom_LCfunc parameters from pps
             else: best_custom_LCfunc = None
                 
             self._tmodel.append(_decorr(df,**pps, gp_pars=gp_pars,spline=spline[j],sinus=sinusoid[file],gp=GP[file], cont=fcont[self._filters[j]], ss_exp=ss_exp[j], Rstar=Rstar, pc_model=pc_model[j], custom_LCfunc=best_custom_LCfunc,npl=self._nplanet, return_models=True))
@@ -3162,19 +3163,26 @@ class load_lightcurves:
             transit model. the phase angle is generally given by true_anom+omega-pi/2 or simply 
             2pi*phase for circular orbit. If `replace_LCmodel=True`, then x needs to be time. 
         func_args : dict;
-            dictionary of arguments to pass to the custom function. The keys must be the argument 
-            names for the custom function. each parameter can be fixed to a value(float/int) or set 
-            as a jump parameter (tuple of length 2/3/4). Default is an empty dictionary. tuple of 
-            length 2:nnormal prior (mean, std), tuple of length 3: uniform prior (min, start, max), 
-            tuple of length 4: truncated normal prior (min,max,mean, std)
+            dictionary of arguments to pass to the custom function. The keys must be the argument
+            names for the custom function. each parameter can be fixed to a value(float/int) or set
+            as a jump parameter (tuple of length 2/3/4). Default is an empty dictionary. tuple of
+            length 2:nnormal prior (mean, std), tuple of length 3: uniform prior (min, start, max),
+            tuple of length 4: truncated normal prior (min,max,mean, std).
+            To make a parameter filter-dependent, give a list of values/priors, one per filter in the
+            order of ``lc_obj._filnames`` (a list of length 1 is replicated for all filters as independent
+            parameters). The fitted parameters are then named ``{filter}_{arg}`` (e.g. ``V_B``, ``R_B``) and
+            the custom function receives the value of the filter of the lightcurve being modelled.
+            Parameters can be tied across filters using ``shared_params`` in ``run_fit()``.
         extra_args : dict;
-            dictionary of extra arguments to pass to the custom function.  this arguments can be 
-            strings or any data type needed to be specified in the custom function. Default is an 
-            empty dictionary.
+            dictionary of extra arguments to pass to the custom function.  this arguments can be
+            strings or any data type needed to be specified in the custom function. Default is an
+            empty dictionary. These update the default ``extra_args`` in the function signature.
+            CONAN also sets ``extra_args["filter"]`` to the filter name of the lightcurve being
+            modelled, so ``filter`` is a reserved key.
         op_func : callable;
-            operation function to apply to the output of custom function and transit model to 
-            obtain the desired model. Must be of the form ``op_func(transit_model,custom_model)``. 
-            Default is None. This function is not required if ``replace_LCmodel=True``. 
+            operation function to apply to the output of custom function and transit model to
+            obtain the desired model. Must be of the form ``op_func(transit_model,custom_model)``.
+            Default is None. This function is not required if ``replace_LCmodel=True``.
         replace_LCmodel : bool;
             replace the transit model with the custom model. Default is False.
 
@@ -3201,6 +3209,15 @@ class load_lightcurves:
         >>> # A is fixed, B has uniform prior, C has gaussian prior
         >>> custom_lcfunc = lc_obj.add_custom_LC_function(func=custom_func, x="phase_angle",func_args=dict(A=0.1, B=(0.2,0,0.01), C=(0.3,0.01), op_func=op_func)
         >>> # this custom function has now been registered and will be used in the light-curve model.
+
+        >>> # for lightcurves in two filters (lc_obj._filnames = ['V','R']), B can be made filter-dependent
+        >>> # giving fit parameters 'V_B' (uniform prior) and 'R_B' (normal prior)
+        >>> custom_lcfunc = lc_obj.add_custom_LC_function(func=custom_func, x="phase_angle",func_args=dict(A=0.1, B=[(0,0.2,0.5),(0.3,0.01)], C=(0.3,0.01)), op_func=op_func)
+
+        >>> # the filter of the lightcurve being modelled is available in extra_args["filter"]
+        >>> def custom_func(phase_angle, A, B, C, extra_args={}):
+        >>>     n = 2 if extra_args["filter"]=="R" else 1
+        >>>     return A*np.sin(n*phase_angle) + B*np.cos(2*phase_angle) + C
 
         2. replace the transit model with a custom model that has two new parameters beyond the 
         standard transit model parameters. Here we create a custom model from `catwoman` that models 
@@ -3261,6 +3278,9 @@ class load_lightcurves:
             if extra_args == None: 
                 extra_args=dict()
             assert isinstance(extra_args, dict), "add_custom_LC_function(): extra_args must be a dictionary."
+            assert "filter" not in extra_args, "add_custom_LC_function(): 'filter' is a reserved key of extra_args. CONAN sets extra_args['filter'] to the filter name of the lightcurve being modelled."
+            assert "extra_args" in inspect.signature(fxn).parameters, "add_custom_LC_function(): func must have an `extra_args` argument e.g. `extra_args={}`."
+            default_extra_args = _signature_extra_args(fxn)   # defaults in the function signature, updated with extra_args when calling func
             #check that opfunc takes two array arguments
             if not replace_LCmodel: 
                 possible_x = ["time","phase_angle",'col3','col4','col5','col6','col7','col8']
@@ -3280,19 +3300,38 @@ class load_lightcurves:
                     'add_custom_LC_function(): LC_pars argument in func must same keys ["Duration","rho_star","RpRs","Impact_para","T_0","Period","Eccentricity","omega","q1","q2","D_occ","Fn","ph_off","A_ev","f1_ev","A_db"].'
                 #assert that number of arguments in func() is equal to the number of parameters in func_args + the independent variable x + extra_args + LC_pars
                 assert len_fxnpars==len(func_args)+3, f"add_custom_LC_function(): number of arguments in func_args must be equal to number of arguments in func minus 2."
-        else: 
-            self._custom_LCfunc = SN(func=None, get_func=None, x=None, xarr=None,op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_LCmodel=False)
+        else:
+            self._custom_LCfunc = SN(func=None, get_func=None, x=None, xarr=None,op_func=None, func_args={},extra_args={},par_dict={},npars=0,nfree=0,replace_LCmodel=False,
+                                     arg_names=[], filt_args=[], par_idx=None, filnames=list(self._filnames), default_extra_args={})
             if verbose: _print_output(self,"custom_LCfunction")
             return None
-        
-        par_dict = {}   #dictionary to store parameter objects
-        nfree    = 0
-        for k in func_args.keys():
-            par_dict[k] = _param_obj.from_tuple(func_args[k], user_input=func_args[k],func_call="add_custom_LC_function():")
-            if par_dict[k].to_fit=="y": 
-                nfree += 1
 
-        self._custom_LCfunc = SN(func=func, get_func=fxn, x=x, xarr=None, op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict, npars=len(par_dict),nfree=nfree,replace_LCmodel=replace_LCmodel)
+        nfilt     = len(self._filnames)
+        func_args = dict(func_args)  #copy so that the user's dict is not modified
+        filt_args = []               #names of filter-dependent arguments
+        par_dict  = {}               #dictionary to store parameter objects (filter-dependent args are expanded to {filt}_{arg})
+        for k in func_args.keys():
+            if isinstance(func_args[k], np.ndarray): func_args[k] = list(func_args[k])
+            if isinstance(func_args[k], list):   # filter-dependent parameter
+                if len(func_args[k])==1: func_args[k] = func_args[k]*nfilt
+                assert len(func_args[k])==nfilt, \
+                    f"add_custom_LC_function(): filter-dependent parameter `{k}` must be a list of length {nfilt} (for filters {list(self._filnames)}) but {len(func_args[k])} given."
+                filt_args.append(k)
+                for f,v in zip(self._filnames, func_args[k]):
+                    par_dict[f"{f}_{k}"] = _param_obj.from_tuple(v, user_input=v,func_call=f"add_custom_LC_function(): {f}_{k}:")
+            else:
+                par_dict[k] = _param_obj.from_tuple(func_args[k], user_input=func_args[k],func_call="add_custom_LC_function():")
+        nfree = sum(p.to_fit=="y" for p in par_dict.values())
+
+        # for each filter, positions in the custom parameter block of the parameters passed to the function arguments
+        arg_names = list(func_args.keys())
+        pnames    = list(par_dict.keys())
+        par_idx   = {f: np.array([pnames.index(f"{f}_{a}" if a in filt_args else a) for a in arg_names], dtype=int) for f in self._filnames}
+
+        self._custom_LCfunc = SN(func=func, get_func=fxn, x=x, xarr=None, op_func=op_func, func_args=func_args,extra_args=extra_args,par_dict=par_dict,
+                                 npars=len(par_dict),nfree=nfree,replace_LCmodel=replace_LCmodel,
+                                 arg_names=arg_names, filt_args=filt_args, par_idx=par_idx, filnames=list(self._filnames),
+                                 default_extra_args=default_extra_args)
 
         if verbose: _print_output(self,"custom_LCfunction")
         return deepcopy(self._custom_LCfunc)

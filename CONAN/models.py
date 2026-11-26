@@ -378,16 +378,16 @@ class Planet_LC_Model:
         # combine the lc model with custom model
         if custom_LCfunc!=None and custom_LCfunc.replace_LCmodel==False:
             if custom_LCfunc.x=="time":
-                cst_model = custom_LCfunc.get_func(tt_ss,**self.cst_pars)  
+                cst_model = custom_LCfunc.get_func(tt_ss,**self.cst_pars, extra_args=custom_LCfunc.extra_args)  
             elif custom_LCfunc.x == "phase_angle":
-                cst_model = custom_LCfunc.get_func(ph_angle,**self.cst_pars)
+                cst_model = custom_LCfunc.get_func(ph_angle,**self.cst_pars, extra_args=custom_LCfunc.extra_args)
             elif custom_LCfunc.x.startswith("col"):
                 if not list(tt_ss)==list(custom_LCfunc.t):    # if tt_ss is a different time array than input data, interpolate xarr column
                     interp_func = interp1d(custom_LCfunc.t, custom_LCfunc.xarr, bounds_error=False, 
                                             fill_value=(custom_LCfunc.xarr[0],custom_LCfunc.xarr[-1]))
-                    cst_model = custom_LCfunc.get_func(interp_func(tt_ss),**self.cst_pars)
+                    cst_model = custom_LCfunc.get_func(interp_func(tt_ss),**self.cst_pars, extra_args=custom_LCfunc.extra_args)
                 else: 
-                    cst_model = custom_LCfunc.get_func(custom_LCfunc.xarr,**self.cst_pars)
+                    cst_model = custom_LCfunc.get_func(custom_LCfunc.xarr,**self.cst_pars, extra_args=custom_LCfunc.extra_args)
 
             mm = custom_LCfunc.op_func(mm,cst_model)
 

@@ -27,6 +27,7 @@ from .conf import create_configfile
 from scipy.stats import norm, uniform, lognorm, loguniform,truncnorm
 
 
+from .misc import _custom_par_indices
 from ._classes import _raise, fit_setup, __default_backend__, load_result, load_lightcurves, load_rvs, _text_format
 import matplotlib
 matplotlib.use(__default_backend__)
@@ -769,7 +770,10 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
         priorup    = np.concatenate((priorup,  [custom_LCfunc.par_dict[key].prior_width_hi for key in custom_LCfunc.par_dict.keys()]))
         prior_str  = np.concatenate((prior_str, [custom_LCfunc.par_dict[key].prior_str     for key in custom_LCfunc.par_dict.keys()]))
         pnames     = np.concatenate((pnames,   list(custom_LCfunc.par_dict.keys())) )
-        njumpphot  = njumpphot + custom_LCfunc.nfree
+        # count the free custom parameters used by each lc (global ones + those of the lc's filter)
+        cst_stepsizes = np.array([custom_LCfunc.par_dict[key].step_size for key in custom_LCfunc.par_dict.keys()])
+        for i in range(nphot):
+            njumpphot[i] += np.sum(cst_stepsizes[_custom_par_indices(custom_LCfunc, filters[i])] != 0.)
 
     sine_dict = lc_obj._sine_dict
     sine_conf = SimpleNamespace(flag  = any([v.trig!= None for v in sine_dict.values()]),   # if any sinusoidal component is present
@@ -1551,7 +1555,7 @@ def run_fit(lc_obj=None, rv_obj=None, fit_obj=None, statistic = "median", out_fo
 
         #custom LC parameters
         if ncustom>0:
-            customind = 1+7*npl +nttv+ nddf+nocc*7 + nfilt*2 + nphot + np.arange(ncustom) # the index of the custom parameters 
+            customind = 1+7*npl +nttv+ nddf+nocc*7 + nfilt*2 + nphot + _custom_par_indices(custom_LCfunc, filnames[k]) # the index of the custom parameters of this lc's filter
             cst_step  = customind[np.where(stepsize[customind]!=0.)[0] ]       
             temp=np.concatenate((temp,cst_step),axis=0)
 

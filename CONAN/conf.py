@@ -154,6 +154,42 @@ def _prior_value(str_prior):
     val = tuple_prior[0] if len(tuple_prior)==1 else tuple(tuple_prior)
     return val
 
+def _split_top_level(s, sep=","):
+    """split string `s` on `sep` occurring outside of () and [] brackets. e.g "A:U(0,1,2),B:[N(1,0.1),F(2)]" -> ["A:U(0,1,2)","B:[N(1,0.1),F(2)]"]"""
+    parts, depth, cur = [], 0, ""
+    for ch in s:
+        if ch in "([": depth += 1
+        elif ch in ")]": depth -= 1
+        if ch==sep and depth==0:
+            parts.append(cur)
+            cur = ""
+        else: 
+            cur += ch
+    if cur!="": parts.append(cur)
+    return parts
+
+def _custom_func_prior_value(p_prior):
+    """convert prior of a custom function parameter to float/tuple, or to list of float/tuple for filter-dependent parameters 
+    given as list or as string '[N(1,0.1),F(2)]'"""
+    if isinstance(p_prior, (list,tuple)):
+        return [_prior_value(str(pp)) for pp in p_prior]
+    p_prior = str(p_prior).replace(" ","")
+    if p_prior.startswith("[") and p_prior.endswith("]"):
+        return [_prior_value(pp) for pp in _split_top_level(p_prior[1:-1])]
+    return _prior_value(p_prior)
+
+def _custom_func_pars_dict(cfunc):
+    """dictionary of the custom function arguments and their prior strings (list of prior strings for filter-dependent args) for the yaml config file"""
+    from .misc import _custom_filt_args, _custom_par_name
+    if cfunc.func_args=={}: return None
+    out = {}
+    for k in cfunc.func_args.keys():
+        if k in _custom_filt_args(cfunc):
+            out[k] = [cfunc.par_dict[_custom_par_name(k, f, cfunc)].prior_str for f in cfunc.filnames]
+        else:
+            out[k] = cfunc.par_dict[k].prior_str
+    return out
+
 
 def create_configfile(lc_obj=None, rv_obj=None, fit_obj=None, filename="input_config.dat", both=True, verify=False): 
     """
@@ -500,7 +536,7 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
             'custom_LC_function': {
                 'function': lc_obj._custom_LCfunc.func.__name__ if lc_obj._custom_LCfunc.func!=None else None,
                 'x': lc_obj._custom_LCfunc.x,
-                'func_pars': {k:v.prior_str for k,v in lc_obj._custom_LCfunc.par_dict.items()} if lc_obj._custom_LCfunc.func_args!={} else None,
+                'func_pars': _custom_func_pars_dict(lc_obj._custom_LCfunc),
                 'extra_args': lc_obj._custom_LCfunc.extra_args if lc_obj._custom_LCfunc.extra_args!={} else None,
                 'op_func': lc_obj._custom_LCfunc.op_func.__name__ if lc_obj._custom_LCfunc.op_func!=None else None,
                 'replace_LCmodel': lc_obj._custom_LCfunc.replace_LCmodel
@@ -544,7 +580,7 @@ def create_yamlfile(lc_obj, rv_obj, fit_obj, filename="input_config.yaml", verif
             'custom_RV_function': {
                 'function': rv_obj._custom_RVfunc.func.__name__ if rv_obj._custom_RVfunc.func!=None else None,
                 'x': rv_obj._custom_RVfunc.x,
-                'func_pars': {k:v.prior_str for k,v in rv_obj._custom_RVfunc.par_dict.items()} if rv_obj._custom_RVfunc.func_args!={} else None,
+                'func_pars': _custom_func_pars_dict(rv_obj._custom_RVfunc),
                 'extra_args': rv_obj._custom_RVfunc.extra_args if rv_obj._custom_RVfunc.extra_args!={} else None,
                 'op_func': rv_obj._custom_RVfunc.op_func.__name__ if rv_obj._custom_RVfunc.op_func!=None else None,
                 'replace_RVmodel': rv_obj._custom_RVfunc.replace_RVmodel
@@ -1183,11 +1219,10 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
             _adump    = _file.readline().split()
             func_args = {}
             if _adump[2]!='None':
-                str_pars  = _adump[2].split("),")
-                str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
+                str_pars  = _split_top_level(_adump[2])     # split on commas outside brackets
                 for p in str_pars:
-                    p_name, p_prior = p.split(":")
-                    func_args[p_name] = _prior_value(p_prior)
+                    p_name, p_prior = p.split(":",1)
+                    func_args[p_name] = _custom_func_prior_value(p_prior)
             dump   = _file.readline()
             _adump = dump.split()
             extra_args = {}
@@ -1225,11 +1260,10 @@ def load_datfile(configfile="input_config.dat", return_fit=False, init_decorr=Fa
             _adump    = _file.readline().split()
             rvfunc_args = {}
             if _adump[2]!='None':
-                str_pars  = _adump[2].split("),")
-                str_pars  = [s if s[-1]==')' else s+')' for s in str_pars]   # add ')' to the all elements lacking closing bracket
+                str_pars  = _split_top_level(_adump[2])     # split on commas outside brackets
                 for p in str_pars:
-                    p_name, p_prior = p.split(":")
-                    rvfunc_args[p_name] = _prior_value(p_prior)
+                    p_name, p_prior = p.split(":",1)
+                    rvfunc_args[p_name] = _custom_func_prior_value(p_prior)
             dump   = _file.readline()
             _adump = dump.split()
             rvextra_args = {}
@@ -1787,7 +1821,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                 func_args = {}
                 if cf["func_pars"]!='None':
                     for p_name, p_prior in cf["func_pars"].items():
-                        func_args[p_name] = _prior_value(p_prior)
+                        func_args[p_name] = _custom_func_prior_value(p_prior)
 
                 extra_args  = cf["extra_args"] if cf["extra_args"]!='None' else {}
                 opfunc_name = cf["op_func"]
@@ -2004,7 +2038,7 @@ def load_yamlfile(configfile, return_fit=False, init_decorr=False,
                 rvfunc_args = {}
                 if cf["func_pars"]!='None':
                     for p_name, p_prior in cf["func_pars"].items():
-                        rvfunc_args[p_name] = _prior_value(p_prior)
+                        rvfunc_args[p_name] = _custom_func_prior_value(p_prior)
 
                 rvextra_args = cf["extra_args"] if cf["extra_args"]!='None' else {}
                 opfunc_name  = cf["op_func"]

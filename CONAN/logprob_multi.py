@@ -10,6 +10,7 @@ from ._classes import __default_backend__
 from os.path import splitext, exists
 from .utils import light_travel_time_correction,sinusoid
 from copy import deepcopy
+from .misc import _custom_par_indices, _custom_arg_names, _custom_func_for_filter
 
 
 def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
@@ -132,6 +133,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
     if nttv > 0:
         ttv_offsets = 1 + 7*npl + np.cumsum([0] + [len(conf.t0s) for conf in ttv_conf], dtype=int)
 
+    # custom LC function for each filter (filter-dependent args resolved and filter name in extra_args["filter"])
+    cfuncs = {f: _custom_func_for_filter(custom_LCfunc, f) for f in filnames} if custom_LCfunc is not None else {}
+
     # restrict the parameters to those of the light curve
     for j in range(nphot):
         
@@ -141,10 +145,11 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         f_in       = thisLCdata["col1"]
         e_in       = thisLCdata["col2"]
         
-        if custom_LCfunc.func!=None and custom_LCfunc.replace_LCmodel==False:
-            if custom_LCfunc.x.startswith('col'):
-                custom_LCfunc.xarr = thisLCdata[custom_LCfunc.x]
-                custom_LCfunc.t    = thisLCdata['col0']   #needed to create interpolate func for other columns 
+        cfunc_lc = cfuncs.get(filters[j])   # custom LC function for this lc's filter
+        if cfunc_lc is not None and cfunc_lc.func!=None and cfunc_lc.replace_LCmodel==False:
+            if cfunc_lc.x.startswith('col'):
+                cfunc_lc.xarr = thisLCdata[cfunc_lc.x]
+                cfunc_lc.t    = thisLCdata['col0']   #needed to create interpolate func for other columns 
 
         s_samp[j]  = s_samp[j] if t is None else None  # if t is provided, don't use s_samp
 
@@ -212,8 +217,9 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
 
         cst_pars= {}
         if ncustom>0:
-            customind = 1+7*npl + nttv+nddf+nocc*7 + nfilt*2 + nphot + np.arange(ncustom)
-            cst_pars = dict(zip(custom_LCfunc.par_dict, params_all[customind]))
+            # indices of the custom parameters for this lc's filter (global + filter-dependent ones)
+            customind = 1+7*npl + nttv+nddf+nocc*7 + nfilt*2 + nphot + _custom_par_indices(custom_LCfunc, filnames[k])
+            cst_pars = dict(zip(_custom_arg_names(custom_LCfunc), params_all[customind]))
 
         if sine_conf.flag:
             file_slct = filnames[k] if sine_conf.fit=="filt" else "same" if sine_conf.fit=="same" else LCnames[j]
@@ -232,12 +238,12 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
                 LCmod,compo = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
                                         ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,
                                         q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
-                                        custom_LCfunc=custom_LCfunc if ncustom>0 else None, cst_pars=cst_pars)
+                                        custom_LCfunc=cfunc_lc if ncustom>0 else None, cst_pars=cst_pars)
             else:
                 TM = Planet_LC_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
                                     occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in, q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
                 LCmod,compo = TM.get_value(t_in, ss=s_samp[j],grprs=grprs_here,vcont=cont_in,Rstar=Rstar,model_phasevar=model_phasevar[k],
-                                            custom_LCfunc=custom_LCfunc if ncustom>0 else None, pc_model=pc_model[k])
+                                            custom_LCfunc=cfunc_lc if ncustom>0 else None, pc_model=pc_model[k])
 
             model_outputs.lc[name] = LCmod, compo
             continue
@@ -246,12 +252,12 @@ def logprob_multi(p, args,t=None,make_outfile=False,verbose=False,debug=False,
         if nttv>0:
             mt0, _ = TTV_Model(tarr=t_in, rho_star=rhoin, dur=durin, T0_list=ttv_conf[j].t0_list, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin,
                                     ddf=ddf0,occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,q1=q1in, q2=q2in,split_conf=ttv_conf[j],ss=s_samp[j],vcont=cont_in,Rstar=Rstar,grprs=grprs_here,
-                                    custom_LCfunc=custom_LCfunc if ncustom>0 else None,cst_pars=cst_pars)
+                                    custom_LCfunc=cfunc_lc if ncustom>0 else None,cst_pars=cst_pars)
         else:
             TM = Planet_LC_Model(rho_star=rhoin, dur=durin, T0=T0in, RpRs=RpRsin, b=bbin, per=perin, sesinw=sesinwin, secosw=secoswin, ddf=ddf0, 
                                         occ=occin, Fn=Fn_in, delta=phoff_in, A_ev=Aev_in, f1_ev=f1ev_in, A_db=Adb_in,q1=q1in, q2=q2in,cst_pars=cst_pars,npl=npl)
             mt0, _ = TM.get_value(t_in,ss=s_samp[j], grprs=grprs_here, vcont=cont_in,Rstar=Rstar,model_phasevar=model_phasevar[k],
-                                    custom_LCfunc=custom_LCfunc if ncustom>0 else None, pc_model=pc_model[k])   
+                                    custom_LCfunc=cfunc_lc if ncustom>0 else None, pc_model=pc_model[k])   
         
         
         if inmcmc=="n" and Rstar!=None and j==0:   #calculate light travel time correction for each planet and plot

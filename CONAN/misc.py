@@ -48,6 +48,70 @@ filter_shortcuts = dict(kepler='Kepler/Kepler.k',
 def _raise(exception_type, msg):
     raise exception_type(msg)
 
+
+# ---------------- helpers for filter-dependent custom LC function parameters ----------------
+def _custom_filt_args(cfunc):
+    """names of the custom function arguments that are filter-dependent (empty for legacy objects)."""
+    return list(getattr(cfunc, "filt_args", None) or [])
+
+def _custom_arg_names(cfunc):
+    """names of the custom function arguments in the order they are passed to the function."""
+    arg_names = getattr(cfunc, "arg_names", None)
+    return list(arg_names) if arg_names is not None else list(cfunc.par_dict.keys())
+
+def _custom_par_name(arg, filt, cfunc):
+    """name of the fitted parameter that feeds argument `arg` of the custom function for filter `filt`."""
+    return f"{filt}_{arg}" if arg in _custom_filt_args(cfunc) else arg
+
+def _custom_par_indices(cfunc, filt):
+    """
+    positions (within the block of custom function parameters in the fit parameter array)
+    of the parameters passed to each custom function argument for a lightcurve in filter `filt`.
+    The order follows `_custom_arg_names(cfunc)`.
+    """
+    par_idx = getattr(cfunc, "par_idx", None)
+    if par_idx is None:
+        return np.arange(len(cfunc.par_dict))
+    return par_idx[filt]
+
+def _signature_extra_args(fxn):
+    """default value of the `extra_args` argument in the signature of the custom function `fxn` ({} if none)."""
+    import inspect
+    try:
+        default = inspect.signature(fxn).parameters["extra_args"].default
+    except (KeyError, TypeError, ValueError):
+        return {}
+    return dict(default) if isinstance(default, dict) else {}
+
+def _custom_func_for_filter(cfunc, filt):
+    """
+    return a shallow copy of the custom function namespace for a lightcurve in filter `filt`:
+
+    - `func_args` are resolved for the filter, i.e. filter-dependent arguments (lists) are
+      replaced by the value/prior of that filter.
+    - `extra_args` passed to the function are the defaults in the function signature, updated
+      with the user-given `extra_args`, plus the filter name in `extra_args["filter"]`.
+
+    Returns the input unchanged if there is no custom function.
+    """
+    if cfunc is None or getattr(cfunc, "func", None) is None:
+        return cfunc
+    from copy import copy
+    c = copy(cfunc)
+    default_extra = getattr(cfunc, "default_extra_args", None)
+    if default_extra is None: default_extra = _signature_extra_args(cfunc.get_func)   # legacy objects
+    c.extra_args = {**default_extra, **cfunc.extra_args, "filter": filt}
+
+    if _custom_filt_args(cfunc):
+        i = list(cfunc.filnames).index(filt)
+        c.func_args = {k: (v[i] if k in cfunc.filt_args else v) for k,v in cfunc.func_args.items()}
+        c.par_dict  = {k: cfunc.par_dict[_custom_par_name(k, filt, cfunc)] for k in cfunc.func_args.keys()}
+        c.filt_args = []
+        c.par_idx   = None
+        c.npars     = len(c.par_dict)
+        c.nfree     = sum(p.to_fit=="y" for p in c.par_dict.values())
+    return c
+
 def _print_output(self, section: str, file=None):
     """function to print to screen/file the different sections of CONAN setup"""
     
@@ -193,13 +257,13 @@ def _print_output(self, section: str, file=None):
             if DA.func_args == {}:   # if custom func does not takein any additional arguments
                 fa_str = 'None'
             else:
-                fa      = DA.func_args
                 fa_str  = []
-                for k in fa.keys():
-                    if isinstance(fa[k],(int,float)):
-                        fa_str.append(f'{k}:F({fa[k]})')
-                    if isinstance(fa[k],tuple):
-                        fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
+                for k in DA.func_args.keys():
+                    if k in _custom_filt_args(DA):   # filter-dependent: list of priors ordered as filters
+                        priors = [DA.par_dict[_custom_par_name(k, f, DA)].prior_str for f in DA.filnames]
+                        fa_str.append(f"{k}:[{','.join(priors)}]")
+                    else:
+                        fa_str.append(f"{k}:{DA.par_dict[k].prior_str}")
                 fa_str  = ",".join(fa_str)
         else: fa_str = 'None'
         _print_custom_function += txtfmt.format("func_pars",fa_str,"#param names&priors e.g. A:U(0,1,2),P:N(2,1)")
@@ -222,13 +286,13 @@ def _print_output(self, section: str, file=None):
             if DA.func_args == {}:   # if custom func does not takein any additional arguments
                 fa_str = 'None'
             else:
-                fa      = DA.func_args
                 fa_str  = []
-                for k in fa.keys():
-                    if isinstance(fa[k],(int,float)):
-                        fa_str.append(f'{k}:F({fa[k]})')
-                    if isinstance(fa[k],tuple):
-                        fa_str.append(f"{k}:{'U' if len(fa[k])==3 else 'N' if len(fa[k])==2 else 'TN'}{str(fa[k]).replace(' ','')}" )
+                for k in DA.func_args.keys():
+                    if k in _custom_filt_args(DA):   # filter-dependent: list of priors ordered as filters
+                        priors = [DA.par_dict[_custom_par_name(k, f, DA)].prior_str for f in DA.filnames]
+                        fa_str.append(f"{k}:[{','.join(priors)}]")
+                    else:
+                        fa_str.append(f"{k}:{DA.par_dict[k].prior_str}")
                 fa_str  = ",".join(fa_str)
         else: fa_str = 'None'
         _print_custom_function += txtfmt.format("func_pars",fa_str,"#param names&priors e.g. A:U(0,1,2),P:N(2,1)")
